@@ -9,7 +9,7 @@
 
 ## 🚀 Quick start
 
-1. Download [`OPTY.bat`](https://github.com/YannD-Deltagon/OPTY/blob/master/OPTY.bat) — nothing else is needed
+1. Download [`OPTY.bat`](https://github.com/YannD-Delta/OPTY/blob/master/OPTY.bat) — nothing else is needed
 2. **Right-click → Run as administrator**
 3. Follow the menu
 
@@ -158,5 +158,5 @@ Windows **10** / **11** (x64), administrator rights required.
 
 ## 🙏 Credits
 
-Made by **[@YannD-Deltagon](https://github.com/YannD-Deltagon)**.
+Made by **[@YannD-Delta](https://github.com/YannD-Delta)**.
 Use at your own risk — read the script before running it on a machine you care about.
