@@ -3244,7 +3244,9 @@ goto mcrash
 :: -> CRKEYS=1 when the keyboard crash key is set, CRDUMP = the dump type in
 :: words. Read from the registry, never from a localised tool's output.
 set "CRKEYS="
-reg query "%CRK%\kbdhid\crashdump" /v Dump2Key >nul 2>&1 && set "CRKEYS=1"
+:: Same test CLEAN uses, so this screen and the dump-keeping rule never disagree.
+call :capturestate
+if defined CAPON set "CRKEYS=1"
 set "CRDV="
 for /f "tokens=3" %%A in ('reg query "HKLM\SYSTEM\CurrentControlSet\Control\CrashControl" /v CrashDumpEnabled 2^>nul ^| findstr /i /c:"    CrashDumpEnabled    REG_"') do set "CRDV=%%A"
 set "CRDUMP=%CRDV%"
@@ -13641,13 +13643,15 @@ goto :eof
 ::X|EN|power.throttling.off.074|                       shipped state, and note that writing 0 would be a
 ::X|EN|power.throttling.off.075|                       third state, not a restoration.
 ::X|EN|power.throttling.off.076|
-::X|EN|power.throttling.off.077|  Target          : HKLM\SYSTEM\CurrentControlSet\Control\Power\PowerThrot
-::X|EN|power.throttling.off.078|                    tling /v PowerThrottlingOff (REG_DWORD) - asked by call
-::X|EN|power.throttling.off.079|                    :askreg "power.throttling.off" in setup (OPTY.bat
-::X|EN|power.throttling.off.080|                    label :ss_usb). Only the SERVER column writes 1; the
-::X|EN|power.throttling.off.081|                    DELETE answer removes the value through :killkey. The
-::X|EN|power.throttling.off.082|                    value is also removed by 'Undo ALL' (:gaming_restore)
-::X|EN|power.throttling.off.083|                    and by the call :killkey under :rad_pwrdone.
+::X|EN|power.throttling.off.077|  Target          : HKLM\SYSTEM\CurrentControlSet\Control\Power\PowerThrottlin
+::X|EN|power.throttling.off.078|                    g /v PowerThrottlingOff (REG_DWORD) - asked by call
+::X|EN|power.throttling.off.079|                    :askreg "power.throttling.off" in setup (OPTY.bat label
+::X|EN|power.throttling.off.080|                    :ss_usb). Only the SERVER column writes 1; the DELETE
+::X|EN|power.throttling.off.081|                    answer removes the value through :killkey. The value is
+::X|EN|power.throttling.off.082|                    also removed by 'Undo ALL' (:gaming_restore, Restore ->
+::X|EN|power.throttling.off.083|                    2). Re-assert good defaults (:reassert_defaults, Restore
+::X|EN|power.throttling.off.084|                    -> 1) no longer removes it, so the SERVER answer survives
+::X|EN|power.throttling.off.085|                    it.
 ::X|FR|power.throttling.off.001|  Ce que c est    : Le Power Throttling est la fonction de Windows qui
 ::X|FR|power.throttling.off.002|                    repere les processus faisant du travail de fond sans
 ::X|FR|power.throttling.off.003|                    importance et les execute lentement et a moindre cout
@@ -13733,14 +13737,15 @@ goto :eof
 ::X|FR|power.throttling.off.083|                         l absence est l etat livre - et notez qu ecrire 0
 ::X|FR|power.throttling.off.084|                         serait un troisieme etat, pas une restauration.
 ::X|FR|power.throttling.off.085|
-::X|FR|power.throttling.off.086|  Cible           : HKLM\SYSTEM\CurrentControlSet\Control\Power\PowerThrot
-::X|FR|power.throttling.off.087|                    tling /v PowerThrottlingOff (REG_DWORD) - demande par
-::X|FR|power.throttling.off.088|                    call :askreg "power.throttling.off" dans la
-::X|FR|power.throttling.off.089|                    configuration (label OPTY.bat :ss_usb). Seule la
-::X|FR|power.throttling.off.090|                    colonne SERVER ecrit 1 ; la reponse DELETE supprime la
-::X|FR|power.throttling.off.091|                    valeur via :killkey. La valeur est aussi supprimee par
-::X|FR|power.throttling.off.092|                    « Undo ALL » (:gaming_restore) et par le call :killkey
-::X|FR|power.throttling.off.093|                    sous :rad_pwrdone.
+::X|FR|power.throttling.off.086|  Cible           : HKLM\SYSTEM\CurrentControlSet\Control\Power\PowerThrottlin
+::X|FR|power.throttling.off.087|                    g /v PowerThrottlingOff (REG_DWORD) - demande par call
+::X|FR|power.throttling.off.088|                    :askreg "power.throttling.off" dans la configuration
+::X|FR|power.throttling.off.089|                    (label OPTY.bat :ss_usb). Seule la colonne SERVER ecrit 1
+::X|FR|power.throttling.off.090|                    ; la reponse DELETE supprime la valeur via :killkey. La
+::X|FR|power.throttling.off.091|                    valeur est aussi supprimee par « Undo ALL »
+::X|FR|power.throttling.off.092|                    (:gaming_restore, Restore -> 2). Re-assert good defaults
+::X|FR|power.throttling.off.093|                    (:reassert_defaults, Restore -> 1) ne la supprime plus,
+::X|FR|power.throttling.off.094|                    donc la reponse SERVER y survit.
 ::
 :: ---- usb.selective.suspend.off (preference) -------------------------
 ::P|usb.selective.suspend.off|1|1|DELETE|DELETE|DELETE|
@@ -14505,144 +14510,154 @@ goto :eof
 ::
 :: ---- rad.powerthrottlingoff.killkey (cleanup) --------------------
 ::P|rad.powerthrottlingoff.killkey|DELETE|1|DELETE|DELETE|DELETE|
-::T|EN|rad.powerthrottlingoff.killkey.001|REPAIR: REMOVE A LEFTOVER ECOQOS OVERRIDE
-::T|EN|rad.powerthrottlingoff.killkey.002|Removes a leftover switch that stopped Windows from ever slowing down background work - deleting it hands CPU cycles back to whatever you are actually using, at the small cost that a minimised download or render can be slowed while unfocused.
-::T|FR|rad.powerthrottlingoff.killkey.001|RETIRER LE FORCAGE GLOBAL ECOQOS
-::T|FR|rad.powerthrottlingoff.killkey.002|Supprime un forcage residuel qui empechait Windows de jamais ralentir le travail d arriere-plan - le supprimer redonne les cycles CPU a ce que vous utilisez vraiment, au petit cout qu un telechargement ou un rendu reduit peut de nouveau etre ralenti hors du premier plan.
-::X|EN|rad.powerthrottlingoff.killkey.001|  What it is      : PowerThrottlingOff=1 is a single machine-wide switch
-::X|EN|rad.powerthrottlingoff.killkey.002|                    that stops Windows clocking down anything it
-::X|EN|rad.powerthrottlingoff.killkey.003|                    classifies as background work. This is the repair path
-::X|EN|rad.powerthrottlingoff.killkey.004|                    that finds it and removes it.
+::T|EN|rad.powerthrottlingoff.killkey.001|REMOVE THE ECOQOS OVERRIDE (UNDO ALL ONLY)
+::T|EN|rad.powerthrottlingoff.killkey.002|Undo ALL OPTY profiles removes the switch that stops Windows from ever slowing down background work - deleting it hands CPU cycles back to whatever you are actually using, at the small cost that a minimised download or render can be slowed while unfocused; Re-assert good defaults no longer touches it, because it is now a SETUP choice (power.throttling.off).
+::T|FR|rad.powerthrottlingoff.killkey.001|RETIRER LE FORCAGE GLOBAL ECOQOS (UNDO ALL SEULEMENT)
+::T|FR|rad.powerthrottlingoff.killkey.002|Undo ALL OPTY profiles supprime le forcage qui empeche Windows de jamais ralentir le travail d arriere-plan - le supprimer redonne les cycles CPU a ce que vous utilisez vraiment, au petit cout qu un telechargement ou un rendu reduit peut de nouveau etre ralenti hors du premier plan ; Re-assert good defaults n y touche plus, car c est desormais un choix de SETUP (power.throttling.off).
+::X|EN|rad.powerthrottlingoff.killkey.001|  What it is      : PowerThrottlingOff=1 is a single machine-wide switch that
+::X|EN|rad.powerthrottlingoff.killkey.002|                    stops Windows clocking down anything it classifies as
+::X|EN|rad.powerthrottlingoff.killkey.003|                    background work. This card describes removing it, which
+::X|EN|rad.powerthrottlingoff.killkey.004|                    now happens only in Undo ALL OPTY profiles (Restore -> 2).
 ::X|EN|rad.powerthrottlingoff.killkey.005|
-::X|EN|rad.powerthrottlingoff.killkey.006|  Actual effect   : Deletes the value if it exists and logs that it did.
-::X|EN|rad.powerthrottlingoff.killkey.007|                    Background processes become throttleable again; your
-::X|EN|rad.powerthrottlingoff.killkey.008|                    foreground window is unaffected, because it was never
-::X|EN|rad.powerthrottlingoff.killkey.009|                    throttled to begin with.
-::X|EN|rad.powerthrottlingoff.killkey.010|
-::X|EN|rad.powerthrottlingoff.killkey.011|  Gain            : Be precise about what the override was buying while it
-::X|EN|rad.powerthrottlingoff.killkey.012|                    sat there, because it is the opposite of what it is
-::X|EN|rad.powerthrottlingoff.killkey.013|                    usually sold as: Search indexing, Defender scans,
-::X|EN|rad.powerthrottlingoff.killkey.014|                    Store updates and OneDrive sync all running at full
-::X|EN|rad.powerthrottlingoff.killkey.015|                    clocks, on full-size cores, during your session.
-::X|EN|rad.powerthrottlingoff.killkey.016|                    Removing it hands those cycles back to the thing you
-::X|EN|rad.powerthrottlingoff.killkey.017|                    are actually using, and lowers idle power and fan
-::X|EN|rad.powerthrottlingoff.killkey.018|                    noise on the way.
-::X|EN|rad.powerthrottlingoff.killkey.019|
-::X|EN|rad.powerthrottlingoff.killkey.020|  Cost            : A minimised encode, render or long download can be
-::X|EN|rad.powerthrottlingoff.killkey.021|                    clocked down while it is not the focused window. That
-::X|EN|rad.powerthrottlingoff.killkey.022|                    is real, and it is the only real cost.
-::X|EN|rad.powerthrottlingoff.killkey.023|
-::X|EN|rad.powerthrottlingoff.killkey.024|  Windows default : Absent.
-::X|EN|rad.powerthrottlingoff.killkey.025|
-::X|EN|rad.powerthrottlingoff.killkey.026|  Possible values:
-::X|EN|rad.powerthrottlingoff.killkey.027|    DELETE               : The value is removed if present, and the
-::X|EN|rad.powerthrottlingoff.killkey.028|                           removal is reported. Windows resumes
-::X|EN|rad.powerthrottlingoff.killkey.029|                           classifying processes itself. This is the
-::X|EN|rad.powerthrottlingoff.killkey.030|                           shipped state - which is why :killkey deletes
-::X|EN|rad.powerthrottlingoff.killkey.031|                           rather than writing 0: for this setting,
-::X|EN|rad.powerthrottlingoff.killkey.032|                           writing 0 would not restore the default, it
-::X|EN|rad.powerthrottlingoff.killkey.033|                           would add a third state.
-::X|EN|rad.powerthrottlingoff.killkey.034|    1                    : Keep the override. Nothing is clocked down for
-::X|EN|rad.powerthrottlingoff.killkey.035|                           being background work, on any core, at any
-::X|EN|rad.powerthrottlingoff.killkey.036|                           time.
-::X|EN|rad.powerthrottlingoff.killkey.037|    0                    : Behaviourally the same as absent, but it is a
-::X|EN|rad.powerthrottlingoff.killkey.038|                           value a factory machine does not have. There is
-::X|EN|rad.powerthrottlingoff.killkey.039|                           no argument for choosing it over DELETE.
-::X|EN|rad.powerthrottlingoff.killkey.040|
-::X|EN|rad.powerthrottlingoff.killkey.041|  Why these profiles : Same value, same table as power-throttling-off and
-::X|EN|rad.powerthrottlingoff.killkey.042|                       gr-powerthrottlingoff-del - three code paths, one
-::X|EN|rad.powerthrottlingoff.killkey.043|                       DWORD, and the answers must agree or the script
-::X|EN|rad.powerthrottlingoff.killkey.044|                       contradicts itself. Server keeps 1: on a headless
-::X|EN|rad.powerthrottlingoff.killkey.045|                       box the torrent client, the Plex transcode and the
-::X|EN|rad.powerthrottlingoff.killkey.046|                       game server are all background by Windows'
-::X|EN|rad.powerthrottlingoff.killkey.047|                       classification, so EcoQoS throttles the entire
-::X|EN|rad.powerthrottlingoff.killkey.048|                       point of the machine. Everyone else deletes. Gaming
-::X|EN|rad.powerthrottlingoff.killkey.049|                       deletes deliberately: the override never touched
-::X|EN|rad.powerthrottlingoff.killkey.050|                       your game and its actual effect was to let Defender
-::X|EN|rad.powerthrottlingoff.killkey.051|                       run at full speed while you played. Office and
-::X|EN|rad.powerthrottlingoff.killkey.052|                       Laptop delete for heat, noise and battery. Windows
-::X|EN|rad.powerthrottlingoff.killkey.053|                       deletes because absent is factory. Note that this
-::X|EN|rad.powerthrottlingoff.killkey.054|                       repair path does not read a profile: the :killkey
-::X|EN|rad.powerthrottlingoff.killkey.055|                       in :reassert_defaults deletes the value on every
-::X|EN|rad.powerthrottlingoff.killkey.056|                       machine, a server included. Only the
-::X|EN|rad.powerthrottlingoff.killkey.057|                       power.throttling.off question in the system setup
-::X|EN|rad.powerthrottlingoff.killkey.058|                       writes the Server column's 1.
-::X|EN|rad.powerthrottlingoff.killkey.059|
-::X|EN|rad.powerthrottlingoff.killkey.060|  Target          : call :killkey "HKLM\SYSTEM\CurrentControlSet\Control\P
-::X|EN|rad.powerthrottlingoff.killkey.061|                    ower\PowerThrottling" "PowerThrottlingOff" - the power
-::X|EN|rad.powerthrottlingoff.killkey.062|                    throttling step of :reassert_defaults (under the
-::X|EN|rad.powerthrottlingoff.killkey.063|                    :rad_pwrdone label, after the CPU power caps).
-::X|EN|rad.powerthrottlingoff.killkey.064|                    :killkey deletes the value only if reg query finds it,
-::X|EN|rad.powerthrottlingoff.killkey.065|                    and logs what it removed.
-::X|FR|rad.powerthrottlingoff.killkey.001|  Ce que c est    : PowerThrottlingOff=1 est un interrupteur unique,
-::X|FR|rad.powerthrottlingoff.killkey.002|                    valable pour toute la machine, qui empeche Windows de
-::X|FR|rad.powerthrottlingoff.killkey.003|                    ralentir ce qu il classe comme travail d arriere-plan.
-::X|FR|rad.powerthrottlingoff.killkey.004|                    Voici le chemin de reparation qui le trouve et le
-::X|FR|rad.powerthrottlingoff.killkey.005|                    supprime.
+::X|EN|rad.powerthrottlingoff.killkey.006|  Actual effect   : Undo ALL deletes the value with a plain reg delete,
+::X|EN|rad.powerthrottlingoff.killkey.007|                    silently whether or not it existed. Re-assert good
+::X|EN|rad.powerthrottlingoff.killkey.008|                    defaults (Restore -> 1) no longer deletes it: the value is
+::X|EN|rad.powerthrottlingoff.killkey.009|                    a preference asked in SETUP (power.throttling.off, SERVER
+::X|EN|rad.powerthrottlingoff.killkey.010|                    = 1), and the unconditional delete there undid the
+::X|EN|rad.powerthrottlingoff.killkey.011|                    server's answer every time it ran. Once the value is gone,
+::X|EN|rad.powerthrottlingoff.killkey.012|                    background processes become throttleable again; your
+::X|EN|rad.powerthrottlingoff.killkey.013|                    foreground window is unaffected, because it was never
+::X|EN|rad.powerthrottlingoff.killkey.014|                    throttled to begin with.
+::X|EN|rad.powerthrottlingoff.killkey.015|
+::X|EN|rad.powerthrottlingoff.killkey.016|  Gain            : Be precise about what the override was buying while it
+::X|EN|rad.powerthrottlingoff.killkey.017|                    sat there, because it is the opposite of what it is
+::X|EN|rad.powerthrottlingoff.killkey.018|                    usually sold as: Search indexing, Defender scans,
+::X|EN|rad.powerthrottlingoff.killkey.019|                    Store updates and OneDrive sync all running at full
+::X|EN|rad.powerthrottlingoff.killkey.020|                    clocks, on full-size cores, during your session.
+::X|EN|rad.powerthrottlingoff.killkey.021|                    Removing it hands those cycles back to the thing you
+::X|EN|rad.powerthrottlingoff.killkey.022|                    are actually using, and lowers idle power and fan
+::X|EN|rad.powerthrottlingoff.killkey.023|                    noise on the way.
+::X|EN|rad.powerthrottlingoff.killkey.024|
+::X|EN|rad.powerthrottlingoff.killkey.025|  Cost            : A minimised encode, render or long download can be
+::X|EN|rad.powerthrottlingoff.killkey.026|                    clocked down while it is not the focused window. That
+::X|EN|rad.powerthrottlingoff.killkey.027|                    is real, and it is the only real cost.
+::X|EN|rad.powerthrottlingoff.killkey.028|
+::X|EN|rad.powerthrottlingoff.killkey.029|  Windows default : Absent.
+::X|EN|rad.powerthrottlingoff.killkey.030|
+::X|EN|rad.powerthrottlingoff.killkey.031|  Possible values:
+::X|EN|rad.powerthrottlingoff.killkey.032|    DELETE               : The value is removed if present. Windows resumes
+::X|EN|rad.powerthrottlingoff.killkey.033|                           classifying processes itself. This is the shipped
+::X|EN|rad.powerthrottlingoff.killkey.034|                           state - which is why it is deleted rather than set
+::X|EN|rad.powerthrottlingoff.killkey.035|                           to 0: for this setting, writing 0 would not restore
+::X|EN|rad.powerthrottlingoff.killkey.036|                           the default, it would add a third state.
+::X|EN|rad.powerthrottlingoff.killkey.037|    1                    : Keep the override. Nothing is clocked down for
+::X|EN|rad.powerthrottlingoff.killkey.038|                           being background work, on any core, at any
+::X|EN|rad.powerthrottlingoff.killkey.039|                           time.
+::X|EN|rad.powerthrottlingoff.killkey.040|    0                    : Behaviourally the same as absent, but it is a
+::X|EN|rad.powerthrottlingoff.killkey.041|                           value a factory machine does not have. There is
+::X|EN|rad.powerthrottlingoff.killkey.042|                           no argument for choosing it over DELETE.
+::X|EN|rad.powerthrottlingoff.killkey.043|
+::X|EN|rad.powerthrottlingoff.killkey.044|  Why these profiles : Same value, same table as power-throttling-off and
+::X|EN|rad.powerthrottlingoff.killkey.045|                       gr-powerthrottlingoff-del - three code paths, one
+::X|EN|rad.powerthrottlingoff.killkey.046|                       DWORD, and the answers must agree or the script
+::X|EN|rad.powerthrottlingoff.killkey.047|                       contradicts itself. Server keeps 1: on a headless box
+::X|EN|rad.powerthrottlingoff.killkey.048|                       the torrent client, the Plex transcode and the game
+::X|EN|rad.powerthrottlingoff.killkey.049|                       server are all background by Windows' classification,
+::X|EN|rad.powerthrottlingoff.killkey.050|                       so EcoQoS throttles the entire point of the machine.
+::X|EN|rad.powerthrottlingoff.killkey.051|                       Everyone else deletes. Gaming deletes deliberately: the
+::X|EN|rad.powerthrottlingoff.killkey.052|                       override never touched your game and its actual effect
+::X|EN|rad.powerthrottlingoff.killkey.053|                       was to let Defender run at full speed while you played.
+::X|EN|rad.powerthrottlingoff.killkey.054|                       Office and Laptop delete for heat, noise and battery.
+::X|EN|rad.powerthrottlingoff.killkey.055|                       Windows deletes because absent is factory. Note that no
+::X|EN|rad.powerthrottlingoff.killkey.056|                       code reads this row: Re-assert good defaults no longer
+::X|EN|rad.powerthrottlingoff.killkey.057|                       touches the value, so a server's 1 survives it, while
+::X|EN|rad.powerthrottlingoff.killkey.058|                       Undo ALL removes it on every machine, a server
+::X|EN|rad.powerthrottlingoff.killkey.059|                       included. Only the power.throttling.off question in the
+::X|EN|rad.powerthrottlingoff.killkey.060|                       system setup writes the Server column's 1.
+::X|EN|rad.powerthrottlingoff.killkey.061|
+::X|EN|rad.powerthrottlingoff.killkey.062|  Target          : reg delete "HKLM\SYSTEM\CurrentControlSet\Control\Power\Po
+::X|EN|rad.powerthrottlingoff.killkey.063|                    werThrottling" /v "PowerThrottlingOff" /f in
+::X|EN|rad.powerthrottlingoff.killkey.064|                    :gaming_restore (Undo ALL OPTY profiles), under
+::X|EN|rad.powerthrottlingoff.killkey.065|                    "Re-enabling CPU power throttling". No longer in
+::X|EN|rad.powerthrottlingoff.killkey.066|                    :reassert_defaults: the note after its GPU tuning residue
+::X|EN|rad.powerthrottlingoff.killkey.067|                    step, under :rad_pwrdone, says why. No code asks this
+::X|EN|rad.powerthrottlingoff.killkey.068|                    card; the value is written by :askreg
+::X|EN|rad.powerthrottlingoff.killkey.069|                    "power.throttling.off" in :ss_usb.
+::X|FR|rad.powerthrottlingoff.killkey.001|  Ce que c est    : PowerThrottlingOff=1 est un interrupteur unique, valable
+::X|FR|rad.powerthrottlingoff.killkey.002|                    pour toute la machine, qui empeche Windows de ralentir ce
+::X|FR|rad.powerthrottlingoff.killkey.003|                    qu il classe comme travail d arriere-plan. Cette fiche
+::X|FR|rad.powerthrottlingoff.killkey.004|                    decrit sa suppression, qui n a plus lieu que dans Undo ALL
+::X|FR|rad.powerthrottlingoff.killkey.005|                    OPTY profiles (Restore -> 2).
 ::X|FR|rad.powerthrottlingoff.killkey.006|
-::X|FR|rad.powerthrottlingoff.killkey.007|  Effet reel      : Supprime la valeur si elle existe et le consigne. Les
-::X|FR|rad.powerthrottlingoff.killkey.008|                    processus d arriere-plan redeviennent bridables ;
-::X|FR|rad.powerthrottlingoff.killkey.009|                    votre fenetre au premier plan n est pas concernee,
-::X|FR|rad.powerthrottlingoff.killkey.010|                    elle n a jamais ete bridee.
-::X|FR|rad.powerthrottlingoff.killkey.011|
-::X|FR|rad.powerthrottlingoff.killkey.012|  Gain            : Soyons precis sur ce que ce forcage achetait tant
-::X|FR|rad.powerthrottlingoff.killkey.013|                    qu il etait la, car c est l inverse de ce qu on vend
-::X|FR|rad.powerthrottlingoff.killkey.014|                    d habitude : l indexation, les analyses Defender, les
-::X|FR|rad.powerthrottlingoff.killkey.015|                    mises a jour du Store et la synchro OneDrive tournant
-::X|FR|rad.powerthrottlingoff.killkey.016|                    tous a pleine frequence, sur les gros coeurs, pendant
-::X|FR|rad.powerthrottlingoff.killkey.017|                    votre session. Le retirer rend ces cycles a ce que
-::X|FR|rad.powerthrottlingoff.killkey.018|                    vous utilisez vraiment, et fait baisser au passage la
-::X|FR|rad.powerthrottlingoff.killkey.019|                    consommation au repos et le bruit du ventilateur.
-::X|FR|rad.powerthrottlingoff.killkey.020|
-::X|FR|rad.powerthrottlingoff.killkey.021|  Cout            : Un encodage, un rendu ou un gros telechargement reduit
-::X|FR|rad.powerthrottlingoff.killkey.022|                    peut etre ralenti tant qu il n est pas la fenetre
-::X|FR|rad.powerthrottlingoff.killkey.023|                    active. C est reel, et c est le seul cout reel.
-::X|FR|rad.powerthrottlingoff.killkey.024|
-::X|FR|rad.powerthrottlingoff.killkey.025|  Defaut Windows  : Absente.
+::X|FR|rad.powerthrottlingoff.killkey.007|  Effet reel      : Undo ALL supprime la valeur par un simple reg delete, sans
+::X|FR|rad.powerthrottlingoff.killkey.008|                    rien signaler, qu elle ait existe ou non. Re-assert good
+::X|FR|rad.powerthrottlingoff.killkey.009|                    defaults (Restore -> 1) ne la supprime plus : la valeur
+::X|FR|rad.powerthrottlingoff.killkey.010|                    est une preference demandee dans SETUP
+::X|FR|rad.powerthrottlingoff.killkey.011|                    (power.throttling.off, SERVER = 1), et la suppression sans
+::X|FR|rad.powerthrottlingoff.killkey.012|                    condition defaisait la reponse du serveur a chaque
+::X|FR|rad.powerthrottlingoff.killkey.013|                    passage. Une fois la valeur partie, les processus d
+::X|FR|rad.powerthrottlingoff.killkey.014|                    arriere-plan redeviennent bridables ; votre fenetre au
+::X|FR|rad.powerthrottlingoff.killkey.015|                    premier plan n est pas concernee, elle n a jamais ete
+::X|FR|rad.powerthrottlingoff.killkey.016|                    bridee.
+::X|FR|rad.powerthrottlingoff.killkey.017|
+::X|FR|rad.powerthrottlingoff.killkey.018|  Gain            : Soyons precis sur ce que ce forcage achetait tant
+::X|FR|rad.powerthrottlingoff.killkey.019|                    qu il etait la, car c est l inverse de ce qu on vend
+::X|FR|rad.powerthrottlingoff.killkey.020|                    d habitude : l indexation, les analyses Defender, les
+::X|FR|rad.powerthrottlingoff.killkey.021|                    mises a jour du Store et la synchro OneDrive tournant
+::X|FR|rad.powerthrottlingoff.killkey.022|                    tous a pleine frequence, sur les gros coeurs, pendant
+::X|FR|rad.powerthrottlingoff.killkey.023|                    votre session. Le retirer rend ces cycles a ce que
+::X|FR|rad.powerthrottlingoff.killkey.024|                    vous utilisez vraiment, et fait baisser au passage la
+::X|FR|rad.powerthrottlingoff.killkey.025|                    consommation au repos et le bruit du ventilateur.
 ::X|FR|rad.powerthrottlingoff.killkey.026|
-::X|FR|rad.powerthrottlingoff.killkey.027|  Valeurs possibles :
-::X|FR|rad.powerthrottlingoff.killkey.028|    DELETE               : La valeur est supprimee si elle est presente,
-::X|FR|rad.powerthrottlingoff.killkey.029|                           et la suppression est signalee. Windows reprend
-::X|FR|rad.powerthrottlingoff.killkey.030|                           le classement des processus a son compte. C est
-::X|FR|rad.powerthrottlingoff.killkey.031|                           l etat livre - et c est pourquoi :killkey
-::X|FR|rad.powerthrottlingoff.killkey.032|                           supprime au lieu d ecrire 0 : pour ce reglage,
-::X|FR|rad.powerthrottlingoff.killkey.033|                           ecrire 0 ne restaurerait pas le defaut, ca
-::X|FR|rad.powerthrottlingoff.killkey.034|                           ajouterait un troisieme etat.
-::X|FR|rad.powerthrottlingoff.killkey.035|                           1 : Conserver le forcage. Plus rien n est ralenti
-::X|FR|rad.powerthrottlingoff.killkey.036|                           au motif d etre du travail d arriere-plan, sur
-::X|FR|rad.powerthrottlingoff.killkey.037|                           aucun coeur, a aucun moment.
-::X|FR|rad.powerthrottlingoff.killkey.038|                           0 : Comportement identique a l absence, mais c est
-::X|FR|rad.powerthrottlingoff.killkey.039|                           une valeur qu une machine d usine n a pas.
-::X|FR|rad.powerthrottlingoff.killkey.040|                           Aucun argument pour la preferer a DELETE.
-::X|FR|rad.powerthrottlingoff.killkey.041|
-::X|FR|rad.powerthrottlingoff.killkey.042|  Pourquoi ces profils : Meme valeur, meme table que power-throttling-off
-::X|FR|rad.powerthrottlingoff.killkey.043|                         et gr-powerthrottlingoff-del - trois chemins de
-::X|FR|rad.powerthrottlingoff.killkey.044|                         code, un seul DWORD, et les reponses doivent
-::X|FR|rad.powerthrottlingoff.killkey.045|                         concorder sous peine de contradiction. Serveur
-::X|FR|rad.powerthrottlingoff.killkey.046|                         garde 1 : sur une machine sans ecran, le client
-::X|FR|rad.powerthrottlingoff.killkey.047|                         torrent, le transcodage Plex et le serveur de jeu
-::X|FR|rad.powerthrottlingoff.killkey.048|                         sont tous de l arriere-plan au sens de Windows,
-::X|FR|rad.powerthrottlingoff.killkey.049|                         donc EcoQoS bride la raison meme d exister de la
-::X|FR|rad.powerthrottlingoff.killkey.050|                         machine. Tous les autres suppriment. Gaming
-::X|FR|rad.powerthrottlingoff.killkey.051|                         supprime volontairement : le forcage n a jamais
-::X|FR|rad.powerthrottlingoff.killkey.052|                         touche a votre jeu, et son effet reel etait de
-::X|FR|rad.powerthrottlingoff.killkey.053|                         laisser Defender tourner a pleine vitesse pendant
-::X|FR|rad.powerthrottlingoff.killkey.054|                         que vous jouiez. Bureau et Portable suppriment
-::X|FR|rad.powerthrottlingoff.killkey.055|                         pour la chaleur, le bruit et l autonomie. Windows
-::X|FR|rad.powerthrottlingoff.killkey.056|                         supprime parce que l absence, c est l usine. A
-::X|FR|rad.powerthrottlingoff.killkey.057|                         noter : ce chemin de reparation ne lit aucun
-::X|FR|rad.powerthrottlingoff.killkey.058|                         profil - le :killkey de :reassert_defaults
-::X|FR|rad.powerthrottlingoff.killkey.059|                         supprime la valeur sur toutes les machines,
-::X|FR|rad.powerthrottlingoff.killkey.060|                         serveur compris. Seule la question
-::X|FR|rad.powerthrottlingoff.killkey.061|                         power.throttling.off de la configuration systeme
-::X|FR|rad.powerthrottlingoff.killkey.062|                         ecrit le 1 de la colonne Serveur.
-::X|FR|rad.powerthrottlingoff.killkey.063|
-::X|FR|rad.powerthrottlingoff.killkey.064|  Cible           : call :killkey "HKLM\SYSTEM\CurrentControlSet\Control\P
-::X|FR|rad.powerthrottlingoff.killkey.065|                    ower\PowerThrottling" "PowerThrottlingOff" - l etape
-::X|FR|rad.powerthrottlingoff.killkey.066|                    de bridage d alimentation de :reassert_defaults (sous
-::X|FR|rad.powerthrottlingoff.killkey.067|                    l etiquette :rad_pwrdone, apres les plafonds CPU).
-::X|FR|rad.powerthrottlingoff.killkey.068|                    :killkey ne supprime la valeur que si reg query la
-::X|FR|rad.powerthrottlingoff.killkey.069|                    trouve, et journalise ce qu il a retire.
+::X|FR|rad.powerthrottlingoff.killkey.027|  Cout            : Un encodage, un rendu ou un gros telechargement reduit
+::X|FR|rad.powerthrottlingoff.killkey.028|                    peut etre ralenti tant qu il n est pas la fenetre
+::X|FR|rad.powerthrottlingoff.killkey.029|                    active. C est reel, et c est le seul cout reel.
+::X|FR|rad.powerthrottlingoff.killkey.030|
+::X|FR|rad.powerthrottlingoff.killkey.031|  Defaut Windows  : Absente.
+::X|FR|rad.powerthrottlingoff.killkey.032|
+::X|FR|rad.powerthrottlingoff.killkey.033|  Valeurs possibles :
+::X|FR|rad.powerthrottlingoff.killkey.034|    DELETE               : La valeur est supprimee si elle est presente.
+::X|FR|rad.powerthrottlingoff.killkey.035|                           Windows reprend le classement des processus a son
+::X|FR|rad.powerthrottlingoff.killkey.036|                           compte. C est l etat livre - et c est pourquoi elle
+::X|FR|rad.powerthrottlingoff.killkey.037|                           est supprimee au lieu d etre mise a 0 : pour ce
+::X|FR|rad.powerthrottlingoff.killkey.038|                           reglage, ecrire 0 ne restaurerait pas le defaut, ca
+::X|FR|rad.powerthrottlingoff.killkey.039|                           ajouterait un troisieme etat.
+::X|FR|rad.powerthrottlingoff.killkey.040|    1                    : Conserver le forcage. Plus rien n est ralenti au
+::X|FR|rad.powerthrottlingoff.killkey.041|                           motif d etre du travail d arriere-plan, sur aucun
+::X|FR|rad.powerthrottlingoff.killkey.042|                           coeur, a aucun moment.
+::X|FR|rad.powerthrottlingoff.killkey.043|    0                    : Comportement identique a l absence, mais c est une
+::X|FR|rad.powerthrottlingoff.killkey.044|                           valeur qu une machine d usine n a pas. Aucun
+::X|FR|rad.powerthrottlingoff.killkey.045|                           argument pour la preferer a DELETE.
+::X|FR|rad.powerthrottlingoff.killkey.046|
+::X|FR|rad.powerthrottlingoff.killkey.047|  Pourquoi ces profils : Meme valeur, meme table que power-throttling-off et
+::X|FR|rad.powerthrottlingoff.killkey.048|                         gr-powerthrottlingoff-del - trois chemins de code, un
+::X|FR|rad.powerthrottlingoff.killkey.049|                         seul DWORD, et les reponses doivent concorder sous
+::X|FR|rad.powerthrottlingoff.killkey.050|                         peine de contradiction. Serveur garde 1 : sur une
+::X|FR|rad.powerthrottlingoff.killkey.051|                         machine sans ecran, le client torrent, le transcodage
+::X|FR|rad.powerthrottlingoff.killkey.052|                         Plex et le serveur de jeu sont tous de l arriere-plan
+::X|FR|rad.powerthrottlingoff.killkey.053|                         au sens de Windows, donc EcoQoS bride la raison meme
+::X|FR|rad.powerthrottlingoff.killkey.054|                         d exister de la machine. Tous les autres suppriment.
+::X|FR|rad.powerthrottlingoff.killkey.055|                         Gaming supprime volontairement : le forcage n a
+::X|FR|rad.powerthrottlingoff.killkey.056|                         jamais touche a votre jeu, et son effet reel etait de
+::X|FR|rad.powerthrottlingoff.killkey.057|                         laisser Defender tourner a pleine vitesse pendant que
+::X|FR|rad.powerthrottlingoff.killkey.058|                         vous jouiez. Bureau et Portable suppriment pour la
+::X|FR|rad.powerthrottlingoff.killkey.059|                         chaleur, le bruit et l autonomie. Windows supprime
+::X|FR|rad.powerthrottlingoff.killkey.060|                         parce que l absence, c est l usine. A noter : aucun
+::X|FR|rad.powerthrottlingoff.killkey.061|                         code ne lit cette ligne - Re-assert good defaults ne
+::X|FR|rad.powerthrottlingoff.killkey.062|                         touche plus la valeur, donc le 1 d un serveur y
+::X|FR|rad.powerthrottlingoff.killkey.063|                         survit, tandis qu Undo ALL la supprime sur toutes les
+::X|FR|rad.powerthrottlingoff.killkey.064|                         machines, serveur compris. Seule la question
+::X|FR|rad.powerthrottlingoff.killkey.065|                         power.throttling.off de la configuration systeme
+::X|FR|rad.powerthrottlingoff.killkey.066|                         ecrit le 1 de la colonne Serveur.
+::X|FR|rad.powerthrottlingoff.killkey.067|
+::X|FR|rad.powerthrottlingoff.killkey.068|  Cible           : reg delete "HKLM\SYSTEM\CurrentControlSet\Control\Power\Po
+::X|FR|rad.powerthrottlingoff.killkey.069|                    werThrottling" /v "PowerThrottlingOff" /f dans
+::X|FR|rad.powerthrottlingoff.killkey.070|                    :gaming_restore (Undo ALL OPTY profiles), sous
+::X|FR|rad.powerthrottlingoff.killkey.071|                    « Re-enabling CPU power throttling ». Plus dans
+::X|FR|rad.powerthrottlingoff.killkey.072|                    :reassert_defaults : la note qui suit son etape de residus
+::X|FR|rad.powerthrottlingoff.killkey.073|                    GPU, sous :rad_pwrdone, explique pourquoi. Aucun code ne
+::X|FR|rad.powerthrottlingoff.killkey.074|                    pose cette fiche ; la valeur est ecrite par :askreg
+::X|FR|rad.powerthrottlingoff.killkey.075|                    "power.throttling.off" dans :ss_usb.
 ::
 :: ---- powercfg.ultimate.create (preference) --------------------------
 ::P|powercfg.ultimate.create|ACTIVATE|CREATE|SKIP|SKIP|DELETE|
@@ -15790,210 +15805,227 @@ goto :eof
 ::X|EN|rad.overlay.killkey.004|                    DisableIndependentFlip under Dwm, and DisableOverlays
 ::X|EN|rad.overlay.killkey.005|                    under GraphicsDrivers.
 ::X|EN|rad.overlay.killkey.006|
-::X|EN|rad.overlay.killkey.007|  Actual effect   : Deletes values, and says so per value. Writing 0 would
-::X|EN|rad.overlay.killkey.008|                    not restore the default - only absence does. What is
-::X|EN|rad.overlay.killkey.009|                    deleted depends on where the card runs. Answered in
-::X|EN|rad.overlay.killkey.010|                    the GPU setup, it goes through :askreg for
-::X|EN|rad.overlay.killkey.011|                    OverlayTestMode alone: the other three are left as
-::X|EN|rad.overlay.killkey.012|                    they are. Re-assert good defaults deletes all four,
-::X|EN|rad.overlay.killkey.013|                    with no question. Undo ALL OPTY profiles deletes
-::X|EN|rad.overlay.killkey.014|                    OverlayTestMode, OverlayMinFPS and DisableOverlays,
-::X|EN|rad.overlay.killkey.015|                    but not DisableIndependentFlip.
-::X|EN|rad.overlay.killkey.016|
-::X|EN|rad.overlay.killkey.017|  Gain            : The GPU can use hardware planes and independent flip
-::X|EN|rad.overlay.killkey.018|                    again: DWM skips a full-screen composite pass per
-::X|EN|rad.overlay.killkey.019|                    frame while a window is on top, and a covering
-::X|EN|rad.overlay.killkey.020|                    borderless window can flip straight to the display
-::X|EN|rad.overlay.killkey.021|                    instead of being copied. Lower GPU power and one less
-::X|EN|rad.overlay.killkey.022|                    stage of latency in windowed and borderless. Nothing
-::X|EN|rad.overlay.killkey.023|                    changes in exclusive fullscreen.
-::X|EN|rad.overlay.killkey.024|
-::X|EN|rad.overlay.killkey.025|  Cost            : If one of these was suppressing a real multi-monitor
-::X|EN|rad.overlay.killkey.026|                    flicker, it can come back. Reboot to take effect.
-::X|EN|rad.overlay.killkey.027|
-::X|EN|rad.overlay.killkey.028|  Windows default : All four absent.
-::X|EN|rad.overlay.killkey.029|
-::X|EN|rad.overlay.killkey.030|  Possible values:
-::X|EN|rad.overlay.killkey.031|    DELETE               : All four removed - except in the GPU setup,
-::X|EN|rad.overlay.killkey.032|                           where the answer covers OverlayTestMode only.
-::X|EN|rad.overlay.killkey.033|                           :killkey queries first and only deletes what
-::X|EN|rad.overlay.killkey.034|                           is actually present, so it reports 'leftover
-::X|EN|rad.overlay.killkey.035|                           found' rather than pretending it repaired
-::X|EN|rad.overlay.killkey.036|                           something on a clean machine. This is the
-::X|EN|rad.overlay.killkey.037|                           shipped state for every one of the four.
-::X|EN|rad.overlay.killkey.038|    DisableIndependentFlip=1 :
-::X|EN|rad.overlay.killkey.039|        The one value on this list that is not part of the MPO recipe.
-::X|EN|rad.overlay.killkey.040|        Independent flip is what lets a fullscreen-borderless window whose
-::X|EN|rad.overlay.killkey.041|        swapchain covers the screen have its buffers flipped straight to
-::X|EN|rad.overlay.killkey.042|        the display, bypassing DWM's copy - it is why borderless can
-::X|EN|rad.overlay.killkey.043|        behave like exclusive fullscreen for latency and VRR. Forcing 1
-::X|EN|rad.overlay.killkey.044|        puts the copy back in.
-::X|EN|rad.overlay.killkey.045|    OverlayTestMode=5    : The published MPO kill switch. DWM stops
-::X|EN|rad.overlay.killkey.046|                           offering hardware planes to the driver and
-::X|EN|rad.overlay.killkey.047|                           every windowed frame goes through a full
-::X|EN|rad.overlay.killkey.048|                           desktop composite.
-::X|EN|rad.overlay.killkey.049|    OverlayMinFPS=0 / DisableOverlays=1 :
-::X|EN|rad.overlay.killkey.050|        The two script-folklore companions. Neither is in Microsoft's
-::X|EN|rad.overlay.killkey.051|        published procedure and I could not find documentation of their
-::X|EN|rad.overlay.killkey.052|        effect. They are deleted because absent is the shipped state, not
-::X|EN|rad.overlay.killkey.053|        because their effect is understood.
-::X|EN|rad.overlay.killkey.054|    0 on any of the four : Never a restore. For all four, the Windows
-::X|EN|rad.overlay.killkey.055|                           default is the value not existing, so writing 0
-::X|EN|rad.overlay.killkey.056|                           leaves a written override behind that happens
-::X|EN|rad.overlay.killkey.057|                           to read as zero. Only deletion returns the
-::X|EN|rad.overlay.killkey.058|                           machine to stock - which is the entire reason
-::X|EN|rad.overlay.killkey.059|                           :killkey exists as a separate helper from
-::X|EN|rad.overlay.killkey.060|                           :regset.
-::X|EN|rad.overlay.killkey.061|
-::X|EN|rad.overlay.killkey.062|  Why these profiles : All five delete. There is no honest way to split
-::X|EN|rad.overlay.killkey.063|                       this by intent: Windows never writes any of the
-::X|EN|rad.overlay.killkey.064|                       four, so on every profile the correct state is the
-::X|EN|rad.overlay.killkey.065|                       same one, and a difference invented here would be a
-::X|EN|rad.overlay.killkey.066|                       difference invented from nothing. The server
-::X|EN|rad.overlay.killkey.067|                       profile deletes too - a headless box gains nothing
-::X|EN|rad.overlay.killkey.068|                       from it, but it loses nothing either, and residue
-::X|EN|rad.overlay.killkey.069|                       that only matters once someone attaches a display
-::X|EN|rad.overlay.killkey.070|                       is exactly the residue worth removing while you are
-::X|EN|rad.overlay.killkey.071|                       already in the registry. The one machine that
-::X|EN|rad.overlay.killkey.072|                       should keep OverlayTestMode is one with a live,
-::X|EN|rad.overlay.killkey.073|                       reproducible flicker, and that decision belongs on
-::X|EN|rad.overlay.killkey.074|                       the flicker-workaround card.
-::X|EN|rad.overlay.killkey.075|
-::X|EN|rad.overlay.killkey.076|  Known problems  : None from removing them. Concrete symptom of leaving
-::X|EN|rad.overlay.killkey.077|                    DisableIndependentFlip=1 in place: borderless windowed
-::X|EN|rad.overlay.killkey.078|                    games stay stuck at the desktop refresh rate with VRR
-::X|EN|rad.overlay.killkey.079|                    inactive, and the usual advice - switch to exclusive
-::X|EN|rad.overlay.killkey.080|                    fullscreen - masks it instead of fixing it.
-::X|EN|rad.overlay.killkey.081|
-::X|EN|rad.overlay.killkey.082|  Unverified      : OPTY deliberately does NOT remove
-::X|EN|rad.overlay.killkey.083|                    UnsupportedMonitorModesAllowed from the same key, and
-::X|EN|rad.overlay.killkey.084|                    the in-file comment explains why: it is dxgkrnl's
-::X|EN|rad.overlay.killkey.085|                    custom-timing gate used by CRU and Adrenalin custom
-::X|EN|rad.overlay.killkey.086|                    modes, unrelated to MPO, and nothing in the script
-::X|EN|rad.overlay.killkey.087|                    would write it back. That reasoning looks right to me,
-::X|EN|rad.overlay.killkey.088|                    but it means this card is not 'clear the whole key'
-::X|EN|rad.overlay.killkey.089|                    and should not be described as such.
-::X|EN|rad.overlay.killkey.090|
-::X|EN|rad.overlay.killkey.091|  Target          : call :askreg "rad.overlay.killkey" on
-::X|EN|rad.overlay.killkey.092|                    HKLM\SOFTWARE\Microsoft\Windows\Dwm OverlayTestMode in
-::X|EN|rad.overlay.killkey.093|                    :setup_gpu (the only value the question covers); call
-::X|EN|rad.overlay.killkey.094|                    :killkey on HKLM\SOFTWARE\Microsoft\Windows\Dwm for
-::X|EN|rad.overlay.killkey.095|                    OverlayTestMode, OverlayMinFPS,
-::X|EN|rad.overlay.killkey.096|                    DisableIndependentFlip, and on
-::X|EN|rad.overlay.killkey.097|                    HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers
-::X|EN|rad.overlay.killkey.098|                    for DisableOverlays in :reassert_defaults; reg delete
-::X|EN|rad.overlay.killkey.099|                    of OverlayTestMode, OverlayMinFPS and DisableOverlays
-::X|EN|rad.overlay.killkey.100|                    in :gaming_restore.
+::X|EN|rad.overlay.killkey.007|  Actual effect   : Deletes values, and says so per value. Writing 0 would not
+::X|EN|rad.overlay.killkey.008|                    restore the default - only absence does. All three places
+::X|EN|rad.overlay.killkey.009|                    that run this card now delete all four. Answered in the
+::X|EN|rad.overlay.killkey.010|                    GPU setup (:setup_gpu), it is asked with :ask and, on
+::X|EN|rad.overlay.killkey.011|                    DELETE, each of the four goes through :killkey; it used to
+::X|EN|rad.overlay.killkey.012|                    go through :askreg for OverlayTestMode alone, which left
+::X|EN|rad.overlay.killkey.013|                    the other three behind. Re-assert good defaults deletes
+::X|EN|rad.overlay.killkey.014|                    all four through :killkey, with no question. Undo ALL OPTY
+::X|EN|rad.overlay.killkey.015|                    profiles deletes all four too, DisableIndependentFlip
+::X|EN|rad.overlay.killkey.016|                    included, with a plain reg delete.
+::X|EN|rad.overlay.killkey.017|
+::X|EN|rad.overlay.killkey.018|  Gain            : The GPU can use hardware planes and independent flip
+::X|EN|rad.overlay.killkey.019|                    again: DWM skips a full-screen composite pass per
+::X|EN|rad.overlay.killkey.020|                    frame while a window is on top, and a covering
+::X|EN|rad.overlay.killkey.021|                    borderless window can flip straight to the display
+::X|EN|rad.overlay.killkey.022|                    instead of being copied. Lower GPU power and one less
+::X|EN|rad.overlay.killkey.023|                    stage of latency in windowed and borderless. Nothing
+::X|EN|rad.overlay.killkey.024|                    changes in exclusive fullscreen.
+::X|EN|rad.overlay.killkey.025|
+::X|EN|rad.overlay.killkey.026|  Cost            : If one of these was suppressing a real multi-monitor
+::X|EN|rad.overlay.killkey.027|                    flicker, it can come back. Reboot to take effect.
+::X|EN|rad.overlay.killkey.028|
+::X|EN|rad.overlay.killkey.029|  Windows default : All four absent.
+::X|EN|rad.overlay.killkey.030|
+::X|EN|rad.overlay.killkey.031|  Possible values:
+::X|EN|rad.overlay.killkey.032|    DELETE               : All four removed, wherever the card runs. :killkey
+::X|EN|rad.overlay.killkey.033|                           (GPU setup and Re-assert good defaults) queries
+::X|EN|rad.overlay.killkey.034|                           first and only deletes what is actually present, so
+::X|EN|rad.overlay.killkey.035|                           it reports 'leftover found' rather than pretending
+::X|EN|rad.overlay.killkey.036|                           it repaired something on a clean machine; Undo ALL
+::X|EN|rad.overlay.killkey.037|                           uses a plain reg delete and reports nothing per
+::X|EN|rad.overlay.killkey.038|                           value. This is the shipped state for every one of
+::X|EN|rad.overlay.killkey.039|                           the four.
+::X|EN|rad.overlay.killkey.040|    DisableIndependentFlip=1 :
+::X|EN|rad.overlay.killkey.041|        The one value on this list that is not part of the MPO recipe.
+::X|EN|rad.overlay.killkey.042|        Independent flip is what lets a fullscreen-borderless window whose
+::X|EN|rad.overlay.killkey.043|        swapchain covers the screen have its buffers flipped straight to
+::X|EN|rad.overlay.killkey.044|        the display, bypassing DWM's copy - it is why borderless can
+::X|EN|rad.overlay.killkey.045|        behave like exclusive fullscreen for latency and VRR. Forcing 1
+::X|EN|rad.overlay.killkey.046|        puts the copy back in.
+::X|EN|rad.overlay.killkey.047|    OverlayTestMode=5    : The published MPO kill switch. DWM stops offering
+::X|EN|rad.overlay.killkey.048|                           hardware planes to the driver and every windowed
+::X|EN|rad.overlay.killkey.049|                           frame goes through a full desktop composite.
+::X|EN|rad.overlay.killkey.050|                           Reported to be no longer honoured on 24H2/25H2 (see
+::X|EN|rad.overlay.killkey.051|                           Unverified).
+::X|EN|rad.overlay.killkey.052|    OverlayMinFPS=0 / DisableOverlays=1 :
+::X|EN|rad.overlay.killkey.053|        The two script-folklore companions. Neither is in Microsoft's
+::X|EN|rad.overlay.killkey.054|        published procedure and I could not find documentation of their
+::X|EN|rad.overlay.killkey.055|        effect. They are deleted because absent is the shipped state, not
+::X|EN|rad.overlay.killkey.056|        because their effect is understood.
+::X|EN|rad.overlay.killkey.057|    0 on any of the four : Never a restore. For all four, the Windows
+::X|EN|rad.overlay.killkey.058|                           default is the value not existing, so writing 0
+::X|EN|rad.overlay.killkey.059|                           leaves a written override behind that happens
+::X|EN|rad.overlay.killkey.060|                           to read as zero. Only deletion returns the
+::X|EN|rad.overlay.killkey.061|                           machine to stock - which is the entire reason
+::X|EN|rad.overlay.killkey.062|                           :killkey exists as a separate helper from
+::X|EN|rad.overlay.killkey.063|                           :regset.
+::X|EN|rad.overlay.killkey.064|
+::X|EN|rad.overlay.killkey.065|  Why these profiles : All five delete. There is no honest way to split
+::X|EN|rad.overlay.killkey.066|                       this by intent: Windows never writes any of the
+::X|EN|rad.overlay.killkey.067|                       four, so on every profile the correct state is the
+::X|EN|rad.overlay.killkey.068|                       same one, and a difference invented here would be a
+::X|EN|rad.overlay.killkey.069|                       difference invented from nothing. The server
+::X|EN|rad.overlay.killkey.070|                       profile deletes too - a headless box gains nothing
+::X|EN|rad.overlay.killkey.071|                       from it, but it loses nothing either, and residue
+::X|EN|rad.overlay.killkey.072|                       that only matters once someone attaches a display
+::X|EN|rad.overlay.killkey.073|                       is exactly the residue worth removing while you are
+::X|EN|rad.overlay.killkey.074|                       already in the registry. The one machine that
+::X|EN|rad.overlay.killkey.075|                       should keep OverlayTestMode is one with a live,
+::X|EN|rad.overlay.killkey.076|                       reproducible flicker, and that decision belongs on
+::X|EN|rad.overlay.killkey.077|                       the flicker-workaround card.
+::X|EN|rad.overlay.killkey.078|
+::X|EN|rad.overlay.killkey.079|  Known problems  : None from removing them. Concrete symptom of leaving
+::X|EN|rad.overlay.killkey.080|                    DisableIndependentFlip=1 in place: borderless windowed
+::X|EN|rad.overlay.killkey.081|                    games stay stuck at the desktop refresh rate with VRR
+::X|EN|rad.overlay.killkey.082|                    inactive, and the usual advice - switch to exclusive
+::X|EN|rad.overlay.killkey.083|                    fullscreen - masks it instead of fixing it.
+::X|EN|rad.overlay.killkey.084|
+::X|EN|rad.overlay.killkey.085|  Unverified      : OPTY deliberately does NOT remove
+::X|EN|rad.overlay.killkey.086|                    UnsupportedMonitorModesAllowed from the same key, and the
+::X|EN|rad.overlay.killkey.087|                    in-file comment explains why: it is dxgkrnl's
+::X|EN|rad.overlay.killkey.088|                    custom-timing gate used by CRU and Adrenalin custom modes,
+::X|EN|rad.overlay.killkey.089|                    unrelated to MPO, and nothing in the script would write it
+::X|EN|rad.overlay.killkey.090|                    back. That reasoning looks right to me, but it means this
+::X|EN|rad.overlay.killkey.091|                    card is not 'clear the whole key' and should not be
+::X|EN|rad.overlay.killkey.092|                    described as such. Separately, community reports
+::X|EN|rad.overlay.killkey.093|                    (MiniTool; RedDot MPO-GPU-FIX issue 26, 2025-12-31) say
+::X|EN|rad.overlay.killkey.094|                    OverlayTestMode alone is no longer honoured on 24H2/25H2
+::X|EN|rad.overlay.killkey.095|                    and that DisableOverlays is the one that still disables
+::X|EN|rad.overlay.killkey.096|                    MPO there. UNVERIFIED - not tested here. If it holds, a
+::X|EN|rad.overlay.killkey.097|                    leftover DisableOverlays is the one that matters on
+::X|EN|rad.overlay.killkey.098|                    current builds, which is why the GPU setup no longer
+::X|EN|rad.overlay.killkey.099|                    removes OverlayTestMode alone.
+::X|EN|rad.overlay.killkey.100|
+::X|EN|rad.overlay.killkey.101|  Target          : call :ask "rad.overlay.killkey" in :setup_gpu; on DELETE,
+::X|EN|rad.overlay.killkey.102|                    call :killkey on HKLM\SOFTWARE\Microsoft\Windows\Dwm for
+::X|EN|rad.overlay.killkey.103|                    OverlayTestMode, OverlayMinFPS, DisableIndependentFlip,
+::X|EN|rad.overlay.killkey.104|                    and on
+::X|EN|rad.overlay.killkey.105|                    HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers for
+::X|EN|rad.overlay.killkey.106|                    DisableOverlays, ending at :sg_mpo_done (SKIP or any other
+::X|EN|rad.overlay.killkey.107|                    answer jumps straight there). The same four :killkey calls
+::X|EN|rad.overlay.killkey.108|                    run in :reassert_defaults; reg delete of the same four
+::X|EN|rad.overlay.killkey.109|                    values in :gaming_restore.
 ::X|FR|rad.overlay.killkey.001|  Ce que c est    : Quatre valeurs laissees par d anciens scripts de
 ::X|FR|rad.overlay.killkey.002|                    reglage, qui toutes suppriment une partie du chemin de
 ::X|FR|rad.overlay.killkey.003|                    presentation moderne : OverlayTestMode, OverlayMinFPS
 ::X|FR|rad.overlay.killkey.004|                    et DisableIndependentFlip sous Dwm, et DisableOverlays
 ::X|FR|rad.overlay.killkey.005|                    sous GraphicsDrivers.
 ::X|FR|rad.overlay.killkey.006|
-::X|FR|rad.overlay.killkey.007|  Effet reel      : Supprime des valeurs, et le dit valeur par valeur.
-::X|FR|rad.overlay.killkey.008|                    Ecrire 0 ne retablirait pas le defaut : seule
-::X|FR|rad.overlay.killkey.009|                    l absence le fait. Ce qui est supprime depend de
-::X|FR|rad.overlay.killkey.010|                    l endroit ou la fiche s execute. Posee dans la
-::X|FR|rad.overlay.killkey.011|                    configuration GPU, elle passe par :askreg pour
-::X|FR|rad.overlay.killkey.012|                    OverlayTestMode seul : les trois autres restent en
-::X|FR|rad.overlay.killkey.013|                    place. Re-assert good defaults supprime les quatre,
-::X|FR|rad.overlay.killkey.014|                    sans question. Undo ALL OPTY profiles supprime
-::X|FR|rad.overlay.killkey.015|                    OverlayTestMode, OverlayMinFPS et DisableOverlays,
-::X|FR|rad.overlay.killkey.016|                    mais pas DisableIndependentFlip.
-::X|FR|rad.overlay.killkey.017|
-::X|FR|rad.overlay.killkey.018|  Gain            : Le GPU peut de nouveau utiliser les plans materiels et
-::X|FR|rad.overlay.killkey.019|                    l independent flip : DWM saute une passe de
-::X|FR|rad.overlay.killkey.020|                    composition plein ecran par image tant qu une fenetre
-::X|FR|rad.overlay.killkey.021|                    est au premier plan, et une fenetre borderless qui
-::X|FR|rad.overlay.killkey.022|                    couvre l ecran peut basculer directement vers
-::X|FR|rad.overlay.killkey.023|                    l affichage au lieu d etre recopiee. Moins de
-::X|FR|rad.overlay.killkey.024|                    consommation GPU et un etage de latence en moins en
-::X|FR|rad.overlay.killkey.025|                    fenetre et en borderless. Rien ne change en plein
-::X|FR|rad.overlay.killkey.026|                    ecran exclusif.
-::X|FR|rad.overlay.killkey.027|
-::X|FR|rad.overlay.killkey.028|  Cout            : Si l une d elles masquait un vrai scintillement multi-
-::X|FR|rad.overlay.killkey.029|                    ecran, il peut revenir. Redemarrage necessaire pour
-::X|FR|rad.overlay.killkey.030|                    que ce soit effectif.
-::X|FR|rad.overlay.killkey.031|
-::X|FR|rad.overlay.killkey.032|  Defaut Windows  : Les quatre absentes.
-::X|FR|rad.overlay.killkey.033|
-::X|FR|rad.overlay.killkey.034|  Valeurs possibles :
-::X|FR|rad.overlay.killkey.035|    DELETE               : Les quatre supprimees - sauf dans la
-::X|FR|rad.overlay.killkey.036|                           configuration GPU, ou la reponse ne couvre que
-::X|FR|rad.overlay.killkey.037|                           OverlayTestMode. :killkey interroge d abord et
-::X|FR|rad.overlay.killkey.038|                           ne supprime que ce qui existe reellement : il
-::X|FR|rad.overlay.killkey.039|                           annonce « residu trouve » plutot que de faire
-::X|FR|rad.overlay.killkey.040|                           croire a une reparation sur une machine propre.
-::X|FR|rad.overlay.killkey.041|                           C est l etat d origine pour chacune des quatre.
-::X|FR|rad.overlay.killkey.042|    DisableIndependentFlip=1 :
-::X|FR|rad.overlay.killkey.043|        La seule valeur de cette liste qui ne fait pas partie de la
-::X|FR|rad.overlay.killkey.044|        recette MPO. L independent flip, c est ce qui permet a une fenetre
-::X|FR|rad.overlay.killkey.045|        borderless plein ecran, dont le swapchain couvre tout l ecran, de
-::X|FR|rad.overlay.killkey.046|        voir ses tampons bascules directement vers l affichage, sans la
-::X|FR|rad.overlay.killkey.047|        copie de DWM : c est pour cela que le borderless peut se comporter
-::X|FR|rad.overlay.killkey.048|        comme du plein ecran exclusif en latence et en VRR. Forcer 1 remet
-::X|FR|rad.overlay.killkey.049|        la copie dans le chemin.
-::X|FR|rad.overlay.killkey.050|    OverlayTestMode=5    : L interrupteur d arret publie du MPO. DWM cesse
-::X|FR|rad.overlay.killkey.051|                           de proposer des plans materiels au pilote et
-::X|FR|rad.overlay.killkey.052|                           chaque image en fenetre repasse par une
-::X|FR|rad.overlay.killkey.053|                           composition complete du bureau.
-::X|FR|rad.overlay.killkey.054|    OverlayMinFPS=0 / DisableOverlays=1 :
-::X|FR|rad.overlay.killkey.055|        Les deux compagnons issus du folklore des scripts. Ni l un ni
-::X|FR|rad.overlay.killkey.056|        l autre ne figure dans la procedure publiee par Microsoft, et je
-::X|FR|rad.overlay.killkey.057|        n ai trouve aucune documentation sur leur effet. On les supprime
-::X|FR|rad.overlay.killkey.058|        parce que l absence est l etat d origine, pas parce qu on
-::X|FR|rad.overlay.killkey.059|        comprendrait ce qu elles font.
-::X|FR|rad.overlay.killkey.060|    0 on any of the four : Jamais un retour a l origine. Pour les quatre,
-::X|FR|rad.overlay.killkey.061|                           le defaut Windows est l inexistence de la
-::X|FR|rad.overlay.killkey.062|                           valeur : ecrire 0 laisse derriere un forcage
-::X|FR|rad.overlay.killkey.063|                           ecrit qui vaut zero. Seule la suppression
-::X|FR|rad.overlay.killkey.064|                           ramene la machine a l etat d usine - c est
-::X|FR|rad.overlay.killkey.065|                           toute la raison d etre de :killkey comme
-::X|FR|rad.overlay.killkey.066|                           fonction distincte de :regset.
-::X|FR|rad.overlay.killkey.067|
-::X|FR|rad.overlay.killkey.068|  Pourquoi ces profils : Les cinq suppriment. Il n y a pas de facon
-::X|FR|rad.overlay.killkey.069|                         honnete de decouper cela par intention : Windows
-::X|FR|rad.overlay.killkey.070|                         n ecrit jamais aucune des quatre, donc sur chaque
-::X|FR|rad.overlay.killkey.071|                         profil le bon etat est le meme, et une difference
-::X|FR|rad.overlay.killkey.072|                         inventee ici serait une difference inventee a
-::X|FR|rad.overlay.killkey.073|                         partir de rien. Le profil serveur supprime aussi
-::X|FR|rad.overlay.killkey.074|                         : une machine sans ecran n y gagne rien, mais
-::X|FR|rad.overlay.killkey.075|                         elle n y perd rien non plus, et un residu qui ne
-::X|FR|rad.overlay.killkey.076|                         se manifeste qu une fois un ecran branche est
-::X|FR|rad.overlay.killkey.077|                         justement celui qu on retire pendant qu on est
-::X|FR|rad.overlay.killkey.078|                         deja dans le registre. La seule machine qui
-::X|FR|rad.overlay.killkey.079|                         devrait garder OverlayTestMode est celle qui a un
-::X|FR|rad.overlay.killkey.080|                         scintillement reel et reproductible, et cette
-::X|FR|rad.overlay.killkey.081|                         decision releve de la carte de contournement.
-::X|FR|rad.overlay.killkey.082|
-::X|FR|rad.overlay.killkey.083|  Problemes connus : Aucun du fait de la suppression. Symptome concret si
-::X|FR|rad.overlay.killkey.084|                     l on laisse DisableIndependentFlip=1 en place : les
-::X|FR|rad.overlay.killkey.085|                     jeux en fenetre sans bordure restent bloques a la
-::X|FR|rad.overlay.killkey.086|                     frequence du bureau, VRR inactif, et le conseil
-::X|FR|rad.overlay.killkey.087|                     habituel - passer en plein ecran exclusif - masque le
-::X|FR|rad.overlay.killkey.088|                     probleme au lieu de le corriger.
-::X|FR|rad.overlay.killkey.089|
-::X|FR|rad.overlay.killkey.090|  Non verifie (en)  : OPTY deliberately does NOT remove
-::X|FR|rad.overlay.killkey.091|                      UnsupportedMonitorModesAllowed from the same key,
-::X|FR|rad.overlay.killkey.092|                      and the in-file comment explains why: it is
-::X|FR|rad.overlay.killkey.093|                      dxgkrnl s custom-timing gate used by CRU and
-::X|FR|rad.overlay.killkey.094|                      Adrenalin custom modes, unrelated to MPO, and
-::X|FR|rad.overlay.killkey.095|                      nothing in the script would write it back. That
-::X|FR|rad.overlay.killkey.096|                      reasoning looks right to me, but it means this card
-::X|FR|rad.overlay.killkey.097|                      is not  clear the whole key  and should not be
-::X|FR|rad.overlay.killkey.098|                      described as such.
-::X|FR|rad.overlay.killkey.099|
-::X|FR|rad.overlay.killkey.100|  Cible           : call :askreg "rad.overlay.killkey" sur
-::X|FR|rad.overlay.killkey.101|                    HKLM\SOFTWARE\Microsoft\Windows\Dwm OverlayTestMode dans
-::X|FR|rad.overlay.killkey.102|                    :setup_gpu (la seule valeur couverte par la
-::X|FR|rad.overlay.killkey.103|                    question) ; call :killkey sur
-::X|FR|rad.overlay.killkey.104|                    HKLM\SOFTWARE\Microsoft\Windows\Dwm pour
-::X|FR|rad.overlay.killkey.105|                    OverlayTestMode, OverlayMinFPS,
-::X|FR|rad.overlay.killkey.106|                    DisableIndependentFlip, et sur
-::X|FR|rad.overlay.killkey.107|                    HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers
-::X|FR|rad.overlay.killkey.108|                    pour DisableOverlays dans :reassert_defaults ; reg
-::X|FR|rad.overlay.killkey.109|                    delete de OverlayTestMode, OverlayMinFPS et
-::X|FR|rad.overlay.killkey.110|                    DisableOverlays dans :gaming_restore.
+::X|FR|rad.overlay.killkey.007|  Effet reel      : Supprime des valeurs, et le dit valeur par valeur. Ecrire
+::X|FR|rad.overlay.killkey.008|                    0 ne retablirait pas le defaut : seule l absence le fait.
+::X|FR|rad.overlay.killkey.009|                    Les trois endroits qui executent cette fiche suppriment
+::X|FR|rad.overlay.killkey.010|                    desormais les quatre. Posee dans la configuration GPU
+::X|FR|rad.overlay.killkey.011|                    (:setup_gpu), elle est demandee par :ask et, sur DELETE,
+::X|FR|rad.overlay.killkey.012|                    chacune des quatre passe par :killkey ; elle passait avant
+::X|FR|rad.overlay.killkey.013|                    par :askreg pour OverlayTestMode seul, ce qui laissait les
+::X|FR|rad.overlay.killkey.014|                    trois autres en place. Re-assert good defaults supprime
+::X|FR|rad.overlay.killkey.015|                    les quatre via :killkey, sans question. Undo ALL OPTY
+::X|FR|rad.overlay.killkey.016|                    profiles supprime aussi les quatre, DisableIndependentFlip
+::X|FR|rad.overlay.killkey.017|                    compris, par un simple reg delete.
+::X|FR|rad.overlay.killkey.018|
+::X|FR|rad.overlay.killkey.019|  Gain            : Le GPU peut de nouveau utiliser les plans materiels et
+::X|FR|rad.overlay.killkey.020|                    l independent flip : DWM saute une passe de
+::X|FR|rad.overlay.killkey.021|                    composition plein ecran par image tant qu une fenetre
+::X|FR|rad.overlay.killkey.022|                    est au premier plan, et une fenetre borderless qui
+::X|FR|rad.overlay.killkey.023|                    couvre l ecran peut basculer directement vers
+::X|FR|rad.overlay.killkey.024|                    l affichage au lieu d etre recopiee. Moins de
+::X|FR|rad.overlay.killkey.025|                    consommation GPU et un etage de latence en moins en
+::X|FR|rad.overlay.killkey.026|                    fenetre et en borderless. Rien ne change en plein
+::X|FR|rad.overlay.killkey.027|                    ecran exclusif.
+::X|FR|rad.overlay.killkey.028|
+::X|FR|rad.overlay.killkey.029|  Cout            : Si l une d elles masquait un vrai scintillement multi-
+::X|FR|rad.overlay.killkey.030|                    ecran, il peut revenir. Redemarrage necessaire pour
+::X|FR|rad.overlay.killkey.031|                    que ce soit effectif.
+::X|FR|rad.overlay.killkey.032|
+::X|FR|rad.overlay.killkey.033|  Defaut Windows  : Les quatre absentes.
+::X|FR|rad.overlay.killkey.034|
+::X|FR|rad.overlay.killkey.035|  Valeurs possibles :
+::X|FR|rad.overlay.killkey.036|    DELETE               : Les quatre supprimees, ou que la fiche s execute.
+::X|FR|rad.overlay.killkey.037|                           :killkey (configuration GPU et Re-assert good
+::X|FR|rad.overlay.killkey.038|                           defaults) interroge d abord et ne supprime que ce
+::X|FR|rad.overlay.killkey.039|                           qui existe reellement : il annonce « residu
+::X|FR|rad.overlay.killkey.040|                           trouve » plutot que de faire croire a une
+::X|FR|rad.overlay.killkey.041|                           reparation sur une machine propre ; Undo ALL passe
+::X|FR|rad.overlay.killkey.042|                           par un simple reg delete et ne signale rien valeur
+::X|FR|rad.overlay.killkey.043|                           par valeur. C est l etat d origine pour chacune des
+::X|FR|rad.overlay.killkey.044|                           quatre.
+::X|FR|rad.overlay.killkey.045|    DisableIndependentFlip=1 :
+::X|FR|rad.overlay.killkey.046|        La seule valeur de cette liste qui ne fait pas partie de la
+::X|FR|rad.overlay.killkey.047|        recette MPO. L independent flip, c est ce qui permet a une fenetre
+::X|FR|rad.overlay.killkey.048|        borderless plein ecran, dont le swapchain couvre tout l ecran, de
+::X|FR|rad.overlay.killkey.049|        voir ses tampons bascules directement vers l affichage, sans la
+::X|FR|rad.overlay.killkey.050|        copie de DWM : c est pour cela que le borderless peut se comporter
+::X|FR|rad.overlay.killkey.051|        comme du plein ecran exclusif en latence et en VRR. Forcer 1 remet
+::X|FR|rad.overlay.killkey.052|        la copie dans le chemin.
+::X|FR|rad.overlay.killkey.053|    OverlayTestMode=5    : L interrupteur d arret publie du MPO. DWM cesse de
+::X|FR|rad.overlay.killkey.054|                           proposer des plans materiels au pilote et chaque
+::X|FR|rad.overlay.killkey.055|                           image en fenetre repasse par une composition
+::X|FR|rad.overlay.killkey.056|                           complete du bureau. Il ne serait plus pris en
+::X|FR|rad.overlay.killkey.057|                           compte sous 24H2/25H2 (voir Non verifie).
+::X|FR|rad.overlay.killkey.058|    OverlayMinFPS=0 / DisableOverlays=1 :
+::X|FR|rad.overlay.killkey.059|        Les deux compagnons issus du folklore des scripts. Ni l un ni
+::X|FR|rad.overlay.killkey.060|        l autre ne figure dans la procedure publiee par Microsoft, et je
+::X|FR|rad.overlay.killkey.061|        n ai trouve aucune documentation sur leur effet. On les supprime
+::X|FR|rad.overlay.killkey.062|        parce que l absence est l etat d origine, pas parce qu on
+::X|FR|rad.overlay.killkey.063|        comprendrait ce qu elles font.
+::X|FR|rad.overlay.killkey.064|    0 on any of the four : Jamais un retour a l origine. Pour les quatre,
+::X|FR|rad.overlay.killkey.065|                           le defaut Windows est l inexistence de la
+::X|FR|rad.overlay.killkey.066|                           valeur : ecrire 0 laisse derriere un forcage
+::X|FR|rad.overlay.killkey.067|                           ecrit qui vaut zero. Seule la suppression
+::X|FR|rad.overlay.killkey.068|                           ramene la machine a l etat d usine - c est
+::X|FR|rad.overlay.killkey.069|                           toute la raison d etre de :killkey comme
+::X|FR|rad.overlay.killkey.070|                           fonction distincte de :regset.
+::X|FR|rad.overlay.killkey.071|
+::X|FR|rad.overlay.killkey.072|  Pourquoi ces profils : Les cinq suppriment. Il n y a pas de facon
+::X|FR|rad.overlay.killkey.073|                         honnete de decouper cela par intention : Windows
+::X|FR|rad.overlay.killkey.074|                         n ecrit jamais aucune des quatre, donc sur chaque
+::X|FR|rad.overlay.killkey.075|                         profil le bon etat est le meme, et une difference
+::X|FR|rad.overlay.killkey.076|                         inventee ici serait une difference inventee a
+::X|FR|rad.overlay.killkey.077|                         partir de rien. Le profil serveur supprime aussi
+::X|FR|rad.overlay.killkey.078|                         : une machine sans ecran n y gagne rien, mais
+::X|FR|rad.overlay.killkey.079|                         elle n y perd rien non plus, et un residu qui ne
+::X|FR|rad.overlay.killkey.080|                         se manifeste qu une fois un ecran branche est
+::X|FR|rad.overlay.killkey.081|                         justement celui qu on retire pendant qu on est
+::X|FR|rad.overlay.killkey.082|                         deja dans le registre. La seule machine qui
+::X|FR|rad.overlay.killkey.083|                         devrait garder OverlayTestMode est celle qui a un
+::X|FR|rad.overlay.killkey.084|                         scintillement reel et reproductible, et cette
+::X|FR|rad.overlay.killkey.085|                         decision releve de la carte de contournement.
+::X|FR|rad.overlay.killkey.086|
+::X|FR|rad.overlay.killkey.087|  Problemes connus : Aucun du fait de la suppression. Symptome concret si
+::X|FR|rad.overlay.killkey.088|                     l on laisse DisableIndependentFlip=1 en place : les
+::X|FR|rad.overlay.killkey.089|                     jeux en fenetre sans bordure restent bloques a la
+::X|FR|rad.overlay.killkey.090|                     frequence du bureau, VRR inactif, et le conseil
+::X|FR|rad.overlay.killkey.091|                     habituel - passer en plein ecran exclusif - masque le
+::X|FR|rad.overlay.killkey.092|                     probleme au lieu de le corriger.
+::X|FR|rad.overlay.killkey.093|
+::X|FR|rad.overlay.killkey.094|  Non verifie (en)  : OPTY deliberately does NOT remove
+::X|FR|rad.overlay.killkey.095|                      UnsupportedMonitorModesAllowed from the same key, and
+::X|FR|rad.overlay.killkey.096|                      the in-file comment explains why: it is dxgkrnl s
+::X|FR|rad.overlay.killkey.097|                      custom-timing gate used by CRU and Adrenalin custom
+::X|FR|rad.overlay.killkey.098|                      modes, unrelated to MPO, and nothing in the script would
+::X|FR|rad.overlay.killkey.099|                      write it back. That reasoning looks right to me, but it
+::X|FR|rad.overlay.killkey.100|                      means this card is not  clear the whole key  and should
+::X|FR|rad.overlay.killkey.101|                      not be described as such. Separately, community reports
+::X|FR|rad.overlay.killkey.102|                      (MiniTool; RedDot MPO-GPU-FIX issue 26, 2025-12-31) say
+::X|FR|rad.overlay.killkey.103|                      OverlayTestMode alone is no longer honoured on 24H2/25H2
+::X|FR|rad.overlay.killkey.104|                      and that DisableOverlays is the one that still disables
+::X|FR|rad.overlay.killkey.105|                      MPO there. UNVERIFIED - not tested here. If it holds, a
+::X|FR|rad.overlay.killkey.106|                      leftover DisableOverlays is the one that matters on
+::X|FR|rad.overlay.killkey.107|                      current builds, which is why the GPU setup no longer
+::X|FR|rad.overlay.killkey.108|                      removes OverlayTestMode alone.
+::X|FR|rad.overlay.killkey.109|
+::X|FR|rad.overlay.killkey.110|  Cible           : call :ask "rad.overlay.killkey" dans :setup_gpu ; sur
+::X|FR|rad.overlay.killkey.111|                    DELETE, call :killkey sur
+::X|FR|rad.overlay.killkey.112|                    HKLM\SOFTWARE\Microsoft\Windows\Dwm pour OverlayTestMode,
+::X|FR|rad.overlay.killkey.113|                    OverlayMinFPS, DisableIndependentFlip, et sur
+::X|FR|rad.overlay.killkey.114|                    HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers pour
+::X|FR|rad.overlay.killkey.115|                    DisableOverlays, jusqu a :sg_mpo_done (SKIP ou toute autre
+::X|FR|rad.overlay.killkey.116|                    reponse y saute directement). Les memes quatre call
+::X|FR|rad.overlay.killkey.117|                    :killkey tournent dans :reassert_defaults ; reg delete des
+::X|FR|rad.overlay.killkey.118|                    memes quatre valeurs dans :gaming_restore.
 ::
 :: ---- rad.hwschmode (preference) -------------------------------------
 ::P|rad.hwschmode|2|2|2|2|2|
@@ -16005,237 +16037,235 @@ goto :eof
 ::X|EN|rad.hwschmode.002|                    CPU-side driver (1) or a scheduling processor on the
 ::X|EN|rad.hwschmode.003|                    GPU itself (2).
 ::X|EN|rad.hwschmode.004|
-::X|EN|rad.hwschmode.005|  Actual effect   : Asked in the Display and GPU setup; the profile value
-::X|EN|rad.hwschmode.006|                    (2 in every column) is written after reading the
-::X|EN|rad.hwschmode.007|                    current value so the report can distinguish a repair
-::X|EN|rad.hwschmode.008|                    from a no-op. Re-assert good defaults also writes 2
-::X|EN|rad.hwschmode.009|                    without asking. Takes effect after a reboot, and only
-::X|EN|rad.hwschmode.010|                    on a GPU and driver that report support.
-::X|EN|rad.hwschmode.011|
-::X|EN|rad.hwschmode.012|  Gain            : Not FPS - independent testing puts the difference
-::X|EN|rad.hwschmode.013|                    inside run-to-run noise on most systems, and any guide
-::X|EN|rad.hwschmode.014|                    promising frames from this is selling you nothing. The
-::X|EN|rad.hwschmode.015|                    substantiated reason to have it on is feature support:
-::X|EN|rad.hwschmode.016|                    NVIDIA DLSS Frame Generation will not run with
-::X|EN|rad.hwschmode.017|                    hardware-accelerated GPU scheduling off, and current
-::X|EN|rad.hwschmode.018|                    AMD and NVIDIA drivers are developed and validated
-::X|EN|rad.hwschmode.019|                    with it enabled. If a specific feature on your card
-::X|EN|rad.hwschmode.020|                    lists HAGS as a requirement, that feature's own
-::X|EN|rad.hwschmode.021|                    release notes are the authority. On AMD: Anti-Lag 2
-::X|EN|rad.hwschmode.022|                    does not need HAGS - its SDK lists no HAGS requirement
-::X|EN|rad.hwschmode.023|                    and supports the RX 5000 series, which has no HAGS
-::X|EN|rad.hwschmode.024|                    (Source: AMD GPUOpen, Anti-Lag 2 SDK). Adrenalin
-::X|EN|rad.hwschmode.025|                    23.12.1 only added HAGS support for the RX 7700 to
-::X|EN|rad.hwschmode.026|                    7900 on Windows 11 22H2 or later (Source: AMD, 23.12.1
-::X|EN|rad.hwschmode.027|                    release notes, 2023-12). GPUOpen does ask for HAGS
-::X|EN|rad.hwschmode.028|                    with FSR 3 frame generation on RX 7000 (Source: AMD
-::X|EN|rad.hwschmode.029|                    GPUOpen, FSR 3 documentation).
-::X|EN|rad.hwschmode.030|
-::X|EN|rad.hwschmode.031|  Cost            : A reboot. Drivers from the 2020-2021 era were
-::X|EN|rad.hwschmode.032|                    associated with stutter and with capture software
-::X|EN|rad.hwschmode.033|                    losing track of the game window; those reports have
-::X|EN|rad.hwschmode.034|                    largely stopped. On a GPU or driver without hardware
-::X|EN|rad.hwschmode.035|                    scheduling support, writing 2 is inert rather than
-::X|EN|rad.hwschmode.036|                    harmful - dxgkrnl checks the driver's capability and
-::X|EN|rad.hwschmode.037|                    ignores the value.
-::X|EN|rad.hwschmode.038|
-::X|EN|rad.hwschmode.039|  Windows default : 2 wherever the GPU and driver support hardware
-::X|EN|rad.hwschmode.040|                    scheduling, 1 where they do not. The value is present
-::X|EN|rad.hwschmode.041|                    on a stock machine, so the default here is a value,
-::X|EN|rad.hwschmode.042|                    not an absence.
-::X|EN|rad.hwschmode.043|
-::X|EN|rad.hwschmode.044|  Possible values:
-::X|EN|rad.hwschmode.045|    2                    : Hardware scheduling. A scheduling processor on
-::X|EN|rad.hwschmode.046|                           the GPU owns the work queue; the CPU-side
-::X|EN|rad.hwschmode.047|                           driver only hands work over instead of batching
-::X|EN|rad.hwschmode.048|                           and pacing every submission itself. Removes
-::X|EN|rad.hwschmode.049|                           some per-submission CPU work and a layer of
-::X|EN|rad.hwschmode.050|                           buffering. Requires a WDDM 2.7 or newer driver
-::X|EN|rad.hwschmode.051|                           that reports the capability - on hardware that
-::X|EN|rad.hwschmode.052|                           does not, dxgkrnl ignores the value entirely
-::X|EN|rad.hwschmode.053|                           and the Graphics settings toggle is not even
-::X|EN|rad.hwschmode.054|                           shown. Reboot to take effect.
-::X|EN|rad.hwschmode.055|    1                    : Software scheduling - the pre-WDDM-2.7
-::X|EN|rad.hwschmode.056|                           arrangement, where the driver's kernel-mode
-::X|EN|rad.hwschmode.057|                           component on the CPU batches command buffers
-::X|EN|rad.hwschmode.058|                           and decides when they go to the GPU. This is
-::X|EN|rad.hwschmode.059|                           what Windows leaves on hardware that cannot do
-::X|EN|rad.hwschmode.060|                           more, and it is the value the A/B diagnostic
-::X|EN|rad.hwschmode.061|                           writes. It is not the Windows default on a
-::X|EN|rad.hwschmode.062|                           modern GPU.
-::X|EN|rad.hwschmode.063|    DELETE               : Not a restore here, unlike the overlay values.
-::X|EN|rad.hwschmode.064|                           HwSchMode is a value Windows and the driver
-::X|EN|rad.hwschmode.065|                           installer write themselves, so a stock machine
-::X|EN|rad.hwschmode.066|                           has it present. Deleting it leaves dxgkrnl on
-::X|EN|rad.hwschmode.067|                           its built-in fallback and the Graphics settings
-::X|EN|rad.hwschmode.068|                           page with nothing selected - a state a fresh
-::X|EN|rad.hwschmode.069|                           install does not produce. OPTY writes 2 rather
-::X|EN|rad.hwschmode.070|                           than deleting for exactly this reason.
-::X|EN|rad.hwschmode.071|
-::X|EN|rad.hwschmode.072|  Why these profiles : All five write 2, and that is a finding rather than
-::X|EN|rad.hwschmode.073|                       a shrug. Two is what a supported machine ships
-::X|EN|rad.hwschmode.074|                       with, and on unsupported hardware the value is
-::X|EN|rad.hwschmode.075|                       ignored, so there is no profile where having 2 on
-::X|EN|rad.hwschmode.076|                       disk is wrong. Nobody has published a power or
-::X|EN|rad.hwschmode.077|                       battery delta for hardware scheduling in either
-::X|EN|rad.hwschmode.078|                       direction, so the laptop profile gets the same
-::X|EN|rad.hwschmode.079|                       answer instead of an invented one - claiming a
-::X|EN|rad.hwschmode.080|                       battery cost here would be exactly the folklore
-::X|EN|rad.hwschmode.081|                       this rewrite exists to remove. Server writes it
-::X|EN|rad.hwschmode.082|                       too: a box transcoding in Plex runs the same driver
-::X|EN|rad.hwschmode.083|                       stack that ships validated with it on. The only
-::X|EN|rad.hwschmode.084|                       real reason to hold 1 is a stutter or capture bug
-::X|EN|rad.hwschmode.085|                       you have bisected yourself, and that lives on the
-::X|EN|rad.hwschmode.086|                       A/B card.
-::X|EN|rad.hwschmode.087|
-::X|EN|rad.hwschmode.088|  Known problems  : Nothing current. The historical report worth knowing:
-::X|EN|rad.hwschmode.089|                    on early HAGS drivers, OBS and similar capture tools
-::X|EN|rad.hwschmode.090|                    could lose the game capture source after enabling it.
-::X|EN|rad.hwschmode.091|                    If you hit that today, the A/B card is how you confirm
-::X|EN|rad.hwschmode.092|                    it before blaming anything else.
-::X|EN|rad.hwschmode.093|
-::X|EN|rad.hwschmode.094|  Unverified      : One thing worth fixing in the source, not in the
-::X|EN|rad.hwschmode.095|                    card: the question is now asked in :setup_gpu,
-::X|EN|rad.hwschmode.096|                    but :reassert_defaults still writes 2 without asking,
-::X|EN|rad.hwschmode.097|                    although choosing a GPU scheduling mode is a
-::X|EN|rad.hwschmode.098|                    preference by the project's own rule. The old comment
-::X|EN|rad.hwschmode.099|                    above that write, which claimed Anti-Lag 2 needs HAGS,
-::X|EN|rad.hwschmode.100|                    is gone from the code; that claim was wrong (see
-::X|EN|rad.hwschmode.101|                    gain). Separately, I have not
-::X|EN|rad.hwschmode.102|                    verified byte-for-byte that HwSchMode is present on a
-::X|EN|rad.hwschmode.103|                    fresh 25H2 install before any vendor driver is
-::X|EN|rad.hwschmode.104|                    installed, and machines do turn up with HwSchMode=0,
-::X|EN|rad.hwschmode.105|                    whose meaning I could not confirm; OPTY should never
-::X|EN|rad.hwschmode.106|                    write 0.
-::X|EN|rad.hwschmode.107|
-::X|EN|rad.hwschmode.108|  Target          : HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers
-::X|EN|rad.hwschmode.109|                    HwSchMode REG_DWORD - asked through call :askreg
-::X|EN|rad.hwschmode.110|                    "rad.hwschmode" in :setup_gpu, and written as 2 by
-::X|EN|rad.hwschmode.111|                    call :regset in :reassert_defaults
+::X|EN|rad.hwschmode.005|  Actual effect   : Asked in the Display and GPU setup; the profile value (2
+::X|EN|rad.hwschmode.006|                    in every column) is written after reading the current
+::X|EN|rad.hwschmode.007|                    value so the report can distinguish a repair from a no-op.
+::X|EN|rad.hwschmode.008|                    Nothing else writes it: Re-assert good defaults no longer
+::X|EN|rad.hwschmode.009|                    writes 2 unasked, so an A/B test of HAGS is not silently
+::X|EN|rad.hwschmode.010|                    undone. The pre-check (Reports -> 5) reports HAGS when it
+::X|EN|rad.hwschmode.011|                    is off (1) or not set. Takes effect after a reboot, and
+::X|EN|rad.hwschmode.012|                    only on a GPU and driver that report support.
+::X|EN|rad.hwschmode.013|
+::X|EN|rad.hwschmode.014|  Gain            : Not FPS - independent testing puts the difference
+::X|EN|rad.hwschmode.015|                    inside run-to-run noise on most systems, and any guide
+::X|EN|rad.hwschmode.016|                    promising frames from this is selling you nothing. The
+::X|EN|rad.hwschmode.017|                    substantiated reason to have it on is feature support:
+::X|EN|rad.hwschmode.018|                    NVIDIA DLSS Frame Generation will not run with
+::X|EN|rad.hwschmode.019|                    hardware-accelerated GPU scheduling off, and current
+::X|EN|rad.hwschmode.020|                    AMD and NVIDIA drivers are developed and validated
+::X|EN|rad.hwschmode.021|                    with it enabled. If a specific feature on your card
+::X|EN|rad.hwschmode.022|                    lists HAGS as a requirement, that feature's own
+::X|EN|rad.hwschmode.023|                    release notes are the authority. On AMD: Anti-Lag 2
+::X|EN|rad.hwschmode.024|                    does not need HAGS - its SDK lists no HAGS requirement
+::X|EN|rad.hwschmode.025|                    and supports the RX 5000 series, which has no HAGS
+::X|EN|rad.hwschmode.026|                    (Source: AMD GPUOpen, Anti-Lag 2 SDK). Adrenalin
+::X|EN|rad.hwschmode.027|                    23.12.1 only added HAGS support for the RX 7700 to
+::X|EN|rad.hwschmode.028|                    7900 on Windows 11 22H2 or later (Source: AMD, 23.12.1
+::X|EN|rad.hwschmode.029|                    release notes, 2023-12). GPUOpen does ask for HAGS
+::X|EN|rad.hwschmode.030|                    with FSR 3 frame generation on RX 7000 (Source: AMD
+::X|EN|rad.hwschmode.031|                    GPUOpen, FSR 3 documentation).
+::X|EN|rad.hwschmode.032|
+::X|EN|rad.hwschmode.033|  Cost            : A reboot. Drivers from the 2020-2021 era were
+::X|EN|rad.hwschmode.034|                    associated with stutter and with capture software
+::X|EN|rad.hwschmode.035|                    losing track of the game window; those reports have
+::X|EN|rad.hwschmode.036|                    largely stopped. On a GPU or driver without hardware
+::X|EN|rad.hwschmode.037|                    scheduling support, writing 2 is inert rather than
+::X|EN|rad.hwschmode.038|                    harmful - dxgkrnl checks the driver's capability and
+::X|EN|rad.hwschmode.039|                    ignores the value.
+::X|EN|rad.hwschmode.040|
+::X|EN|rad.hwschmode.041|  Windows default : 2 wherever the GPU and driver support hardware
+::X|EN|rad.hwschmode.042|                    scheduling, 1 where they do not. The value is present
+::X|EN|rad.hwschmode.043|                    on a stock machine, so the default here is a value,
+::X|EN|rad.hwschmode.044|                    not an absence.
+::X|EN|rad.hwschmode.045|
+::X|EN|rad.hwschmode.046|  Possible values:
+::X|EN|rad.hwschmode.047|    2                    : Hardware scheduling. A scheduling processor on
+::X|EN|rad.hwschmode.048|                           the GPU owns the work queue; the CPU-side
+::X|EN|rad.hwschmode.049|                           driver only hands work over instead of batching
+::X|EN|rad.hwschmode.050|                           and pacing every submission itself. Removes
+::X|EN|rad.hwschmode.051|                           some per-submission CPU work and a layer of
+::X|EN|rad.hwschmode.052|                           buffering. Requires a WDDM 2.7 or newer driver
+::X|EN|rad.hwschmode.053|                           that reports the capability - on hardware that
+::X|EN|rad.hwschmode.054|                           does not, dxgkrnl ignores the value entirely
+::X|EN|rad.hwschmode.055|                           and the Graphics settings toggle is not even
+::X|EN|rad.hwschmode.056|                           shown. Reboot to take effect.
+::X|EN|rad.hwschmode.057|    1                    : Software scheduling - the pre-WDDM-2.7 arrangement,
+::X|EN|rad.hwschmode.058|                           where the driver's kernel-mode component on the CPU
+::X|EN|rad.hwschmode.059|                           batches command buffers and decides when they go to
+::X|EN|rad.hwschmode.060|                           the GPU. This is what Windows leaves on hardware
+::X|EN|rad.hwschmode.061|                           that cannot do more, and it is the value to pick by
+::X|EN|rad.hwschmode.062|                           hand (the Windows Graphics settings page) when you
+::X|EN|rad.hwschmode.063|                           A/B-test HAGS yourself; OPTY never writes it. It is
+::X|EN|rad.hwschmode.064|                           not the Windows default on a modern GPU.
+::X|EN|rad.hwschmode.065|    DELETE               : Not a restore here, unlike the overlay values.
+::X|EN|rad.hwschmode.066|                           HwSchMode is a value Windows and the driver
+::X|EN|rad.hwschmode.067|                           installer write themselves, so a stock machine
+::X|EN|rad.hwschmode.068|                           has it present. Deleting it leaves dxgkrnl on
+::X|EN|rad.hwschmode.069|                           its built-in fallback and the Graphics settings
+::X|EN|rad.hwschmode.070|                           page with nothing selected - a state a fresh
+::X|EN|rad.hwschmode.071|                           install does not produce. OPTY writes 2 rather
+::X|EN|rad.hwschmode.072|                           than deleting for exactly this reason.
+::X|EN|rad.hwschmode.073|
+::X|EN|rad.hwschmode.074|  Why these profiles : All five write 2, and that is a finding rather than a
+::X|EN|rad.hwschmode.075|                       shrug. Two is what a supported machine ships with, and
+::X|EN|rad.hwschmode.076|                       on unsupported hardware the value is ignored, so there
+::X|EN|rad.hwschmode.077|                       is no profile where having 2 on disk is wrong. Nobody
+::X|EN|rad.hwschmode.078|                       has published a power or battery delta for hardware
+::X|EN|rad.hwschmode.079|                       scheduling in either direction, so the laptop profile
+::X|EN|rad.hwschmode.080|                       gets the same answer instead of an invented one -
+::X|EN|rad.hwschmode.081|                       claiming a battery cost here would be exactly the
+::X|EN|rad.hwschmode.082|                       folklore this rewrite exists to remove. Server writes
+::X|EN|rad.hwschmode.083|                       it too: a box transcoding in Plex runs the same driver
+::X|EN|rad.hwschmode.084|                       stack that ships validated with it on. The only real
+::X|EN|rad.hwschmode.085|                       reason to hold 1 is a stutter or capture bug you have
+::X|EN|rad.hwschmode.086|                       bisected yourself, and that is an A/B test you run
+::X|EN|rad.hwschmode.087|                       yourself in Windows Settings - OPTY has no card that
+::X|EN|rad.hwschmode.088|                       writes 1; answer SKIP here to keep your choice.
+::X|EN|rad.hwschmode.089|
+::X|EN|rad.hwschmode.090|  Known problems  : Nothing current. The historical report worth knowing: on
+::X|EN|rad.hwschmode.091|                    early HAGS drivers, OBS and similar capture tools could
+::X|EN|rad.hwschmode.092|                    lose the game capture source after enabling it. If you hit
+::X|EN|rad.hwschmode.093|                    that today, switching HAGS off in Windows Settings,
+::X|EN|rad.hwschmode.094|                    rebooting and retesting is how you confirm it before
+::X|EN|rad.hwschmode.095|                    blaming anything else.
+::X|EN|rad.hwschmode.096|
+::X|EN|rad.hwschmode.097|  Unverified      : I have not verified byte-for-byte that HwSchMode is
+::X|EN|rad.hwschmode.098|                    present on a fresh 25H2 install before any vendor driver
+::X|EN|rad.hwschmode.099|                    is installed, and machines do turn up with HwSchMode=0,
+::X|EN|rad.hwschmode.100|                    whose meaning I could not confirm; OPTY should never write
+::X|EN|rad.hwschmode.101|                    0.
+::X|EN|rad.hwschmode.102|
+::X|EN|rad.hwschmode.103|  Target          : HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers
+::X|EN|rad.hwschmode.104|                    HwSchMode REG_DWORD - asked through call :askreg
+::X|EN|rad.hwschmode.105|                    "rad.hwschmode" in :setup_gpu, the only place that writes
+::X|EN|rad.hwschmode.106|                    it. :reassert_defaults no longer writes it (the note after
+::X|EN|rad.hwschmode.107|                    its overlay clean-up says why). The pre-check (:precheck,
+::X|EN|rad.hwschmode.108|                    its PowerShell data lines) reports HwSchMode=1 as HAGS off
+::X|EN|rad.hwschmode.109|                    and an absent value as not set.
 ::X|FR|rad.hwschmode.001|  Ce que c est    : HwSchMode designe qui possede la file de travail du
 ::X|FR|rad.hwschmode.002|                    GPU : le pilote cote CPU (1) ou un processeur
 ::X|FR|rad.hwschmode.003|                    d ordonnancement sur le GPU lui-meme (2).
 ::X|FR|rad.hwschmode.004|
-::X|FR|rad.hwschmode.005|  Effet reel      : Demande dans la configuration Affichage et GPU ; la
-::X|FR|rad.hwschmode.006|                    valeur du profil (2 dans chaque colonne) est ecrite
-::X|FR|rad.hwschmode.007|                    apres lecture de la valeur en place, pour que le
-::X|FR|rad.hwschmode.008|                    rapport puisse distinguer une reparation d une
-::X|FR|rad.hwschmode.009|                    non-operation. Re-assert good defaults ecrit aussi 2
-::X|FR|rad.hwschmode.010|                    sans demander. Effectif apres redemarrage, et
-::X|FR|rad.hwschmode.011|                    uniquement si le GPU et le pilote declarent la
-::X|FR|rad.hwschmode.012|                    capacite.
-::X|FR|rad.hwschmode.013|
-::X|FR|rad.hwschmode.014|  Gain            : Pas des images par seconde : les tests independants
-::X|FR|rad.hwschmode.015|                    placent l ecart dans le bruit d une execution a
-::X|FR|rad.hwschmode.016|                    l autre sur la plupart des machines, et tout guide qui
-::X|FR|rad.hwschmode.017|                    vous promet des FPS ici ne vend rien. La raison etayee
-::X|FR|rad.hwschmode.018|                    de l activer, c est le support des fonctionnalites :
-::X|FR|rad.hwschmode.019|                    NVIDIA DLSS Frame Generation refuse de fonctionner si
-::X|FR|rad.hwschmode.020|                    la planification GPU materielle est desactivee, et les
-::X|FR|rad.hwschmode.021|                    pilotes AMD et NVIDIA actuels sont developpes et
-::X|FR|rad.hwschmode.022|                    valides avec elle active. Si une fonction precise de
-::X|FR|rad.hwschmode.023|                    votre carte exige HAGS, ce sont ses propres notes de
-::X|FR|rad.hwschmode.024|                    version qui font foi. Cote AMD : Anti-Lag 2 n a pas
-::X|FR|rad.hwschmode.025|                    besoin de HAGS - son SDK ne cite aucune exigence HAGS
-::X|FR|rad.hwschmode.026|                    et prend en charge la serie RX 5000, qui n a pas de
-::X|FR|rad.hwschmode.027|                    HAGS (Source : AMD GPUOpen, SDK Anti-Lag 2). Adrenalin
-::X|FR|rad.hwschmode.028|                    23.12.1 a seulement ajoute la prise en charge de HAGS
-::X|FR|rad.hwschmode.029|                    pour les RX 7700 a 7900 sous Windows 11 22H2 ou plus
-::X|FR|rad.hwschmode.030|                    recent (Source : AMD, notes de version 23.12.1,
-::X|FR|rad.hwschmode.031|                    2023-12). GPUOpen demande bien HAGS pour la generation
-::X|FR|rad.hwschmode.032|                    d images FSR 3 sur RX 7000 (Source : AMD GPUOpen,
-::X|FR|rad.hwschmode.033|                    documentation FSR 3).
-::X|FR|rad.hwschmode.034|
-::X|FR|rad.hwschmode.035|  Cout            : Un redemarrage. Les pilotes de la periode 2020-2021
-::X|FR|rad.hwschmode.036|                    ont ete associes a des saccades et a des logiciels de
-::X|FR|rad.hwschmode.037|                    capture qui perdaient la fenetre du jeu ; ces
-::X|FR|rad.hwschmode.038|                    signalements ont largement cesse. Sur un GPU ou un
-::X|FR|rad.hwschmode.039|                    pilote sans support de la planification materielle,
-::X|FR|rad.hwschmode.040|                    ecrire 2 est inerte plutot que nuisible : dxgkrnl
-::X|FR|rad.hwschmode.041|                    consulte la capacite du pilote et ignore la valeur.
-::X|FR|rad.hwschmode.042|
-::X|FR|rad.hwschmode.043|  Defaut Windows  : 2 partout ou le GPU et le pilote gerent la
-::X|FR|rad.hwschmode.044|                    planification materielle, 1 la ou ils ne la gerent
-::X|FR|rad.hwschmode.045|                    pas. La valeur est presente sur une machine d origine
-::X|FR|rad.hwschmode.046|                    : ici le defaut est une valeur, pas une absence.
-::X|FR|rad.hwschmode.047|
-::X|FR|rad.hwschmode.048|  Valeurs possibles :
-::X|FR|rad.hwschmode.049|    2                    : Planification materielle. Un processeur
-::X|FR|rad.hwschmode.050|                           d ordonnancement sur le GPU possede la file de
-::X|FR|rad.hwschmode.051|                           travail ; le pilote cote CPU se contente de lui
-::X|FR|rad.hwschmode.052|                           passer le travail au lieu de regrouper et de
-::X|FR|rad.hwschmode.053|                           cadencer lui-meme chaque soumission. Cela
-::X|FR|rad.hwschmode.054|                           retire un peu de travail CPU par soumission et
-::X|FR|rad.hwschmode.055|                           un etage de tampon. Il faut un pilote WDDM 2.7
-::X|FR|rad.hwschmode.056|                           ou plus recent qui declare la capacite : sur un
-::X|FR|rad.hwschmode.057|                           materiel qui ne la declare pas, dxgkrnl ignore
-::X|FR|rad.hwschmode.058|                           purement et simplement la valeur et
-::X|FR|rad.hwschmode.059|                           l interrupteur des Parametres graphiques
-::X|FR|rad.hwschmode.060|                           n apparait meme pas. Redemarrage requis.
-::X|FR|rad.hwschmode.061|    1                    : Planification logicielle : l organisation
-::X|FR|rad.hwschmode.062|                           d avant WDDM 2.7, ou le composant noyau du
-::X|FR|rad.hwschmode.063|                           pilote, cote CPU, regroupe les tampons de
-::X|FR|rad.hwschmode.064|                           commandes et decide quand ils partent vers le
-::X|FR|rad.hwschmode.065|                           GPU. C est ce que Windows laisse sur un
-::X|FR|rad.hwschmode.066|                           materiel incapable de mieux, et c est la valeur
-::X|FR|rad.hwschmode.067|                           qu ecrit le test A/B. Ce n est pas le defaut
-::X|FR|rad.hwschmode.068|                           Windows sur un GPU moderne.
-::X|FR|rad.hwschmode.069|    DELETE               : Ici, contrairement aux valeurs d overlay, ce
-::X|FR|rad.hwschmode.070|                           n est pas un retour a l origine. HwSchMode est
-::X|FR|rad.hwschmode.071|                           une valeur que Windows et l installateur du
-::X|FR|rad.hwschmode.072|                           pilote ecrivent eux-memes : une machine
-::X|FR|rad.hwschmode.073|                           d origine la possede. La supprimer laisse
-::X|FR|rad.hwschmode.074|                           dxgkrnl sur son repli interne et la page des
-::X|FR|rad.hwschmode.075|                           Parametres graphiques sans rien de selectionne,
-::X|FR|rad.hwschmode.076|                           un etat qu une installation neuve ne produit
-::X|FR|rad.hwschmode.077|                           pas. C est precisement pour cela qu OPTY ecrit
-::X|FR|rad.hwschmode.078|                           2 plutot que de supprimer.
-::X|FR|rad.hwschmode.079|
-::X|FR|rad.hwschmode.080|  Pourquoi ces profils : Les cinq ecrivent 2, et c est un constat, pas un
-::X|FR|rad.hwschmode.081|                         haussement d epaules. 2 est ce qu embarque une
-::X|FR|rad.hwschmode.082|                         machine compatible, et sur un materiel
-::X|FR|rad.hwschmode.083|                         incompatible la valeur est ignoree : il n existe
-::X|FR|rad.hwschmode.084|                         aucun profil pour lequel avoir 2 sur le disque
-::X|FR|rad.hwschmode.085|                         soit une erreur. Personne n a publie d ecart de
-::X|FR|rad.hwschmode.086|                         consommation ou d autonomie lie a la
-::X|FR|rad.hwschmode.087|                         planification materielle, dans un sens ou dans
-::X|FR|rad.hwschmode.088|                         l autre : le profil portable recoit donc la meme
-::X|FR|rad.hwschmode.089|                         reponse plutot qu une reponse inventee -
-::X|FR|rad.hwschmode.090|                         pretendre a un cout en batterie ici serait
-::X|FR|rad.hwschmode.091|                         exactement le folklore que cette reecriture
-::X|FR|rad.hwschmode.092|                         cherche a eliminer. Le serveur l ecrit aussi :
-::X|FR|rad.hwschmode.093|                         une machine qui transcode sous Plex fait tourner
-::X|FR|rad.hwschmode.094|                         la meme pile de pilotes, livree validee avec
-::X|FR|rad.hwschmode.095|                         l option active. La seule vraie raison de rester
-::X|FR|rad.hwschmode.096|                         a 1, c est une saccade ou un bug de capture que
-::X|FR|rad.hwschmode.097|                         vous avez vous-meme isole, et cela releve de la
-::X|FR|rad.hwschmode.098|                         carte de test A/B.
-::X|FR|rad.hwschmode.099|
-::X|FR|rad.hwschmode.100|  Problemes connus : Rien d actuel. Le signalement historique a connaitre
-::X|FR|rad.hwschmode.101|                     : sur les premiers pilotes HAGS, OBS et les outils de
-::X|FR|rad.hwschmode.102|                     capture equivalents pouvaient perdre la source de
-::X|FR|rad.hwschmode.103|                     capture du jeu apres activation. Si cela vous arrive
-::X|FR|rad.hwschmode.104|                     aujourd hui, la carte de test A/B est le moyen de le
-::X|FR|rad.hwschmode.105|                     confirmer avant d accuser autre chose.
-::X|FR|rad.hwschmode.106|
-::X|FR|rad.hwschmode.107|  Non verifie (en)  : One thing worth fixing in the source, not in the
-::X|FR|rad.hwschmode.108|                      card: the question is now asked in
-::X|FR|rad.hwschmode.109|                      :setup_gpu, but :reassert_defaults still writes 2
-::X|FR|rad.hwschmode.110|                      without asking, although choosing a GPU scheduling
-::X|FR|rad.hwschmode.111|                      mode is a preference by the project s own rule.
-::X|FR|rad.hwschmode.112|                      The old comment above that write, which claimed
-::X|FR|rad.hwschmode.113|                      Anti-Lag 2 needs HAGS, is gone from the code; that
-::X|FR|rad.hwschmode.114|                      claim was wrong (see Gain). Separately,
-::X|FR|rad.hwschmode.115|                      I have not verified byte-for-byte that HwSchMode is
-::X|FR|rad.hwschmode.116|                      present on a fresh 25H2 install before any vendor
-::X|FR|rad.hwschmode.117|                      driver is installed, and machines do turn up with
-::X|FR|rad.hwschmode.118|                      HwSchMode=0, whose meaning I could not confirm; OPTY
-::X|FR|rad.hwschmode.119|                      should never write 0.
-::X|FR|rad.hwschmode.120|
-::X|FR|rad.hwschmode.121|  Cible           : HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers
-::X|FR|rad.hwschmode.122|                    HwSchMode REG_DWORD - demandee via call :askreg
-::X|FR|rad.hwschmode.123|                    "rad.hwschmode" dans :setup_gpu, et ecrite a 2 par
-::X|FR|rad.hwschmode.124|                    call :regset dans :reassert_defaults
+::X|FR|rad.hwschmode.005|  Effet reel      : Demande dans la configuration Affichage et GPU ; la valeur
+::X|FR|rad.hwschmode.006|                    du profil (2 dans chaque colonne) est ecrite apres lecture
+::X|FR|rad.hwschmode.007|                    de la valeur en place, pour que le rapport puisse
+::X|FR|rad.hwschmode.008|                    distinguer une reparation d une non-operation. Rien d
+::X|FR|rad.hwschmode.009|                    autre ne l ecrit : Re-assert good defaults n ecrit plus 2
+::X|FR|rad.hwschmode.010|                    sans demander, donc un test A/B de HAGS n est plus defait
+::X|FR|rad.hwschmode.011|                    en silence. Le pre-check (Reports -> 5) signale HAGS
+::X|FR|rad.hwschmode.012|                    desactive (1) ou non defini. Effectif apres redemarrage,
+::X|FR|rad.hwschmode.013|                    et uniquement si le GPU et le pilote declarent la
+::X|FR|rad.hwschmode.014|                    capacite.
+::X|FR|rad.hwschmode.015|
+::X|FR|rad.hwschmode.016|  Gain            : Pas des images par seconde : les tests independants
+::X|FR|rad.hwschmode.017|                    placent l ecart dans le bruit d une execution a
+::X|FR|rad.hwschmode.018|                    l autre sur la plupart des machines, et tout guide qui
+::X|FR|rad.hwschmode.019|                    vous promet des FPS ici ne vend rien. La raison etayee
+::X|FR|rad.hwschmode.020|                    de l activer, c est le support des fonctionnalites :
+::X|FR|rad.hwschmode.021|                    NVIDIA DLSS Frame Generation refuse de fonctionner si
+::X|FR|rad.hwschmode.022|                    la planification GPU materielle est desactivee, et les
+::X|FR|rad.hwschmode.023|                    pilotes AMD et NVIDIA actuels sont developpes et
+::X|FR|rad.hwschmode.024|                    valides avec elle active. Si une fonction precise de
+::X|FR|rad.hwschmode.025|                    votre carte exige HAGS, ce sont ses propres notes de
+::X|FR|rad.hwschmode.026|                    version qui font foi. Cote AMD : Anti-Lag 2 n a pas
+::X|FR|rad.hwschmode.027|                    besoin de HAGS - son SDK ne cite aucune exigence HAGS
+::X|FR|rad.hwschmode.028|                    et prend en charge la serie RX 5000, qui n a pas de
+::X|FR|rad.hwschmode.029|                    HAGS (Source : AMD GPUOpen, SDK Anti-Lag 2). Adrenalin
+::X|FR|rad.hwschmode.030|                    23.12.1 a seulement ajoute la prise en charge de HAGS
+::X|FR|rad.hwschmode.031|                    pour les RX 7700 a 7900 sous Windows 11 22H2 ou plus
+::X|FR|rad.hwschmode.032|                    recent (Source : AMD, notes de version 23.12.1,
+::X|FR|rad.hwschmode.033|                    2023-12). GPUOpen demande bien HAGS pour la generation
+::X|FR|rad.hwschmode.034|                    d images FSR 3 sur RX 7000 (Source : AMD GPUOpen,
+::X|FR|rad.hwschmode.035|                    documentation FSR 3).
+::X|FR|rad.hwschmode.036|
+::X|FR|rad.hwschmode.037|  Cout            : Un redemarrage. Les pilotes de la periode 2020-2021
+::X|FR|rad.hwschmode.038|                    ont ete associes a des saccades et a des logiciels de
+::X|FR|rad.hwschmode.039|                    capture qui perdaient la fenetre du jeu ; ces
+::X|FR|rad.hwschmode.040|                    signalements ont largement cesse. Sur un GPU ou un
+::X|FR|rad.hwschmode.041|                    pilote sans support de la planification materielle,
+::X|FR|rad.hwschmode.042|                    ecrire 2 est inerte plutot que nuisible : dxgkrnl
+::X|FR|rad.hwschmode.043|                    consulte la capacite du pilote et ignore la valeur.
+::X|FR|rad.hwschmode.044|
+::X|FR|rad.hwschmode.045|  Defaut Windows  : 2 partout ou le GPU et le pilote gerent la
+::X|FR|rad.hwschmode.046|                    planification materielle, 1 la ou ils ne la gerent
+::X|FR|rad.hwschmode.047|                    pas. La valeur est presente sur une machine d origine
+::X|FR|rad.hwschmode.048|                    : ici le defaut est une valeur, pas une absence.
+::X|FR|rad.hwschmode.049|
+::X|FR|rad.hwschmode.050|  Valeurs possibles :
+::X|FR|rad.hwschmode.051|    2                    : Planification materielle. Un processeur
+::X|FR|rad.hwschmode.052|                           d ordonnancement sur le GPU possede la file de
+::X|FR|rad.hwschmode.053|                           travail ; le pilote cote CPU se contente de lui
+::X|FR|rad.hwschmode.054|                           passer le travail au lieu de regrouper et de
+::X|FR|rad.hwschmode.055|                           cadencer lui-meme chaque soumission. Cela
+::X|FR|rad.hwschmode.056|                           retire un peu de travail CPU par soumission et
+::X|FR|rad.hwschmode.057|                           un etage de tampon. Il faut un pilote WDDM 2.7
+::X|FR|rad.hwschmode.058|                           ou plus recent qui declare la capacite : sur un
+::X|FR|rad.hwschmode.059|                           materiel qui ne la declare pas, dxgkrnl ignore
+::X|FR|rad.hwschmode.060|                           purement et simplement la valeur et
+::X|FR|rad.hwschmode.061|                           l interrupteur des Parametres graphiques
+::X|FR|rad.hwschmode.062|                           n apparait meme pas. Redemarrage requis.
+::X|FR|rad.hwschmode.063|    1                    : Planification logicielle : l organisation d avant
+::X|FR|rad.hwschmode.064|                           WDDM 2.7, ou le composant noyau du pilote, cote
+::X|FR|rad.hwschmode.065|                           CPU, regroupe les tampons de commandes et decide
+::X|FR|rad.hwschmode.066|                           quand ils partent vers le GPU. C est ce que Windows
+::X|FR|rad.hwschmode.067|                           laisse sur un materiel incapable de mieux, et c est
+::X|FR|rad.hwschmode.068|                           la valeur a choisir a la main (la page Parametres
+::X|FR|rad.hwschmode.069|                           graphiques de Windows) quand vous testez HAGS en
+::X|FR|rad.hwschmode.070|                           A/B vous-meme ; OPTY ne l ecrit jamais. Ce n est
+::X|FR|rad.hwschmode.071|                           pas le defaut Windows sur un GPU moderne.
+::X|FR|rad.hwschmode.072|    DELETE               : Ici, contrairement aux valeurs d overlay, ce
+::X|FR|rad.hwschmode.073|                           n est pas un retour a l origine. HwSchMode est
+::X|FR|rad.hwschmode.074|                           une valeur que Windows et l installateur du
+::X|FR|rad.hwschmode.075|                           pilote ecrivent eux-memes : une machine
+::X|FR|rad.hwschmode.076|                           d origine la possede. La supprimer laisse
+::X|FR|rad.hwschmode.077|                           dxgkrnl sur son repli interne et la page des
+::X|FR|rad.hwschmode.078|                           Parametres graphiques sans rien de selectionne,
+::X|FR|rad.hwschmode.079|                           un etat qu une installation neuve ne produit
+::X|FR|rad.hwschmode.080|                           pas. C est precisement pour cela qu OPTY ecrit
+::X|FR|rad.hwschmode.081|                           2 plutot que de supprimer.
+::X|FR|rad.hwschmode.082|
+::X|FR|rad.hwschmode.083|  Pourquoi ces profils : Les cinq ecrivent 2, et c est un constat, pas un
+::X|FR|rad.hwschmode.084|                         haussement d epaules. 2 est ce qu embarque une
+::X|FR|rad.hwschmode.085|                         machine compatible, et sur un materiel incompatible
+::X|FR|rad.hwschmode.086|                         la valeur est ignoree : il n existe aucun profil pour
+::X|FR|rad.hwschmode.087|                         lequel avoir 2 sur le disque soit une erreur.
+::X|FR|rad.hwschmode.088|                         Personne n a publie d ecart de consommation ou d
+::X|FR|rad.hwschmode.089|                         autonomie lie a la planification materielle, dans un
+::X|FR|rad.hwschmode.090|                         sens ou dans l autre : le profil portable recoit donc
+::X|FR|rad.hwschmode.091|                         la meme reponse plutot qu une reponse inventee -
+::X|FR|rad.hwschmode.092|                         pretendre a un cout en batterie ici serait exactement
+::X|FR|rad.hwschmode.093|                         le folklore que cette reecriture cherche a eliminer.
+::X|FR|rad.hwschmode.094|                         Le serveur l ecrit aussi : une machine qui transcode
+::X|FR|rad.hwschmode.095|                         sous Plex fait tourner la meme pile de pilotes,
+::X|FR|rad.hwschmode.096|                         livree validee avec l option active. La seule vraie
+::X|FR|rad.hwschmode.097|                         raison de rester a 1, c est une saccade ou un bug de
+::X|FR|rad.hwschmode.098|                         capture que vous avez vous-meme isole, et cela releve
+::X|FR|rad.hwschmode.099|                         d un test A/B que vous faites vous-meme dans les
+::X|FR|rad.hwschmode.100|                         Parametres Windows - OPTY n a aucune fiche qui ecrit
+::X|FR|rad.hwschmode.101|                         1 ; repondez SKIP ici pour garder votre choix.
+::X|FR|rad.hwschmode.102|
+::X|FR|rad.hwschmode.103|  Problemes connus : Rien d actuel. Le signalement historique a connaitre :
+::X|FR|rad.hwschmode.104|                     sur les premiers pilotes HAGS, OBS et les outils de
+::X|FR|rad.hwschmode.105|                     capture equivalents pouvaient perdre la source de capture
+::X|FR|rad.hwschmode.106|                     du jeu apres activation. Si cela vous arrive aujourd hui,
+::X|FR|rad.hwschmode.107|                     couper HAGS dans les Parametres Windows, redemarrer et
+::X|FR|rad.hwschmode.108|                     retester est le moyen de le confirmer avant d accuser
+::X|FR|rad.hwschmode.109|                     autre chose.
+::X|FR|rad.hwschmode.110|
+::X|FR|rad.hwschmode.111|  Non verifie (en)  : I have not verified byte-for-byte that HwSchMode is
+::X|FR|rad.hwschmode.112|                      present on a fresh 25H2 install before any vendor driver
+::X|FR|rad.hwschmode.113|                      is installed, and machines do turn up with HwSchMode=0,
+::X|FR|rad.hwschmode.114|                      whose meaning I could not confirm; OPTY should never
+::X|FR|rad.hwschmode.115|                      write 0.
+::X|FR|rad.hwschmode.116|
+::X|FR|rad.hwschmode.117|  Cible           : HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers
+::X|FR|rad.hwschmode.118|                    HwSchMode REG_DWORD - demandee via call :askreg
+::X|FR|rad.hwschmode.119|                    "rad.hwschmode" dans :setup_gpu, seul endroit qui l ecrit.
+::X|FR|rad.hwschmode.120|                    :reassert_defaults ne l ecrit plus (la note qui suit son
+::X|FR|rad.hwschmode.121|                    nettoyage des overlays explique pourquoi). Le pre-check
+::X|FR|rad.hwschmode.122|                    (:precheck, ses lignes de donnees PowerShell) signale
+::X|FR|rad.hwschmode.123|                    HwSchMode=1 comme HAGS desactive et une valeur absente
+::X|FR|rad.hwschmode.124|                    comme non definie.
 ::
 :: ---- rad.gpu.tdr.killkeys (repair) ------------------------------
 ::P|rad.gpu.tdr.killkeys|DELETE|DELETE|DELETE|DELETE|DELETE|
@@ -20225,14 +20255,15 @@ goto :eof
 ::X|EN|net.nic.rss.queues.065|                    what the card shipped with.
 ::X|EN|net.nic.rss.queues.066|
 ::X|EN|net.nic.rss.queues.067|  Target          : :se_rss, after :ask "net.nic.rss.queues": call :nicset
-::X|EN|net.nic.rss.queues.068|                    "%NICKEY%" "*RSS" with the first half of the profile
-::X|EN|net.nic.rss.queues.069|                    value (1), then call :nicenummax "%NICKEY%"
-::X|EN|net.nic.rss.queues.070|                    "*NumRssQueues", which reads the REG_SZ entries under
-::X|EN|net.nic.rss.queues.071|                    Ndi\Params\*NumRssQueues\Enum and keeps the last one
-::X|EN|net.nic.rss.queues.072|                    listed (normally the highest) in NENUMMAX, then call
-::X|EN|net.nic.rss.queues.073|                    :nicset with that value. If the driver has no Enum
-::X|EN|net.nic.rss.queues.074|                    for it, *NumRssQueues is logged as absent and not
-::X|EN|net.nic.rss.queues.075|                    written.
+::X|EN|net.nic.rss.queues.068|                    "%NICKEY%" "*RSS" with the first half of the profile value
+::X|EN|net.nic.rss.queues.069|                    (1), then call :nicenummax "%NICKEY%" "*NumRssQueues",
+::X|EN|net.nic.rss.queues.070|                    which reads the REG_SZ entries under
+::X|EN|net.nic.rss.queues.071|                    Ndi\Params\*NumRssQueues\Enum and keeps the numerically
+::X|EN|net.nic.rss.queues.072|                    highest one in NENUMMAX (:nicenumone compares each entry
+::X|EN|net.nic.rss.queues.073|                    as a number and skips non-numeric names; it used to keep
+::X|EN|net.nic.rss.queues.074|                    the last one reg query printed), then call :nicset with
+::X|EN|net.nic.rss.queues.075|                    that value. If the driver has no Enum for it,
+::X|EN|net.nic.rss.queues.076|                    *NumRssQueues is logged as absent and not written.
 ::X|FR|net.nic.rss.queues.001|  Ce que c est    : Le RSS repartit le traitement des paquets entrants sur
 ::X|FR|net.nic.rss.queues.002|                    plusieurs coeurs au lieu de tout concentrer sur un
 ::X|FR|net.nic.rss.queues.003|                    seul. *NumRssQueues indique combien de files de
@@ -20304,15 +20335,17 @@ goto :eof
 ::X|FR|net.nic.rss.queues.069|                      default, so on some adapters this raises the queue
 ::X|FR|net.nic.rss.queues.070|                      count above what the card shipped with.
 ::X|FR|net.nic.rss.queues.071|
-::X|FR|net.nic.rss.queues.072|  Cible           : :se_rss, apres :ask "net.nic.rss.queues" : call
-::X|FR|net.nic.rss.queues.073|                    :nicset "%NICKEY%" "*RSS" avec la premiere moitie de la
-::X|FR|net.nic.rss.queues.074|                    valeur du profil (1), puis call :nicenummax "%NICKEY%"
+::X|FR|net.nic.rss.queues.072|  Cible           : :se_rss, apres :ask "net.nic.rss.queues" : call :nicset
+::X|FR|net.nic.rss.queues.073|                    "%NICKEY%" "*RSS" avec la premiere moitie de la valeur du
+::X|FR|net.nic.rss.queues.074|                    profil (1), puis call :nicenummax "%NICKEY%"
 ::X|FR|net.nic.rss.queues.075|                    "*NumRssQueues", qui lit les entrees REG_SZ sous
-::X|FR|net.nic.rss.queues.076|                    Ndi\Params\*NumRssQueues\Enum et garde la derniere
-::X|FR|net.nic.rss.queues.077|                    listee (normalement la plus haute) dans NENUMMAX, puis
-::X|FR|net.nic.rss.queues.078|                    call :nicset avec cette valeur. Si le pilote n a pas
-::X|FR|net.nic.rss.queues.079|                    d Enum pour ce mot-cle, *NumRssQueues est signale
-::X|FR|net.nic.rss.queues.080|                    absent dans le journal et n est pas ecrit.
+::X|FR|net.nic.rss.queues.076|                    Ndi\Params\*NumRssQueues\Enum et garde la plus haute en
+::X|FR|net.nic.rss.queues.077|                    valeur numerique dans NENUMMAX (:nicenumone compare chaque
+::X|FR|net.nic.rss.queues.078|                    entree comme un nombre et ignore les noms non numeriques ;
+::X|FR|net.nic.rss.queues.079|                    avant, c etait la derniere affichee par reg query), puis
+::X|FR|net.nic.rss.queues.080|                    call :nicset avec cette valeur. Si le pilote n a pas d
+::X|FR|net.nic.rss.queues.081|                    Enum pour ce mot-cle, *NumRssQueues est signale absent
+::X|FR|net.nic.rss.queues.082|                    dans le journal et n est pas ecrit.
 ::
 :: ---- net.nic.jumbo.apply (repair) -------------------------------
 ::P|net.nic.jumbo.apply|1514|1514|1514|1514|SKIP|
@@ -23433,96 +23466,96 @@ goto :eof
 ::X|EN|cleanmgr.sagerun64.014|                    temp files. Those categories genuinely refill on their
 ::X|EN|cleanmgr.sagerun64.015|                    own and cost nothing to lose.
 ::X|EN|cleanmgr.sagerun64.016|
-::X|EN|cleanmgr.sagerun64.017|  Cost            : This is the irreversible step, and two of the
-::X|EN|cleanmgr.sagerun64.018|                    seventeen armed handlers are the reason. The Recycle
-::X|EN|cleanmgr.sagerun64.019|                    Bin is emptied on every drive. The memory dump and the
-::X|EN|cleanmgr.sagerun64.020|                    minidumps go too, so if you are chasing a blue screen
-::X|EN|cleanmgr.sagerun64.021|                    the evidence disappears with them - export or copy
+::X|EN|cleanmgr.sagerun64.017|  Cost            : This is the irreversible step, and two of the seventeen
+::X|EN|cleanmgr.sagerun64.018|                    armed handlers are the reason. The Recycle Bin is emptied
+::X|EN|cleanmgr.sagerun64.019|                    on every drive. The memory dump and the minidumps go too,
+::X|EN|cleanmgr.sagerun64.020|                    so if you are chasing a blue screen the evidence
+::X|EN|cleanmgr.sagerun64.021|                    disappears with them - export or copy
 ::X|EN|cleanmgr.sagerun64.022|                    %SystemRoot%\Minidump first if that matters. The one
-::X|EN|cleanmgr.sagerun64.023|                    exception: while freeze capture is on (Reports >
-::X|EN|cleanmgr.sagerun64.024|                    Crashes / freezes), the two dump handlers - System
-::X|EN|cleanmgr.sagerun64.025|                    error memory dump files and System error minidump
-::X|EN|cleanmgr.sagerun64.026|                    files - are switched back to 0 just before the run,
-::X|EN|cleanmgr.sagerun64.027|                    so cleanmgr keeps the dumps.
-::X|EN|cleanmgr.sagerun64.028|                    Regeneration for the rest is fast and unattended: temp
-::X|EN|cleanmgr.sagerun64.029|                    and Internet cache within minutes of normal use,
-::X|EN|cleanmgr.sagerun64.030|                    Delivery Optimization on the next update, thumbnails
-::X|EN|cleanmgr.sagerun64.031|                    as you browse each folder again, D3D shader cache over
-::X|EN|cleanmgr.sagerun64.032|                    one stuttery session per game. Nothing here touches
-::X|EN|cleanmgr.sagerun64.033|                    your Downloads folder, your documents, installed
-::X|EN|cleanmgr.sagerun64.034|                    programs or Windows Update's own cache - those
-::X|EN|cleanmgr.sagerun64.035|                    handlers are explicitly pinned to 0. The ten-minute
-::X|EN|cleanmgr.sagerun64.036|                    cap exists because /sagerun walks every drive and a
-::X|EN|cleanmgr.sagerun64.037|                    disconnected network mapping stalls it; if the cap
-::X|EN|cleanmgr.sagerun64.038|                    fires, the cleanup was only partly done and no record
-::X|EN|cleanmgr.sagerun64.039|                    says how far it got.
-::X|EN|cleanmgr.sagerun64.040|
-::X|EN|cleanmgr.sagerun64.041|  Windows default : Not applicable - Windows never runs a sageset profile
-::X|EN|cleanmgr.sagerun64.042|                    on its own.
-::X|EN|cleanmgr.sagerun64.043|
-::X|EN|cleanmgr.sagerun64.044|  Possible values:
-::X|EN|cleanmgr.sagerun64.045|    RUN                  : cleanmgr runs headless against profile 0064
-::X|EN|cleanmgr.sagerun64.046|                           across every drive. Each handler armed at 2
-::X|EN|cleanmgr.sagerun64.047|                           deletes its own category through the shell API;
-::X|EN|cleanmgr.sagerun64.048|                           each handler pinned to 0 is explicitly left
-::X|EN|cleanmgr.sagerun64.049|                           alone. Armed here: temp files, Internet cache,
-::X|EN|cleanmgr.sagerun64.050|                           Delivery Optimization, D3D shader cache,
-::X|EN|cleanmgr.sagerun64.051|                           thumbnail cache, setup and upgrade logs,
-::X|EN|cleanmgr.sagerun64.052|                           Defender and Error Reporting files, plus the
-::X|EN|cleanmgr.sagerun64.053|                           Recycle Bin, the memory dump and the minidumps
-::X|EN|cleanmgr.sagerun64.054|                           (the two dump handlers are set back to 0 while
-::X|EN|cleanmgr.sagerun64.055|                           freeze capture is on).
-::X|EN|cleanmgr.sagerun64.056|                           Pinned off here: Downloads, Update Cleanup,
-::X|EN|cleanmgr.sagerun64.057|                           Previous Installations, Language Packs, Device
-::X|EN|cleanmgr.sagerun64.058|                           Driver Packages, User file versions and six
-::X|EN|cleanmgr.sagerun64.059|                           more.
-::X|EN|cleanmgr.sagerun64.060|    SKIP                 : Nothing runs. The allow-list written in the
-::X|EN|cleanmgr.sagerun64.061|                           previous step stays in the registry, inert,
-::X|EN|cleanmgr.sagerun64.062|                           until some future run uses it. Windows itself
-::X|EN|cleanmgr.sagerun64.063|                           never invokes a sageset profile.
-::X|EN|cleanmgr.sagerun64.064|
-::X|EN|cleanmgr.sagerun64.065|  Why these profiles : RUN on all four use profiles, because the
-::X|EN|cleanmgr.sagerun64.066|                       maintainer decided that the Recycle Bin and the
-::X|EN|cleanmgr.sagerun64.067|                       crash dumps go, and that decision does not vary by
-::X|EN|cleanmgr.sagerun64.068|                       whether the machine plays games or serves Plex. The
-::X|EN|cleanmgr.sagerun64.069|                       distinction that would matter is not the profile,
-::X|EN|cleanmgr.sagerun64.070|                       it is the moment: do not run this while a blue
-::X|EN|cleanmgr.sagerun64.071|                       screen is still unexplained, and do not run it
-::X|EN|cleanmgr.sagerun64.072|                       before you have looked in the Recycle Bin. The
-::X|EN|cleanmgr.sagerun64.073|                       Windows column is SKIP because there is no default
-::X|EN|cleanmgr.sagerun64.074|                       to preserve - Windows ships no sageset profile and
-::X|EN|cleanmgr.sagerun64.075|                       runs none, so anything other than SKIP would be
-::X|EN|cleanmgr.sagerun64.076|                       inventing a default that does not exist.
-::X|EN|cleanmgr.sagerun64.077|
-::X|EN|cleanmgr.sagerun64.078|  Known problems  : The log line said 14 on / 15 off while the code arms 17
-::X|EN|cleanmgr.sagerun64.079|                    and disarms 12; fixed in 05.1. Still open: the manual
-::X|EN|cleanmgr.sagerun64.080|                    delete pass deliberately preserves thumbcache because
-::X|EN|cleanmgr.sagerun64.081|                    Explorer visibly regenerates every thumbnail
-::X|EN|cleanmgr.sagerun64.082|                    afterwards, painful in large media folders - but
-::X|EN|cleanmgr.sagerun64.083|                    Thumbnail Cache is armed at 2 in this allow-list, so
-::X|EN|cleanmgr.sagerun64.084|                    cleanmgr deletes exactly what the manual pass was
-::X|EN|cleanmgr.sagerun64.085|                    careful to keep. One of the two decisions is wrong;
-::X|EN|cleanmgr.sagerun64.086|                    they cannot both be right.
-::X|EN|cleanmgr.sagerun64.087|
-::X|EN|cleanmgr.sagerun64.088|  Unverified      : The one-to-ten GB figure is the usual range on a
-::X|EN|cleanmgr.sagerun64.089|                    desktop that has not been cleaned for months, not a
-::X|EN|cleanmgr.sagerun64.090|                    measurement taken on this machine. If the cap fires after
-::X|EN|cleanmgr.sagerun64.091|                    600 seconds, nothing records which handlers had
-::X|EN|cleanmgr.sagerun64.092|                    already completed, so a timed-out run leaves the
-::X|EN|cleanmgr.sagerun64.093|                    machine in a state the log cannot describe.
-::X|EN|cleanmgr.sagerun64.094|
-::X|EN|cleanmgr.sagerun64.095|  Target          : start "" cleanmgr /sagerun:64 at the end of :clean,
-::X|EN|cleanmgr.sagerun64.096|                    followed by the five-second polling loop :clean_wait
-::X|EN|cleanmgr.sagerun64.097|                    that runs taskkill /f /im cleanmgr.exe once 600
-::X|EN|cleanmgr.sagerun64.098|                    seconds have elapsed. The handler allow-list is
-::X|EN|cleanmgr.sagerun64.099|                    written just above, in :clean: StateFlags0064=2 on 17
-::X|EN|cleanmgr.sagerun64.100|                    handlers (the ENABLE list) and StateFlags0064=0 on 12
-::X|EN|cleanmgr.sagerun64.101|                    handlers (the DISABLE list), under HKLM\SOFTWARE\Micro
-::X|EN|cleanmgr.sagerun64.102|                    soft\Windows\CurrentVersion\Explorer\VolumeCaches.
-::X|EN|cleanmgr.sagerun64.103|                    Then, if HKLM\SYSTEM\CurrentControlSet\Services\kbdhid
-::X|EN|cleanmgr.sagerun64.104|                    \crashdump has a Dump2Key value (freeze capture on),
-::X|EN|cleanmgr.sagerun64.105|                    the two dump handlers are written back to 0 and the
-::X|EN|cleanmgr.sagerun64.106|                    log says so.
+::X|EN|cleanmgr.sagerun64.023|                    exception: while freeze capture is on (Reports > Crashes /
+::X|EN|cleanmgr.sagerun64.024|                    freezes; a crash key set for the USB or the PS/2
+::X|EN|cleanmgr.sagerun64.025|                    keyboard), the two dump handlers - System error memory
+::X|EN|cleanmgr.sagerun64.026|                    dump files and System error minidump files - are switched
+::X|EN|cleanmgr.sagerun64.027|                    back to 0 just before the run, so cleanmgr keeps the
+::X|EN|cleanmgr.sagerun64.028|                    dumps. Regeneration for the rest is fast and unattended:
+::X|EN|cleanmgr.sagerun64.029|                    temp and Internet cache within minutes of normal use,
+::X|EN|cleanmgr.sagerun64.030|                    Delivery Optimization on the next update, thumbnails as
+::X|EN|cleanmgr.sagerun64.031|                    you browse each folder again, D3D shader cache over one
+::X|EN|cleanmgr.sagerun64.032|                    stuttery session per game. Nothing here touches your
+::X|EN|cleanmgr.sagerun64.033|                    Downloads folder, your documents, installed programs or
+::X|EN|cleanmgr.sagerun64.034|                    Windows Update's own cache - those handlers are explicitly
+::X|EN|cleanmgr.sagerun64.035|                    pinned to 0. The ten-minute cap exists because /sagerun
+::X|EN|cleanmgr.sagerun64.036|                    walks every drive and a disconnected network mapping
+::X|EN|cleanmgr.sagerun64.037|                    stalls it; if the cap fires, the cleanup was only partly
+::X|EN|cleanmgr.sagerun64.038|                    done and no record says how far it got.
+::X|EN|cleanmgr.sagerun64.039|
+::X|EN|cleanmgr.sagerun64.040|  Windows default : Not applicable - Windows never runs a sageset profile
+::X|EN|cleanmgr.sagerun64.041|                    on its own.
+::X|EN|cleanmgr.sagerun64.042|
+::X|EN|cleanmgr.sagerun64.043|  Possible values:
+::X|EN|cleanmgr.sagerun64.044|    RUN                  : cleanmgr runs headless against profile 0064
+::X|EN|cleanmgr.sagerun64.045|                           across every drive. Each handler armed at 2
+::X|EN|cleanmgr.sagerun64.046|                           deletes its own category through the shell API;
+::X|EN|cleanmgr.sagerun64.047|                           each handler pinned to 0 is explicitly left
+::X|EN|cleanmgr.sagerun64.048|                           alone. Armed here: temp files, Internet cache,
+::X|EN|cleanmgr.sagerun64.049|                           Delivery Optimization, D3D shader cache,
+::X|EN|cleanmgr.sagerun64.050|                           thumbnail cache, setup and upgrade logs,
+::X|EN|cleanmgr.sagerun64.051|                           Defender and Error Reporting files, plus the
+::X|EN|cleanmgr.sagerun64.052|                           Recycle Bin, the memory dump and the minidumps
+::X|EN|cleanmgr.sagerun64.053|                           (the two dump handlers are set back to 0 while
+::X|EN|cleanmgr.sagerun64.054|                           freeze capture is on).
+::X|EN|cleanmgr.sagerun64.055|                           Pinned off here: Downloads, Update Cleanup,
+::X|EN|cleanmgr.sagerun64.056|                           Previous Installations, Language Packs, Device
+::X|EN|cleanmgr.sagerun64.057|                           Driver Packages, User file versions and six
+::X|EN|cleanmgr.sagerun64.058|                           more.
+::X|EN|cleanmgr.sagerun64.059|    SKIP                 : Nothing runs. The allow-list written in the
+::X|EN|cleanmgr.sagerun64.060|                           previous step stays in the registry, inert,
+::X|EN|cleanmgr.sagerun64.061|                           until some future run uses it. Windows itself
+::X|EN|cleanmgr.sagerun64.062|                           never invokes a sageset profile.
+::X|EN|cleanmgr.sagerun64.063|
+::X|EN|cleanmgr.sagerun64.064|  Why these profiles : RUN on all four use profiles, because the
+::X|EN|cleanmgr.sagerun64.065|                       maintainer decided that the Recycle Bin and the
+::X|EN|cleanmgr.sagerun64.066|                       crash dumps go, and that decision does not vary by
+::X|EN|cleanmgr.sagerun64.067|                       whether the machine plays games or serves Plex. The
+::X|EN|cleanmgr.sagerun64.068|                       distinction that would matter is not the profile,
+::X|EN|cleanmgr.sagerun64.069|                       it is the moment: do not run this while a blue
+::X|EN|cleanmgr.sagerun64.070|                       screen is still unexplained, and do not run it
+::X|EN|cleanmgr.sagerun64.071|                       before you have looked in the Recycle Bin. The
+::X|EN|cleanmgr.sagerun64.072|                       Windows column is SKIP because there is no default
+::X|EN|cleanmgr.sagerun64.073|                       to preserve - Windows ships no sageset profile and
+::X|EN|cleanmgr.sagerun64.074|                       runs none, so anything other than SKIP would be
+::X|EN|cleanmgr.sagerun64.075|                       inventing a default that does not exist.
+::X|EN|cleanmgr.sagerun64.076|
+::X|EN|cleanmgr.sagerun64.077|  Known problems  : The log line said 14 on / 15 off while the code arms 17
+::X|EN|cleanmgr.sagerun64.078|                    and disarms 12; fixed in 05.1. Still open: the manual
+::X|EN|cleanmgr.sagerun64.079|                    delete pass deliberately preserves thumbcache because
+::X|EN|cleanmgr.sagerun64.080|                    Explorer visibly regenerates every thumbnail
+::X|EN|cleanmgr.sagerun64.081|                    afterwards, painful in large media folders - but
+::X|EN|cleanmgr.sagerun64.082|                    Thumbnail Cache is armed at 2 in this allow-list, so
+::X|EN|cleanmgr.sagerun64.083|                    cleanmgr deletes exactly what the manual pass was
+::X|EN|cleanmgr.sagerun64.084|                    careful to keep. One of the two decisions is wrong;
+::X|EN|cleanmgr.sagerun64.085|                    they cannot both be right.
+::X|EN|cleanmgr.sagerun64.086|
+::X|EN|cleanmgr.sagerun64.087|  Unverified      : The one-to-ten GB figure is the usual range on a
+::X|EN|cleanmgr.sagerun64.088|                    desktop that has not been cleaned for months, not a
+::X|EN|cleanmgr.sagerun64.089|                    measurement taken on this machine. If the cap fires after
+::X|EN|cleanmgr.sagerun64.090|                    600 seconds, nothing records which handlers had
+::X|EN|cleanmgr.sagerun64.091|                    already completed, so a timed-out run leaves the
+::X|EN|cleanmgr.sagerun64.092|                    machine in a state the log cannot describe.
+::X|EN|cleanmgr.sagerun64.093|
+::X|EN|cleanmgr.sagerun64.094|  Target          : start "" cleanmgr /sagerun:64 at the end of :clean,
+::X|EN|cleanmgr.sagerun64.095|                    followed by the five-second polling loop :clean_wait that
+::X|EN|cleanmgr.sagerun64.096|                    runs taskkill /f /im cleanmgr.exe once 600 seconds have
+::X|EN|cleanmgr.sagerun64.097|                    elapsed. The handler allow-list is written just above, in
+::X|EN|cleanmgr.sagerun64.098|                    :clean: StateFlags0064=2 on 17 handlers (the ENABLE list)
+::X|EN|cleanmgr.sagerun64.099|                    and StateFlags0064=0 on 12 handlers (the DISABLE list),
+::X|EN|cleanmgr.sagerun64.100|                    under HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explo
+::X|EN|cleanmgr.sagerun64.101|                    rer\VolumeCaches. Then :capturestate looks for a Dump2Key
+::X|EN|cleanmgr.sagerun64.102|                    value under
+::X|EN|cleanmgr.sagerun64.103|                    HKLM\SYSTEM\CurrentControlSet\Services\kbdhid\crashdump
+::X|EN|cleanmgr.sagerun64.104|                    (USB) or \i8042prt\crashdump (PS/2); if either is set
+::X|EN|cleanmgr.sagerun64.105|                    (freeze capture on), the two dump handlers are written
+::X|EN|cleanmgr.sagerun64.106|                    back to 0 and the log says so.
 ::X|FR|cleanmgr.sagerun64.001|  Ce que c est    : Lance reellement le Nettoyage de disque, sans
 ::X|FR|cleanmgr.sagerun64.002|                    interface, avec la liste de gestionnaires configuree
 ::X|FR|cleanmgr.sagerun64.003|                    aux deux etapes precedentes, sur tous les disques.
@@ -23542,104 +23575,103 @@ goto :eof
 ::X|FR|cleanmgr.sagerun64.017|                    toutes seules et ne coutent rien a perdre.
 ::X|FR|cleanmgr.sagerun64.018|
 ::X|FR|cleanmgr.sagerun64.019|  Cout            : C est l etape irreversible, et deux des dix-sept
-::X|FR|cleanmgr.sagerun64.020|                    gestionnaires armes en sont la raison. La Corbeille
-::X|FR|cleanmgr.sagerun64.021|                    est videe sur tous les disques. Le vidage memoire et
-::X|FR|cleanmgr.sagerun64.022|                    les minidumps partent aussi : si vous cherchez la
-::X|FR|cleanmgr.sagerun64.023|                    cause d un ecran bleu, les preuves disparaissent avec
-::X|FR|cleanmgr.sagerun64.024|                    eux - copiez %SystemRoot%\Minidump ailleurs d abord si
-::X|FR|cleanmgr.sagerun64.025|                    cela compte. Seule exception : tant que la capture de
-::X|FR|cleanmgr.sagerun64.026|                    gel est active (menu Reports > Crashes / freezes), les
-::X|FR|cleanmgr.sagerun64.027|                    deux gestionnaires de vidage - System error memory
-::X|FR|cleanmgr.sagerun64.028|                    dump files et System error minidump files - sont remis
-::X|FR|cleanmgr.sagerun64.029|                    a 0 juste avant le lancement, et cleanmgr garde donc
-::X|FR|cleanmgr.sagerun64.030|                    les vidages. Pour le reste, la regeneration est rapide
-::X|FR|cleanmgr.sagerun64.031|                    et sans intervention : temporaires et cache Internet
-::X|FR|cleanmgr.sagerun64.032|                    en quelques minutes d usage normal, optimisation de
-::X|FR|cleanmgr.sagerun64.033|                    distribution a la prochaine mise a jour, miniatures au
-::X|FR|cleanmgr.sagerun64.034|                    fur et a mesure que vous reparcourez les dossiers,
-::X|FR|cleanmgr.sagerun64.035|                    cache de shaders D3D au prix d une session saccadee
-::X|FR|cleanmgr.sagerun64.036|                    par jeu. Rien ici ne touche votre dossier
-::X|FR|cleanmgr.sagerun64.037|                    Telechargements, vos documents, vos programmes
-::X|FR|cleanmgr.sagerun64.038|                    installes ni le cache de Windows Update : ces
-::X|FR|cleanmgr.sagerun64.039|                    gestionnaires sont explicitement epingles a 0. La
-::X|FR|cleanmgr.sagerun64.040|                    limite de dix minutes existe parce que /sagerun
-::X|FR|cleanmgr.sagerun64.041|                    parcourt tous les disques et qu un lecteur reseau
-::X|FR|cleanmgr.sagerun64.042|                    deconnecte le bloque ; si elle se declenche, le
-::X|FR|cleanmgr.sagerun64.043|                    nettoyage n a ete fait qu en partie et rien ne dit
-::X|FR|cleanmgr.sagerun64.044|                    jusqu ou il est alle.
-::X|FR|cleanmgr.sagerun64.045|
-::X|FR|cleanmgr.sagerun64.046|  Defaut Windows  : Sans objet - Windows ne lance jamais un profil sageset
-::X|FR|cleanmgr.sagerun64.047|                    de lui-meme.
-::X|FR|cleanmgr.sagerun64.048|
-::X|FR|cleanmgr.sagerun64.049|  Valeurs possibles :
-::X|FR|cleanmgr.sagerun64.050|    RUN                  : cleanmgr s execute sans interface sur le profil
-::X|FR|cleanmgr.sagerun64.051|                           0064, sur tous les disques. Chaque gestionnaire
-::X|FR|cleanmgr.sagerun64.052|                           arme a 2 supprime sa categorie via l API du
-::X|FR|cleanmgr.sagerun64.053|                           shell ; chaque gestionnaire epingle a 0 est
-::X|FR|cleanmgr.sagerun64.054|                           explicitement laisse tranquille. Armes ici :
-::X|FR|cleanmgr.sagerun64.055|                           fichiers temporaires, cache Internet,
-::X|FR|cleanmgr.sagerun64.056|                           optimisation de distribution, cache de shaders
-::X|FR|cleanmgr.sagerun64.057|                           D3D, cache de miniatures, journaux
-::X|FR|cleanmgr.sagerun64.058|                           d installation et de mise a niveau, fichiers
-::X|FR|cleanmgr.sagerun64.059|                           Defender et rapports d erreurs, plus la
-::X|FR|cleanmgr.sagerun64.060|                           Corbeille, le vidage memoire et les minidumps
-::X|FR|cleanmgr.sagerun64.061|                           (les deux gestionnaires de vidage repassent a 0
-::X|FR|cleanmgr.sagerun64.062|                           tant que la capture de gel est active).
-::X|FR|cleanmgr.sagerun64.063|                           Epingles a 0 : Telechargements, nettoyage de
-::X|FR|cleanmgr.sagerun64.064|                           Windows Update, installations precedentes,
-::X|FR|cleanmgr.sagerun64.065|                           modules linguistiques, packages de pilotes,
-::X|FR|cleanmgr.sagerun64.066|                           versions de fichiers et six autres.
-::X|FR|cleanmgr.sagerun64.067|    SKIP                 : Rien ne s execute. La liste d autorisation
-::X|FR|cleanmgr.sagerun64.068|                           ecrite a l etape precedente reste dans le
-::X|FR|cleanmgr.sagerun64.069|                           registre, inerte, jusqu a une execution
-::X|FR|cleanmgr.sagerun64.070|                           ulterieure. Windows n invoque jamais un profil
-::X|FR|cleanmgr.sagerun64.071|                           sageset de lui-meme.
-::X|FR|cleanmgr.sagerun64.072|
-::X|FR|cleanmgr.sagerun64.073|  Pourquoi ces profils : RUN sur les quatre profils d usage, parce que le
-::X|FR|cleanmgr.sagerun64.074|                         proprietaire a tranche : la Corbeille et les
-::X|FR|cleanmgr.sagerun64.075|                         vidages memoire partent, et cette decision ne
-::X|FR|cleanmgr.sagerun64.076|                         depend pas de savoir si la machine joue ou sert
-::X|FR|cleanmgr.sagerun64.077|                         du Plex. La distinction qui compte n est pas le
-::X|FR|cleanmgr.sagerun64.078|                         profil mais le moment : ne lancez pas ceci tant
-::X|FR|cleanmgr.sagerun64.079|                         qu un ecran bleu reste inexplique, et pas avant
-::X|FR|cleanmgr.sagerun64.080|                         d avoir regarde dans la Corbeille. La colonne
-::X|FR|cleanmgr.sagerun64.081|                         Windows est a SKIP parce qu il n y a aucun defaut
-::X|FR|cleanmgr.sagerun64.082|                         a preserver : Windows ne livre aucun profil
-::X|FR|cleanmgr.sagerun64.083|                         sageset et n en execute aucun, donc toute autre
-::X|FR|cleanmgr.sagerun64.084|                         valeur inventerait un defaut inexistant.
-::X|FR|cleanmgr.sagerun64.085|
-::X|FR|cleanmgr.sagerun64.086|  Problemes connus : Le journal annoncait 14 on / 15 off alors que le code
-::X|FR|cleanmgr.sagerun64.087|                     en active 17 et en desactive 12 ; corrige en 05.1.
-::X|FR|cleanmgr.sagerun64.088|                     Reste ouvert : la passe de suppression manuelle
-::X|FR|cleanmgr.sagerun64.089|                     conserve deliberement thumbcache parce que
-::X|FR|cleanmgr.sagerun64.090|                     l Explorateur regenere visiblement chaque miniature
-::X|FR|cleanmgr.sagerun64.091|                     ensuite, penible dans de gros dossiers de medias -
-::X|FR|cleanmgr.sagerun64.092|                     mais Thumbnail Cache est arme a 2 dans cette liste,
-::X|FR|cleanmgr.sagerun64.093|                     donc cleanmgr supprime precisement ce que la passe
-::X|FR|cleanmgr.sagerun64.094|                     manuelle prenait soin de garder. L une des deux
-::X|FR|cleanmgr.sagerun64.095|                     decisions est fausse ; elles ne peuvent pas etre
-::X|FR|cleanmgr.sagerun64.096|                     justes toutes les deux.
-::X|FR|cleanmgr.sagerun64.097|
-::X|FR|cleanmgr.sagerun64.098|  Non verifie (en)  : The one-to-ten GB figure is the usual range on a
-::X|FR|cleanmgr.sagerun64.099|                      desktop that has not been cleaned for months, not a
-::X|FR|cleanmgr.sagerun64.100|                      measurement taken on this machine. If the cap fires
-::X|FR|cleanmgr.sagerun64.101|                      after 600 seconds, nothing records which handlers had
-::X|FR|cleanmgr.sagerun64.102|                      already completed, so a timed-out run leaves the
-::X|FR|cleanmgr.sagerun64.103|                      machine in a state the log cannot describe.
-::X|FR|cleanmgr.sagerun64.104|
-::X|FR|cleanmgr.sagerun64.105|  Cible           : start "" cleanmgr /sagerun:64 a la fin de :clean,
-::X|FR|cleanmgr.sagerun64.106|                    suivi de la boucle de surveillance :clean_wait (toutes
-::X|FR|cleanmgr.sagerun64.107|                    les cinq secondes), qui lance taskkill /f /im
-::X|FR|cleanmgr.sagerun64.108|                    cleanmgr.exe une fois 600 secondes ecoulees. La liste
-::X|FR|cleanmgr.sagerun64.109|                    d autorisation est ecrite juste avant, dans :clean :
-::X|FR|cleanmgr.sagerun64.110|                    StateFlags0064=2 sur 17 gestionnaires (la liste
-::X|FR|cleanmgr.sagerun64.111|                    ENABLE) et StateFlags0064=0 sur 12 gestionnaires (la
-::X|FR|cleanmgr.sagerun64.112|                    liste DISABLE), sous HKLM\SOFTWARE\Microsoft\Windows\
-::X|FR|cleanmgr.sagerun64.113|                    CurrentVersion\Explorer\VolumeCaches. Ensuite, si
-::X|FR|cleanmgr.sagerun64.114|                    HKLM\SYSTEM\CurrentControlSet\Services\kbdhid\crashdump
-::X|FR|cleanmgr.sagerun64.115|                    contient une valeur Dump2Key (capture de gel active),
-::X|FR|cleanmgr.sagerun64.116|                    les deux gestionnaires de vidage sont remis a 0 et le
-::X|FR|cleanmgr.sagerun64.117|                    journal le note.
+::X|FR|cleanmgr.sagerun64.020|                    gestionnaires armes en sont la raison. La Corbeille est
+::X|FR|cleanmgr.sagerun64.021|                    videe sur tous les disques. Le vidage memoire et les
+::X|FR|cleanmgr.sagerun64.022|                    minidumps partent aussi : si vous cherchez la cause d un
+::X|FR|cleanmgr.sagerun64.023|                    ecran bleu, les preuves disparaissent avec eux - copiez
+::X|FR|cleanmgr.sagerun64.024|                    %SystemRoot%\Minidump ailleurs d abord si cela compte.
+::X|FR|cleanmgr.sagerun64.025|                    Seule exception : tant que la capture de gel est active
+::X|FR|cleanmgr.sagerun64.026|                    (menu Reports > Crashes / freezes ; une touche de crash
+::X|FR|cleanmgr.sagerun64.027|                    definie pour le clavier USB ou PS/2), les deux
+::X|FR|cleanmgr.sagerun64.028|                    gestionnaires de vidage - System error memory dump files
+::X|FR|cleanmgr.sagerun64.029|                    et System error minidump files - sont remis a 0 juste
+::X|FR|cleanmgr.sagerun64.030|                    avant le lancement, et cleanmgr garde donc les vidages.
+::X|FR|cleanmgr.sagerun64.031|                    Pour le reste, la regeneration est rapide et sans
+::X|FR|cleanmgr.sagerun64.032|                    intervention : temporaires et cache Internet en quelques
+::X|FR|cleanmgr.sagerun64.033|                    minutes d usage normal, optimisation de distribution a la
+::X|FR|cleanmgr.sagerun64.034|                    prochaine mise a jour, miniatures au fur et a mesure que
+::X|FR|cleanmgr.sagerun64.035|                    vous reparcourez les dossiers, cache de shaders D3D au
+::X|FR|cleanmgr.sagerun64.036|                    prix d une session saccadee par jeu. Rien ici ne touche
+::X|FR|cleanmgr.sagerun64.037|                    votre dossier Telechargements, vos documents, vos
+::X|FR|cleanmgr.sagerun64.038|                    programmes installes ni le cache de Windows Update : ces
+::X|FR|cleanmgr.sagerun64.039|                    gestionnaires sont explicitement epingles a 0. La limite
+::X|FR|cleanmgr.sagerun64.040|                    de dix minutes existe parce que /sagerun parcourt tous les
+::X|FR|cleanmgr.sagerun64.041|                    disques et qu un lecteur reseau deconnecte le bloque ; si
+::X|FR|cleanmgr.sagerun64.042|                    elle se declenche, le nettoyage n a ete fait qu en partie
+::X|FR|cleanmgr.sagerun64.043|                    et rien ne dit jusqu ou il est alle.
+::X|FR|cleanmgr.sagerun64.044|
+::X|FR|cleanmgr.sagerun64.045|  Defaut Windows  : Sans objet - Windows ne lance jamais un profil sageset
+::X|FR|cleanmgr.sagerun64.046|                    de lui-meme.
+::X|FR|cleanmgr.sagerun64.047|
+::X|FR|cleanmgr.sagerun64.048|  Valeurs possibles :
+::X|FR|cleanmgr.sagerun64.049|    RUN                  : cleanmgr s execute sans interface sur le profil
+::X|FR|cleanmgr.sagerun64.050|                           0064, sur tous les disques. Chaque gestionnaire
+::X|FR|cleanmgr.sagerun64.051|                           arme a 2 supprime sa categorie via l API du
+::X|FR|cleanmgr.sagerun64.052|                           shell ; chaque gestionnaire epingle a 0 est
+::X|FR|cleanmgr.sagerun64.053|                           explicitement laisse tranquille. Armes ici :
+::X|FR|cleanmgr.sagerun64.054|                           fichiers temporaires, cache Internet,
+::X|FR|cleanmgr.sagerun64.055|                           optimisation de distribution, cache de shaders
+::X|FR|cleanmgr.sagerun64.056|                           D3D, cache de miniatures, journaux
+::X|FR|cleanmgr.sagerun64.057|                           d installation et de mise a niveau, fichiers
+::X|FR|cleanmgr.sagerun64.058|                           Defender et rapports d erreurs, plus la
+::X|FR|cleanmgr.sagerun64.059|                           Corbeille, le vidage memoire et les minidumps
+::X|FR|cleanmgr.sagerun64.060|                           (les deux gestionnaires de vidage repassent a 0
+::X|FR|cleanmgr.sagerun64.061|                           tant que la capture de gel est active).
+::X|FR|cleanmgr.sagerun64.062|                           Epingles a 0 : Telechargements, nettoyage de
+::X|FR|cleanmgr.sagerun64.063|                           Windows Update, installations precedentes,
+::X|FR|cleanmgr.sagerun64.064|                           modules linguistiques, packages de pilotes,
+::X|FR|cleanmgr.sagerun64.065|                           versions de fichiers et six autres.
+::X|FR|cleanmgr.sagerun64.066|    SKIP                 : Rien ne s execute. La liste d autorisation
+::X|FR|cleanmgr.sagerun64.067|                           ecrite a l etape precedente reste dans le
+::X|FR|cleanmgr.sagerun64.068|                           registre, inerte, jusqu a une execution
+::X|FR|cleanmgr.sagerun64.069|                           ulterieure. Windows n invoque jamais un profil
+::X|FR|cleanmgr.sagerun64.070|                           sageset de lui-meme.
+::X|FR|cleanmgr.sagerun64.071|
+::X|FR|cleanmgr.sagerun64.072|  Pourquoi ces profils : RUN sur les quatre profils d usage, parce que le
+::X|FR|cleanmgr.sagerun64.073|                         proprietaire a tranche : la Corbeille et les
+::X|FR|cleanmgr.sagerun64.074|                         vidages memoire partent, et cette decision ne
+::X|FR|cleanmgr.sagerun64.075|                         depend pas de savoir si la machine joue ou sert
+::X|FR|cleanmgr.sagerun64.076|                         du Plex. La distinction qui compte n est pas le
+::X|FR|cleanmgr.sagerun64.077|                         profil mais le moment : ne lancez pas ceci tant
+::X|FR|cleanmgr.sagerun64.078|                         qu un ecran bleu reste inexplique, et pas avant
+::X|FR|cleanmgr.sagerun64.079|                         d avoir regarde dans la Corbeille. La colonne
+::X|FR|cleanmgr.sagerun64.080|                         Windows est a SKIP parce qu il n y a aucun defaut
+::X|FR|cleanmgr.sagerun64.081|                         a preserver : Windows ne livre aucun profil
+::X|FR|cleanmgr.sagerun64.082|                         sageset et n en execute aucun, donc toute autre
+::X|FR|cleanmgr.sagerun64.083|                         valeur inventerait un defaut inexistant.
+::X|FR|cleanmgr.sagerun64.084|
+::X|FR|cleanmgr.sagerun64.085|  Problemes connus : Le journal annoncait 14 on / 15 off alors que le code
+::X|FR|cleanmgr.sagerun64.086|                     en active 17 et en desactive 12 ; corrige en 05.1.
+::X|FR|cleanmgr.sagerun64.087|                     Reste ouvert : la passe de suppression manuelle
+::X|FR|cleanmgr.sagerun64.088|                     conserve deliberement thumbcache parce que
+::X|FR|cleanmgr.sagerun64.089|                     l Explorateur regenere visiblement chaque miniature
+::X|FR|cleanmgr.sagerun64.090|                     ensuite, penible dans de gros dossiers de medias -
+::X|FR|cleanmgr.sagerun64.091|                     mais Thumbnail Cache est arme a 2 dans cette liste,
+::X|FR|cleanmgr.sagerun64.092|                     donc cleanmgr supprime precisement ce que la passe
+::X|FR|cleanmgr.sagerun64.093|                     manuelle prenait soin de garder. L une des deux
+::X|FR|cleanmgr.sagerun64.094|                     decisions est fausse ; elles ne peuvent pas etre
+::X|FR|cleanmgr.sagerun64.095|                     justes toutes les deux.
+::X|FR|cleanmgr.sagerun64.096|
+::X|FR|cleanmgr.sagerun64.097|  Non verifie (en)  : The one-to-ten GB figure is the usual range on a
+::X|FR|cleanmgr.sagerun64.098|                      desktop that has not been cleaned for months, not a
+::X|FR|cleanmgr.sagerun64.099|                      measurement taken on this machine. If the cap fires
+::X|FR|cleanmgr.sagerun64.100|                      after 600 seconds, nothing records which handlers had
+::X|FR|cleanmgr.sagerun64.101|                      already completed, so a timed-out run leaves the
+::X|FR|cleanmgr.sagerun64.102|                      machine in a state the log cannot describe.
+::X|FR|cleanmgr.sagerun64.103|
+::X|FR|cleanmgr.sagerun64.104|  Cible           : start "" cleanmgr /sagerun:64 a la fin de :clean, suivi de
+::X|FR|cleanmgr.sagerun64.105|                    la boucle de surveillance :clean_wait (toutes les cinq
+::X|FR|cleanmgr.sagerun64.106|                    secondes), qui lance taskkill /f /im cleanmgr.exe une fois
+::X|FR|cleanmgr.sagerun64.107|                    600 secondes ecoulees. La liste d autorisation est ecrite
+::X|FR|cleanmgr.sagerun64.108|                    juste avant, dans :clean : StateFlags0064=2 sur 17
+::X|FR|cleanmgr.sagerun64.109|                    gestionnaires (la liste ENABLE) et StateFlags0064=0 sur 12
+::X|FR|cleanmgr.sagerun64.110|                    gestionnaires (la liste DISABLE), sous HKLM\SOFTWARE\Micro
+::X|FR|cleanmgr.sagerun64.111|                    soft\Windows\CurrentVersion\Explorer\VolumeCaches.
+::X|FR|cleanmgr.sagerun64.112|                    Ensuite, :capturestate cherche une valeur Dump2Key sous
+::X|FR|cleanmgr.sagerun64.113|                    HKLM\SYSTEM\CurrentControlSet\Services\kbdhid\crashdump
+::X|FR|cleanmgr.sagerun64.114|                    (USB) ou \i8042prt\crashdump (PS/2) ; si l une existe
+::X|FR|cleanmgr.sagerun64.115|                    (capture de gel active), les deux gestionnaires de vidage
+::X|FR|cleanmgr.sagerun64.116|                    sont remis a 0 et le journal le note.
 ::
 :: ---- recycle.bin.all.drives (risky) ----------------------------
 ::P|recycle.bin.all.drives|DELETE|DELETE|DELETE|DELETE|SKIP|
@@ -29307,13 +29339,13 @@ goto :eof
 ::X|EN|crash.dumps.004|                    only record of what actually crashed.
 ::X|EN|crash.dumps.005|
 ::X|EN|crash.dumps.006|  Actual effect   : Deletes both. Nothing about how Windows writes future
-::X|EN|crash.dumps.007|                    dumps is changed, and MEMORY.DMP still needs a
-::X|EN|crash.dumps.008|                    pagefile on the system drive to be written at all.
-::X|EN|crash.dumps.009|                    Skipped while freeze capture is on (Reports > Crashes
-::X|EN|crash.dumps.010|                    / freezes): the dumps are then kept, with a warning,
-::X|EN|crash.dumps.011|                    and the Disk Cleanup dump handlers are switched off
-::X|EN|crash.dumps.012|                    too, so the evidence the capture exists to produce
-::X|EN|crash.dumps.013|                    survives the clean.
+::X|EN|crash.dumps.007|                    dumps is changed, and MEMORY.DMP still needs a pagefile on
+::X|EN|crash.dumps.008|                    the system drive to be written at all. Skipped while
+::X|EN|crash.dumps.009|                    freeze capture is on (Reports > Crashes / freezes), that
+::X|EN|crash.dumps.010|                    is while a crash key is set for either keyboard, USB or
+::X|EN|crash.dumps.011|                    PS/2: the dumps are then kept, with a warning, and the
+::X|EN|crash.dumps.012|                    Disk Cleanup dump handlers are switched off too, so the
+::X|EN|crash.dumps.013|                    evidence the capture exists to produce survives the clean.
 ::X|EN|crash.dumps.014|
 ::X|EN|crash.dumps.015|  Gain            : Space only. Minidumps are a few hundred KB each.
 ::X|EN|crash.dumps.016|                    MEMORY.DMP is written as an Automatic memory dump on a
@@ -29362,89 +29394,92 @@ goto :eof
 ::X|EN|crash.dumps.059|
 ::X|EN|crash.dumps.060|  Target          : OPTY.bat :dl_dumps_go - del /F /S /Q
 ::X|EN|crash.dumps.061|                    "%SystemRoot%\Minidump\*" and del /F /S /Q
-::X|EN|crash.dumps.062|                    "%SystemRoot%\MEMORY.DMP". First it checks for the
-::X|EN|crash.dumps.063|                    freeze-capture key (Dump2Key under
-::X|EN|crash.dumps.064|                    HKLM\SYSTEM\CurrentControlSet\Services\kbdhid\crashdump)
-::X|EN|crash.dumps.065|                    and, if present, jumps to :dl_dumps_kept instead. The
-::X|EN|crash.dumps.066|                    ENABLE list under :clean also sets StateFlags0064=2 on
-::X|EN|crash.dumps.067|                    the "System error memory dump files" and "System
-::X|EN|crash.dumps.068|                    error minidump files" handlers, and switches them
-::X|EN|crash.dumps.069|                    back to 0 when that same key is present.
+::X|EN|crash.dumps.062|                    "%SystemRoot%\MEMORY.DMP". First :capturestate checks for
+::X|EN|crash.dumps.063|                    the freeze-capture key (Dump2Key under
+::X|EN|crash.dumps.064|                    HKLM\SYSTEM\CurrentControlSet\Services\kbdhid\crashdump
+::X|EN|crash.dumps.065|                    for USB or \i8042prt\crashdump for PS/2) and, if either is
+::X|EN|crash.dumps.066|                    present, jumps to :dl_dumps_kept instead. The ENABLE list
+::X|EN|crash.dumps.067|                    under :clean also sets StateFlags0064=2 on the "System
+::X|EN|crash.dumps.068|                    error memory dump files" and "System error minidump files"
+::X|EN|crash.dumps.069|                    handlers, and switches them back to 0 when :capturestate
+::X|EN|crash.dumps.070|                    finds either key.
 ::X|FR|crash.dumps.001|  Ce que c est    : A chaque ecran bleu, Windows ecrit un petit dump dans
 ::X|FR|crash.dumps.002|                    C:\Windows\Minidump et, selon votre reglage de dump,
 ::X|FR|crash.dumps.003|                    un C:\Windows\MEMORY.DMP. Ce sont les seules traces de
 ::X|FR|crash.dumps.004|                    ce qui a reellement plante.
 ::X|FR|crash.dumps.005|
 ::X|FR|crash.dumps.006|  Effet reel      : Supprime les deux. La facon dont Windows ecrira les
-::X|FR|crash.dumps.007|                    prochains dumps n est pas modifiee, et MEMORY.DMP
-::X|FR|crash.dumps.008|                    exige toujours un fichier d echange sur le disque
-::X|FR|crash.dumps.009|                    systeme pour pouvoir etre ecrit. Etape sautee tant que
-::X|FR|crash.dumps.010|                    la capture de gel est active (menu Reports > Crashes /
-::X|FR|crash.dumps.011|                    freezes) : les dumps sont alors conserves, avec un
-::X|FR|crash.dumps.012|                    avertissement, et les gestionnaires de dumps du
-::X|FR|crash.dumps.013|                    Nettoyage de disque sont eux aussi desactives, pour
-::X|FR|crash.dumps.014|                    que la preuve que la capture doit produire survive au
-::X|FR|crash.dumps.015|                    nettoyage.
-::X|FR|crash.dumps.016|
-::X|FR|crash.dumps.017|  Gain            : De la place, uniquement. Les minidumps font quelques
-::X|FR|crash.dumps.018|                    centaines de Ko chacun. MEMORY.DMP est ecrit en mode
-::X|FR|crash.dumps.019|                    dump memoire automatique sur un Windows 11 d origine,
-::X|FR|crash.dumps.020|                    c est-a-dire la memoire noyau seulement : en general
-::X|FR|crash.dumps.021|                    de quelques centaines de Mo a 2 Go environ, PAS la
-::X|FR|crash.dumps.022|                    taille de votre RAM. Il n approche la taille de la RAM
-::X|FR|crash.dumps.023|                    installee que si vous avez choisi vous-meme le dump
-::X|FR|crash.dumps.024|                    memoire complet dans les parametres systeme avances.
-::X|FR|crash.dumps.025|                    Regardez la taille du fichier avant de decider.
-::X|FR|crash.dumps.026|
-::X|FR|crash.dumps.027|  Cout            : Vous detruisez definitivement les preuves de tous vos
-::X|FR|crash.dumps.028|                    ecrans bleus et plantages de pilote graphique. Si
-::X|FR|crash.dumps.029|                    vous, ou quelqu un qui vous aide, cherchez plus tard
-::X|FR|crash.dumps.030|                    quel pilote tue la machine, la reponse a disparu. Et
-::X|FR|crash.dumps.031|                    MEMORY.DMP n existe que si vous avez deja plante,
-::X|FR|crash.dumps.032|                    c est-a-dire exactement quand il merite d etre garde.
-::X|FR|crash.dumps.033|
-::X|FR|crash.dumps.034|  Defaut Windows  : Sans objet. Windows les ecrit a chaque bugcheck et les
-::X|FR|crash.dumps.035|                    conserve jusqu a ce que quelque chose les supprime.
-::X|FR|crash.dumps.036|
-::X|FR|crash.dumps.037|  Valeurs possibles :
-::X|FR|crash.dumps.038|    DELETE               : C:\Windows\Minidump\* et C:\Windows\MEMORY.DMP
-::X|FR|crash.dumps.039|                           sont supprimes. La facon dont Windows ecrira le
-::X|FR|crash.dumps.040|                           PROCHAIN dump n est pas modifiee : le reglage
-::X|FR|crash.dumps.041|                           des dumps dans les parametres systeme avances
-::X|FR|crash.dumps.042|                           n est pas touche, le prochain bugcheck ecrira
-::X|FR|crash.dumps.043|                           donc un nouveau fichier.
-::X|FR|crash.dumps.044|    KEEP                 : Les fichiers restent. Windows ne fait jamais le
-::X|FR|crash.dumps.045|                           menage lui-meme : une machine qui a plante
-::X|FR|crash.dumps.046|                           plusieurs fois conserve tous ses minidumps
-::X|FR|crash.dumps.047|                           indefiniment, plus un MEMORY.DMP ecrase a
-::X|FR|crash.dumps.048|                           chaque bugcheck.
-::X|FR|crash.dumps.049|    ASK                  : Regardez d abord la taille reelle de
-::X|FR|crash.dumps.050|                           C:\Windows\MEMORY.DMP, puis decidez. Ce seul
-::X|FR|crash.dumps.051|                           chiffre resume tout le debat : un fichier de
-::X|FR|crash.dumps.052|                           400 Mo ne vaut pas la perte d un diagnostic.
-::X|FR|crash.dumps.053|
-::X|FR|crash.dumps.054|  Pourquoi ces profils : Les quatre premieres colonnes sont identiques a
-::X|FR|crash.dumps.055|                         dessein : garder un dump depend de la presence
-::X|FR|crash.dumps.056|                         d un plantage inexplique a analyser, pas de
-::X|FR|crash.dumps.057|                         l usage de la machine, et inventer une
-::X|FR|crash.dumps.058|                         distinction ici serait malhonnete. Elles disent
-::X|FR|crash.dumps.059|                         DELETE parce que le proprietaire de ce script a
-::X|FR|crash.dumps.060|                         tranche : les minidumps degagent. La colonne
-::X|FR|crash.dumps.061|                         WINDOWS dit KEEP parce que Windows ne les
-::X|FR|crash.dumps.062|                         supprime jamais de lui-meme. Passez outre le
-::X|FR|crash.dumps.063|                         profil pour une execution si vous avez eu un
-::X|FR|crash.dumps.064|                         ecran bleu recemment.
-::X|FR|crash.dumps.065|
-::X|FR|crash.dumps.066|  Cible           : OPTY.bat :dl_dumps_go - del /F /S /Q
-::X|FR|crash.dumps.067|                    "%SystemRoot%\Minidump\*" et del /F /S /Q
-::X|FR|crash.dumps.068|                    "%SystemRoot%\MEMORY.DMP". Avant cela, il cherche la
-::X|FR|crash.dumps.069|                    cle de capture de gel (Dump2Key sous
-::X|FR|crash.dumps.070|                    HKLM\SYSTEM\CurrentControlSet\Services\kbdhid\crashdump)
-::X|FR|crash.dumps.071|                    et, si elle existe, saute a :dl_dumps_kept. La liste
-::X|FR|crash.dumps.072|                    ENABLE sous :clean met aussi StateFlags0064=2 sur les
-::X|FR|crash.dumps.073|                    gestionnaires "System error memory dump files" et
-::X|FR|crash.dumps.074|                    "System error minidump files", et les remet a 0 quand
-::X|FR|crash.dumps.075|                    cette meme cle existe.
+::X|FR|crash.dumps.007|                    prochains dumps n est pas modifiee, et MEMORY.DMP exige
+::X|FR|crash.dumps.008|                    toujours un fichier d echange sur le disque systeme pour
+::X|FR|crash.dumps.009|                    pouvoir etre ecrit. Etape sautee tant que la capture de
+::X|FR|crash.dumps.010|                    gel est active (menu Reports > Crashes / freezes), c
+::X|FR|crash.dumps.011|                    est-a-dire tant qu une touche de crash est definie pour l
+::X|FR|crash.dumps.012|                    un ou l autre clavier, USB ou PS/2 : les dumps sont alors
+::X|FR|crash.dumps.013|                    conserves, avec un avertissement, et les gestionnaires de
+::X|FR|crash.dumps.014|                    dumps du Nettoyage de disque sont eux aussi desactives,
+::X|FR|crash.dumps.015|                    pour que la preuve que la capture doit produire survive au
+::X|FR|crash.dumps.016|                    nettoyage.
+::X|FR|crash.dumps.017|
+::X|FR|crash.dumps.018|  Gain            : De la place, uniquement. Les minidumps font quelques
+::X|FR|crash.dumps.019|                    centaines de Ko chacun. MEMORY.DMP est ecrit en mode
+::X|FR|crash.dumps.020|                    dump memoire automatique sur un Windows 11 d origine,
+::X|FR|crash.dumps.021|                    c est-a-dire la memoire noyau seulement : en general
+::X|FR|crash.dumps.022|                    de quelques centaines de Mo a 2 Go environ, PAS la
+::X|FR|crash.dumps.023|                    taille de votre RAM. Il n approche la taille de la RAM
+::X|FR|crash.dumps.024|                    installee que si vous avez choisi vous-meme le dump
+::X|FR|crash.dumps.025|                    memoire complet dans les parametres systeme avances.
+::X|FR|crash.dumps.026|                    Regardez la taille du fichier avant de decider.
+::X|FR|crash.dumps.027|
+::X|FR|crash.dumps.028|  Cout            : Vous detruisez definitivement les preuves de tous vos
+::X|FR|crash.dumps.029|                    ecrans bleus et plantages de pilote graphique. Si
+::X|FR|crash.dumps.030|                    vous, ou quelqu un qui vous aide, cherchez plus tard
+::X|FR|crash.dumps.031|                    quel pilote tue la machine, la reponse a disparu. Et
+::X|FR|crash.dumps.032|                    MEMORY.DMP n existe que si vous avez deja plante,
+::X|FR|crash.dumps.033|                    c est-a-dire exactement quand il merite d etre garde.
+::X|FR|crash.dumps.034|
+::X|FR|crash.dumps.035|  Defaut Windows  : Sans objet. Windows les ecrit a chaque bugcheck et les
+::X|FR|crash.dumps.036|                    conserve jusqu a ce que quelque chose les supprime.
+::X|FR|crash.dumps.037|
+::X|FR|crash.dumps.038|  Valeurs possibles :
+::X|FR|crash.dumps.039|    DELETE               : C:\Windows\Minidump\* et C:\Windows\MEMORY.DMP
+::X|FR|crash.dumps.040|                           sont supprimes. La facon dont Windows ecrira le
+::X|FR|crash.dumps.041|                           PROCHAIN dump n est pas modifiee : le reglage
+::X|FR|crash.dumps.042|                           des dumps dans les parametres systeme avances
+::X|FR|crash.dumps.043|                           n est pas touche, le prochain bugcheck ecrira
+::X|FR|crash.dumps.044|                           donc un nouveau fichier.
+::X|FR|crash.dumps.045|    KEEP                 : Les fichiers restent. Windows ne fait jamais le
+::X|FR|crash.dumps.046|                           menage lui-meme : une machine qui a plante
+::X|FR|crash.dumps.047|                           plusieurs fois conserve tous ses minidumps
+::X|FR|crash.dumps.048|                           indefiniment, plus un MEMORY.DMP ecrase a
+::X|FR|crash.dumps.049|                           chaque bugcheck.
+::X|FR|crash.dumps.050|    ASK                  : Regardez d abord la taille reelle de
+::X|FR|crash.dumps.051|                           C:\Windows\MEMORY.DMP, puis decidez. Ce seul
+::X|FR|crash.dumps.052|                           chiffre resume tout le debat : un fichier de
+::X|FR|crash.dumps.053|                           400 Mo ne vaut pas la perte d un diagnostic.
+::X|FR|crash.dumps.054|
+::X|FR|crash.dumps.055|  Pourquoi ces profils : Les quatre premieres colonnes sont identiques a
+::X|FR|crash.dumps.056|                         dessein : garder un dump depend de la presence
+::X|FR|crash.dumps.057|                         d un plantage inexplique a analyser, pas de
+::X|FR|crash.dumps.058|                         l usage de la machine, et inventer une
+::X|FR|crash.dumps.059|                         distinction ici serait malhonnete. Elles disent
+::X|FR|crash.dumps.060|                         DELETE parce que le proprietaire de ce script a
+::X|FR|crash.dumps.061|                         tranche : les minidumps degagent. La colonne
+::X|FR|crash.dumps.062|                         WINDOWS dit KEEP parce que Windows ne les
+::X|FR|crash.dumps.063|                         supprime jamais de lui-meme. Passez outre le
+::X|FR|crash.dumps.064|                         profil pour une execution si vous avez eu un
+::X|FR|crash.dumps.065|                         ecran bleu recemment.
+::X|FR|crash.dumps.066|
+::X|FR|crash.dumps.067|  Cible           : OPTY.bat :dl_dumps_go - del /F /S /Q
+::X|FR|crash.dumps.068|                    "%SystemRoot%\Minidump\*" et del /F /S /Q
+::X|FR|crash.dumps.069|                    "%SystemRoot%\MEMORY.DMP". Avant cela, :capturestate
+::X|FR|crash.dumps.070|                    cherche la cle de capture de gel (Dump2Key sous
+::X|FR|crash.dumps.071|                    HKLM\SYSTEM\CurrentControlSet\Services\kbdhid\crashdump
+::X|FR|crash.dumps.072|                    pour l USB ou \i8042prt\crashdump pour le PS/2) et, si l
+::X|FR|crash.dumps.073|                    une existe, saute a :dl_dumps_kept. La liste ENABLE sous
+::X|FR|crash.dumps.074|                    :clean met aussi StateFlags0064=2 sur les gestionnaires
+::X|FR|crash.dumps.075|                    "System error memory dump files" et "System error minidump
+::X|FR|crash.dumps.076|                    files", et les remet a 0 quand :capturestate trouve l une
+::X|FR|crash.dumps.077|                    ou l autre cle.
 ::
 :: ---- shutdown.machine (risky) ----------------------------------
 ::P|shutdown.machine|SKIP|SKIP|SKIP|SKIP|SKIP|
@@ -31719,9 +31754,9 @@ goto :eof
 :: ---- cl.selfmove.optyhome (risky) ------------------------------
 ::P|cl.selfmove.optyhome|ASK|ASK|ASK|ASK|KEEP|
 ::T|EN|cl.selfmove.optyhome.001|RELOCATE OPTY.BAT TO C:\OPTY_BY-YANND
-::T|EN|cl.selfmove.optyhome.002|Copies OPTY.bat into a locked-down C:\OPTY_by-YannD at startup and deletes the file you launched once the copy confirms it is running, so its logs and rollback data live in one known place - this happens automatically without a question, and only a git checkout (a .git folder next to the script) runs in place.
+::T|EN|cl.selfmove.optyhome.002|Copies OPTY.bat into a locked-down C:\OPTY_by-YannD at startup and deletes the file you launched once the copy confirms it is running, so its logs and rollback data live in one known place - this happens automatically without a question, a newer copy already installed there is started instead of being overwritten, and only a git checkout (a .git folder next to the script) runs in place.
 ::T|FR|cl.selfmove.optyhome.001|DEPLACEMENT D OPTY.BAT VERS C:\OPTY_BY-YANND
-::T|FR|cl.selfmove.optyhome.002|Copie OPTY.bat au demarrage dans un C:\OPTY_by-YannD verrouille et supprime le fichier que vous avez lance une fois que la copie confirme qu elle tourne, pour que ses journaux et son fichier de rollback restent au meme endroit connu - cela se fait automatiquement sans question, et seul un depot git (un dossier .git a cote du script) tourne sur place.
+::T|FR|cl.selfmove.optyhome.002|Copie OPTY.bat au demarrage dans un C:\OPTY_by-YannD verrouille et supprime le fichier que vous avez lance une fois que la copie confirme qu elle tourne, pour que ses journaux et son fichier de rollback restent au meme endroit connu - cela se fait automatiquement sans question, une copie plus recente deja installee la-bas est lancee au lieu d etre ecrasee, et seul un depot git (un dossier .git a cote du script) tourne sur place.
 ::X|EN|cl.selfmove.optyhome.001|  What it is      : If OPTY.bat is not already running from C:\OPTY_by-
 ::X|EN|cl.selfmove.optyhome.002|                    YannD, it creates that folder, copies itself into it,
 ::X|EN|cl.selfmove.optyhome.003|                    launches the copy and deletes the file you started.
@@ -31734,187 +31769,224 @@ goto :eof
 ::X|EN|cl.selfmove.optyhome.010|                    place and nothing is copied or deleted. Otherwise: md,
 ::X|EN|cl.selfmove.optyhome.011|                    then icacls hardens the folder (inheritance removed,
 ::X|EN|cl.selfmove.optyhome.012|                    Administrators and SYSTEM full control, Users read and
-::X|EN|cl.selfmove.optyhome.013|                    execute, all by SID so a French Windows works too),
-::X|EN|cl.selfmove.optyhome.014|                    then copy /y "%~f0" - the file actually running, so a
-::X|EN|cl.selfmove.optyhome.015|                    browser's "OPTY (1).bat" is the one copied - with its
-::X|EN|cl.selfmove.optyhome.016|                    exit code checked. start launches the copy, and the
-::X|EN|cl.selfmove.optyhome.017|                    original is deleted only once the copy proves it is
-::X|EN|cl.selfmove.optyhome.018|                    alive by writing OPTY_started.tmp. The original waits
-::X|EN|cl.selfmove.optyhome.019|                    up to 20 seconds for it; if it never appears, the
-::X|EN|cl.selfmove.optyhome.020|                    original is kept, a red warning names the antivirus as
-::X|EN|cl.selfmove.optyhome.021|                    the likely cause, and this run carries on in place. A
-::X|EN|cl.selfmove.optyhome.022|                    failed copy also keeps the original and runs in place.
-::X|EN|cl.selfmove.optyhome.023|
-::X|EN|cl.selfmove.optyhome.024|  Gain            : One known path. OPTY's logs, its rollback file and its
-::X|EN|cl.selfmove.optyhome.025|                    restore-point bookkeeping end up in a single folder
-::X|EN|cl.selfmove.optyhome.026|                    instead of scattered across Downloads, the desktop and
-::X|EN|cl.selfmove.optyhome.027|                    a USB key. There is no performance gain of any kind,
-::X|EN|cl.selfmove.optyhome.028|                    for anything.
-::X|EN|cl.selfmove.optyhome.029|
-::X|EN|cl.selfmove.optyhome.030|  Cost            : The file disappears from where you put it. In a synced
-::X|EN|cl.selfmove.optyhome.031|                    folder (OneDrive and the like), the deletion syncs to
-::X|EN|cl.selfmove.optyhome.032|                    every other device. A git checkout is spared by the
-::X|EN|cl.selfmove.optyhome.033|                    .git test. Undo is manual: move the file back and
-::X|EN|cl.selfmove.optyhome.034|                    delete C:\OPTY_by-YannD yourself. The folder sits at
-::X|EN|cl.selfmove.optyhome.035|                    the root of C:, whose inherited permissions would let
-::X|EN|cl.selfmove.optyhome.036|                    standard accounts modify a script that runs as
-::X|EN|cl.selfmove.optyhome.037|                    administrator; that is why OPTY removes inheritance and
-::X|EN|cl.selfmove.optyhome.038|                    leaves Users read-only before copying anything in. OPTY
-::X|EN|cl.selfmove.optyhome.039|                    also relaunches itself from that copy and can overwrite
-::X|EN|cl.selfmove.optyhome.040|                    itself from GitHub, which is what makes the location
-::X|EN|cl.selfmove.optyhome.041|                    worth a line.
-::X|EN|cl.selfmove.optyhome.042|
-::X|EN|cl.selfmove.optyhome.043|  Windows default : Not applicable. C:\OPTY_by-YannD is not a Windows
-::X|EN|cl.selfmove.optyhome.044|                    folder and does not exist until OPTY creates it.
-::X|EN|cl.selfmove.optyhome.045|
-::X|EN|cl.selfmove.optyhome.046|  Possible values:
-::X|EN|cl.selfmove.optyhome.047|    DELETE               : Would mean: copy OPTY.bat to C:\OPTY_by-YannD,
-::X|EN|cl.selfmove.optyhome.048|                           relaunch from there and delete the file you
-::X|EN|cl.selfmove.optyhome.049|                           double-clicked. This is what the code always
-::X|EN|cl.selfmove.optyhome.050|                           does today outside a git checkout.
-::X|EN|cl.selfmove.optyhome.051|    KEEP                 : Would mean: run OPTY from wherever it is. The
-::X|EN|cl.selfmove.optyhome.052|                           code has no way to request this today; only a
-::X|EN|cl.selfmove.optyhome.053|                           git checkout (a .git folder next to the script)
-::X|EN|cl.selfmove.optyhome.054|                           runs in place.
-::X|EN|cl.selfmove.optyhome.055|    ASK                  : The value in the four real-machine profiles,
-::X|EN|cl.selfmove.optyhome.056|                           because the deciding fact is not what the PC is
-::X|EN|cl.selfmove.optyhome.057|                           for but where the file currently sits. Be aware
-::X|EN|cl.selfmove.optyhome.058|                           that nothing reads it: :shortcut never asks and
-::X|EN|cl.selfmove.optyhome.059|                           relocates automatically.
-::X|EN|cl.selfmove.optyhome.060|
-::X|EN|cl.selfmove.optyhome.061|  Why these profiles : Four ASK and one KEEP. The four real-machine
-::X|EN|cl.selfmove.optyhome.062|                       profiles all get ASK for the same reason, which has
-::X|EN|cl.selfmove.optyhome.063|                       nothing to do with performance: the answer depends
-::X|EN|cl.selfmove.optyhome.064|                       on where the file is right now. WINDOWS reads KEEP
-::X|EN|cl.selfmove.optyhome.065|                       because doing nothing is well defined and safe. In
-::X|EN|cl.selfmove.optyhome.066|                       practice this row is informational only - the
-::X|EN|cl.selfmove.optyhome.067|                       relocation runs before any profile is chosen and
-::X|EN|cl.selfmove.optyhome.068|                       does not consult it.
-::X|EN|cl.selfmove.optyhome.069|
-::X|EN|cl.selfmove.optyhome.070|  Known problems  : Three. First, the ::P row says ASK but no question is
-::X|EN|cl.selfmove.optyhome.071|                    ever asked: relocation is unconditional except from a
-::X|EN|cl.selfmove.optyhome.072|                    git checkout. Second, copy /y overwrites without
-::X|EN|cl.selfmove.optyhome.073|                    comparing versions: launch an older OPTY.bat from
-::X|EN|cl.selfmove.optyhome.074|                    Downloads and it replaces the newer copy in
-::X|EN|cl.selfmove.optyhome.075|                    C:\OPTY_by-YannD, then deletes the file you launched.
-::X|EN|cl.selfmove.optyhome.076|                    Third, if the relocated copy starts after the 20-second
-::X|EN|cl.selfmove.optyhome.077|                    wait has given up, the original keeps running too, and
-::X|EN|cl.selfmove.optyhome.078|                    two OPTY windows can end up working at the same time.
+::X|EN|cl.selfmove.optyhome.013|                    execute, all by SID so a French Windows works too). If
+::X|EN|cl.selfmove.optyhome.014|                    C:\OPTY_by-YannD already holds an OPTY.bat whose set
+::X|EN|cl.selfmove.optyhome.015|                    current_version= is newer (a string compare, which orders
+::X|EN|cl.selfmove.optyhome.016|                    the fixed NN.N format), nothing is copied: the installed
+::X|EN|cl.selfmove.optyhome.017|                    copy is started instead, and the older file you launched
+::X|EN|cl.selfmove.optyhome.018|                    is still deleted once that copy confirms. Otherwise copy
+::X|EN|cl.selfmove.optyhome.019|                    /y "%~f0" - the file actually running, so a browser's
+::X|EN|cl.selfmove.optyhome.020|                    "OPTY (1).bat" is the one copied - with its exit code
+::X|EN|cl.selfmove.optyhome.021|                    checked. start launches the copy after clearing both
+::X|EN|cl.selfmove.optyhome.022|                    markers, OPTY_started.tmp and OPTY_abandoned.tmp, and the
+::X|EN|cl.selfmove.optyhome.023|                    original is deleted only once the copy proves it is alive
+::X|EN|cl.selfmove.optyhome.024|                    by writing OPTY_started.tmp. The original waits up to 20
+::X|EN|cl.selfmove.optyhome.025|                    seconds for it; if it never appears, the original is kept,
+::X|EN|cl.selfmove.optyhome.026|                    writes OPTY_abandoned.tmp, a red warning names the
+::X|EN|cl.selfmove.optyhome.027|                    antivirus as the likely cause, and this run carries on in
+::X|EN|cl.selfmove.optyhome.028|                    place. A relocated copy that starts late sees that marker,
+::X|EN|cl.selfmove.optyhome.029|                    deletes it and exits with a message instead of running as
+::X|EN|cl.selfmove.optyhome.030|                    a second OPTY. A failed copy also keeps the original and
+::X|EN|cl.selfmove.optyhome.031|                    runs in place.
+::X|EN|cl.selfmove.optyhome.032|
+::X|EN|cl.selfmove.optyhome.033|  Gain            : One known path. OPTY's logs, its rollback file and its
+::X|EN|cl.selfmove.optyhome.034|                    restore-point bookkeeping end up in a single folder
+::X|EN|cl.selfmove.optyhome.035|                    instead of scattered across Downloads, the desktop and
+::X|EN|cl.selfmove.optyhome.036|                    a USB key. There is no performance gain of any kind,
+::X|EN|cl.selfmove.optyhome.037|                    for anything.
+::X|EN|cl.selfmove.optyhome.038|
+::X|EN|cl.selfmove.optyhome.039|  Cost            : The file disappears from where you put it. In a synced
+::X|EN|cl.selfmove.optyhome.040|                    folder (OneDrive and the like), the deletion syncs to
+::X|EN|cl.selfmove.optyhome.041|                    every other device. A git checkout is spared by the
+::X|EN|cl.selfmove.optyhome.042|                    .git test. Undo is manual: move the file back and
+::X|EN|cl.selfmove.optyhome.043|                    delete C:\OPTY_by-YannD yourself. The folder sits at
+::X|EN|cl.selfmove.optyhome.044|                    the root of C:, whose inherited permissions would let
+::X|EN|cl.selfmove.optyhome.045|                    standard accounts modify a script that runs as
+::X|EN|cl.selfmove.optyhome.046|                    administrator; that is why OPTY removes inheritance and
+::X|EN|cl.selfmove.optyhome.047|                    leaves Users read-only before copying anything in. OPTY
+::X|EN|cl.selfmove.optyhome.048|                    also relaunches itself from that copy and can overwrite
+::X|EN|cl.selfmove.optyhome.049|                    itself from GitHub, which is what makes the location
+::X|EN|cl.selfmove.optyhome.050|                    worth a line.
+::X|EN|cl.selfmove.optyhome.051|
+::X|EN|cl.selfmove.optyhome.052|  Windows default : Not applicable. C:\OPTY_by-YannD is not a Windows
+::X|EN|cl.selfmove.optyhome.053|                    folder and does not exist until OPTY creates it.
+::X|EN|cl.selfmove.optyhome.054|
+::X|EN|cl.selfmove.optyhome.055|  Possible values:
+::X|EN|cl.selfmove.optyhome.056|    DELETE               : Would mean: copy OPTY.bat to C:\OPTY_by-YannD,
+::X|EN|cl.selfmove.optyhome.057|                           relaunch from there and delete the file you
+::X|EN|cl.selfmove.optyhome.058|                           double-clicked. This is what the code always does
+::X|EN|cl.selfmove.optyhome.059|                           today outside a git checkout - except that a newer
+::X|EN|cl.selfmove.optyhome.060|                           installed copy is started rather than overwritten.
+::X|EN|cl.selfmove.optyhome.061|    KEEP                 : Would mean: run OPTY from wherever it is. The
+::X|EN|cl.selfmove.optyhome.062|                           code has no way to request this today; only a
+::X|EN|cl.selfmove.optyhome.063|                           git checkout (a .git folder next to the script)
+::X|EN|cl.selfmove.optyhome.064|                           runs in place.
+::X|EN|cl.selfmove.optyhome.065|    ASK                  : The value in the four real-machine profiles,
+::X|EN|cl.selfmove.optyhome.066|                           because the deciding fact is not what the PC is
+::X|EN|cl.selfmove.optyhome.067|                           for but where the file currently sits. Be aware
+::X|EN|cl.selfmove.optyhome.068|                           that nothing reads it: :shortcut never asks and
+::X|EN|cl.selfmove.optyhome.069|                           relocates automatically.
+::X|EN|cl.selfmove.optyhome.070|
+::X|EN|cl.selfmove.optyhome.071|  Why these profiles : Four ASK and one KEEP. The four real-machine
+::X|EN|cl.selfmove.optyhome.072|                       profiles all get ASK for the same reason, which has
+::X|EN|cl.selfmove.optyhome.073|                       nothing to do with performance: the answer depends
+::X|EN|cl.selfmove.optyhome.074|                       on where the file is right now. WINDOWS reads KEEP
+::X|EN|cl.selfmove.optyhome.075|                       because doing nothing is well defined and safe. In
+::X|EN|cl.selfmove.optyhome.076|                       practice this row is informational only - the
+::X|EN|cl.selfmove.optyhome.077|                       relocation runs before any profile is chosen and
+::X|EN|cl.selfmove.optyhome.078|                       does not consult it.
 ::X|EN|cl.selfmove.optyhome.079|
-::X|EN|cl.selfmove.optyhome.080|  Unverified      : The claim that the inherited ACL at the root of C:
-::X|EN|cl.selfmove.optyhome.081|                    grants standard users modify rights comes from the
-::X|EN|cl.selfmove.optyhome.082|                    source comment (measured on the reference machine); it
-::X|EN|cl.selfmove.optyhome.083|                    was not re-measured here. Check icacls C:\OPTY_by-YannD
-::X|EN|cl.selfmove.optyhome.084|                    yourself if other people have accounts here.
-::X|EN|cl.selfmove.optyhome.085|
-::X|EN|cl.selfmove.optyhome.086|  Target          : :shortcut - the if /i compare against %OPTY_HOME%
-::X|EN|cl.selfmove.optyhome.087|                    (C:\OPTY_by-YannD), the .git test (:shortcut_checkout),
-::X|EN|cl.selfmove.optyhome.088|                    md, the four icacls lines, copy /y "%~f0", start, then
-::X|EN|cl.selfmove.optyhome.089|                    the wait loop in :shortcut_wait. :shortcut_confirmed
-::X|EN|cl.selfmove.optyhome.090|                    deletes the original; :shortcut_unconfirmed and
-::X|EN|cl.selfmove.optyhome.091|                    :shortcut_copyfailed keep it. :shortcut_done writes
-::X|EN|cl.selfmove.optyhome.092|                    OPTY_started.tmp when running from %OPTY_HOME%.
+::X|EN|cl.selfmove.optyhome.080|  Known problems  : The ::P row says ASK but no question is ever asked:
+::X|EN|cl.selfmove.optyhome.081|                    relocation is unconditional except from a git checkout.
+::X|EN|cl.selfmove.optyhome.082|                    Two older problems are fixed: an older OPTY.bat launched
+::X|EN|cl.selfmove.optyhome.083|                    from Downloads no longer replaces a newer copy in
+::X|EN|cl.selfmove.optyhome.084|                    C:\OPTY_by-YannD, and a relocated copy that starts after
+::X|EN|cl.selfmove.optyhome.085|                    the 20-second wait gave up now stands down instead of
+::X|EN|cl.selfmove.optyhome.086|                    running alongside the original. One side effect of that
+::X|EN|cl.selfmove.optyhome.087|                    marker: if the relocated copy never starts at all,
+::X|EN|cl.selfmove.optyhome.088|                    OPTY_abandoned.tmp stays behind, and the next time you
+::X|EN|cl.selfmove.optyhome.089|                    launch C:\OPTY_by-YannD\OPTY.bat directly it closes once
+::X|EN|cl.selfmove.optyhome.090|                    with the "Another OPTY window is already running" message
+::X|EN|cl.selfmove.optyhome.091|                    (the marker is deleted then, so the next launch works).
+::X|EN|cl.selfmove.optyhome.092|
+::X|EN|cl.selfmove.optyhome.093|  Unverified      : The claim that the inherited ACL at the root of C:
+::X|EN|cl.selfmove.optyhome.094|                    grants standard users modify rights comes from the
+::X|EN|cl.selfmove.optyhome.095|                    source comment (measured on the reference machine); it
+::X|EN|cl.selfmove.optyhome.096|                    was not re-measured here. Check icacls C:\OPTY_by-YannD
+::X|EN|cl.selfmove.optyhome.097|                    yourself if other people have accounts here.
+::X|EN|cl.selfmove.optyhome.098|
+::X|EN|cl.selfmove.optyhome.099|  Target          : :shortcut - the if /i compare against %OPTY_HOME%
+::X|EN|cl.selfmove.optyhome.100|                    (C:\OPTY_by-YannD), the .git test (:shortcut_checkout),
+::X|EN|cl.selfmove.optyhome.101|                    md, the four icacls lines, the findstr of set
+::X|EN|cl.selfmove.optyhome.102|                    current_version= in the installed copy (a newer one jumps
+::X|EN|cl.selfmove.optyhome.103|                    to :shortcut_start), copy /y "%~f0", then :shortcut_start
+::X|EN|cl.selfmove.optyhome.104|                    (clears both markers, start) and the wait loop in
+::X|EN|cl.selfmove.optyhome.105|                    :shortcut_wait. :shortcut_confirmed deletes the original;
+::X|EN|cl.selfmove.optyhome.106|                    :shortcut_unconfirmed writes OPTY_abandoned.tmp and keeps
+::X|EN|cl.selfmove.optyhome.107|                    it, and :shortcut_copyfailed keeps it. :shortcut_done,
+::X|EN|cl.selfmove.optyhome.108|                    when running from %OPTY_HOME%, exits if OPTY_abandoned.tmp
+::X|EN|cl.selfmove.optyhome.109|                    is there (deleting it) and otherwise writes
+::X|EN|cl.selfmove.optyhome.110|                    OPTY_started.tmp (:shortcut_announce).
 ::X|FR|cl.selfmove.optyhome.001|  Ce que c est    : Si OPTY.bat ne tourne pas déjà depuis C:\OPTY_by-
 ::X|FR|cl.selfmove.optyhome.002|                    YannD, il crée ce dossier, s y recopie, lance la copie
 ::X|FR|cl.selfmove.optyhome.003|                    et supprime le fichier que vous avez démarré. Cela se
 ::X|FR|cl.selfmove.optyhome.004|                    fait automatiquement au démarrage : aucune question
 ::X|FR|cl.selfmove.optyhome.005|                    n est posée et aucune réponse de profil n est lue.
 ::X|FR|cl.selfmove.optyhome.006|
-::X|FR|cl.selfmove.optyhome.007|  Effet reel      : D abord deux sorties anticipées : le script tourne
-::X|FR|cl.selfmove.optyhome.008|                    déjà depuis C:\OPTY_by-YannD (comparaison if /i,
-::X|FR|cl.selfmove.optyhome.009|                    insensible à la casse), ou un dossier .git se trouve à
-::X|FR|cl.selfmove.optyhome.010|                    côté du script - un dépôt git s exécute sur place, rien
-::X|FR|cl.selfmove.optyhome.011|                    n est copié ni supprimé. Sinon : md, puis icacls
-::X|FR|cl.selfmove.optyhome.012|                    verrouille le dossier (héritage retiré,
-::X|FR|cl.selfmove.optyhome.013|                    Administrateurs et SYSTEM en contrôle total,
-::X|FR|cl.selfmove.optyhome.014|                    Utilisateurs en lecture et exécution, le tout par SID
-::X|FR|cl.selfmove.optyhome.015|                    pour qu un Windows français fonctionne aussi), puis
-::X|FR|cl.selfmove.optyhome.016|                    copy /y "%~f0" - le fichier réellement lancé, donc le
-::X|FR|cl.selfmove.optyhome.017|                    « OPTY (1).bat » d un navigateur est bien celui copié -
-::X|FR|cl.selfmove.optyhome.018|                    avec vérification de son code de sortie. start lance
-::X|FR|cl.selfmove.optyhome.019|                    la copie, et l original n est supprimé qu une fois que
-::X|FR|cl.selfmove.optyhome.020|                    la copie prouve qu elle tourne en écrivant
-::X|FR|cl.selfmove.optyhome.021|                    OPTY_started.tmp. L original l attend jusqu à 20
-::X|FR|cl.selfmove.optyhome.022|                    secondes ; s il n apparaît pas, l original est gardé,
-::X|FR|cl.selfmove.optyhome.023|                    un avertissement rouge désigne l antivirus comme cause
-::X|FR|cl.selfmove.optyhome.024|                    probable, et l exécution continue sur place. Une copie
-::X|FR|cl.selfmove.optyhome.025|                    ratée garde aussi l original et tourne sur place.
-::X|FR|cl.selfmove.optyhome.026|
-::X|FR|cl.selfmove.optyhome.027|  Gain            : Un chemin unique et connu. Les journaux d OPTY, son
-::X|FR|cl.selfmove.optyhome.028|                    fichier de rollback et son suivi des points de
-::X|FR|cl.selfmove.optyhome.029|                    restauration se retrouvent dans un seul dossier au
-::X|FR|cl.selfmove.optyhome.030|                    lieu d être éparpillés entre Téléchargements, le
-::X|FR|cl.selfmove.optyhome.031|                    bureau et une clé USB. Aucun gain de performance,
-::X|FR|cl.selfmove.optyhome.032|                    d aucune sorte, pour quoi que ce soit.
-::X|FR|cl.selfmove.optyhome.033|
-::X|FR|cl.selfmove.optyhome.034|  Cout            : Le fichier disparaît de là où vous l aviez mis. Dans
-::X|FR|cl.selfmove.optyhome.035|                    un dossier synchronisé (OneDrive et autres), la
-::X|FR|cl.selfmove.optyhome.036|                    suppression se propage à tous vos appareils. Un dépôt
-::X|FR|cl.selfmove.optyhome.037|                    git est épargné par le test .git. Le retour arrière
-::X|FR|cl.selfmove.optyhome.038|                    est manuel : remettre le fichier en place et supprimer
-::X|FR|cl.selfmove.optyhome.039|                    C:\OPTY_by-YannD vous-même. Le dossier est à la racine
-::X|FR|cl.selfmove.optyhome.040|                    de C:, dont les permissions héritées laisseraient les
-::X|FR|cl.selfmove.optyhome.041|                    comptes standard modifier un script qui s exécute en
-::X|FR|cl.selfmove.optyhome.042|                    administrateur ; c est pourquoi OPTY retire l héritage
-::X|FR|cl.selfmove.optyhome.043|                    et laisse les Utilisateurs en lecture seule avant d y
-::X|FR|cl.selfmove.optyhome.044|                    copier quoi que ce soit. OPTY se relance depuis cette
-::X|FR|cl.selfmove.optyhome.045|                    copie et peut s y remplacer lui-même depuis GitHub :
-::X|FR|cl.selfmove.optyhome.046|                    c est ce qui rend l emplacement digne d une ligne.
-::X|FR|cl.selfmove.optyhome.047|
-::X|FR|cl.selfmove.optyhome.048|  Defaut Windows  : Sans objet. C:\OPTY_by-YannD n est pas un dossier
-::X|FR|cl.selfmove.optyhome.049|                    Windows et n existe pas avant qu OPTY ne le crée.
-::X|FR|cl.selfmove.optyhome.050|
-::X|FR|cl.selfmove.optyhome.051|  Valeurs possibles :
-::X|FR|cl.selfmove.optyhome.052|    DELETE               : Signifierait : copier OPTY.bat dans
-::X|FR|cl.selfmove.optyhome.053|                           C:\OPTY_by-YannD, se relancer de là et
-::X|FR|cl.selfmove.optyhome.054|                           supprimer le fichier que vous avez lancé. C est
-::X|FR|cl.selfmove.optyhome.055|                           ce que le code fait toujours aujourd hui hors
-::X|FR|cl.selfmove.optyhome.056|                           d un dépôt git.
-::X|FR|cl.selfmove.optyhome.057|    KEEP                 : Signifierait : exécuter OPTY là où il se
-::X|FR|cl.selfmove.optyhome.058|                           trouve. Le code n offre aucun moyen de le
-::X|FR|cl.selfmove.optyhome.059|                           demander aujourd hui ; seul un dépôt git (un
-::X|FR|cl.selfmove.optyhome.060|                           dossier .git à côté du script) tourne sur place.
-::X|FR|cl.selfmove.optyhome.061|    ASK                  : La valeur des quatre profils de machine réelle,
-::X|FR|cl.selfmove.optyhome.062|                           parce que ce qui décide n est pas l usage du PC
-::X|FR|cl.selfmove.optyhome.063|                           mais l endroit où se trouve le fichier. Sachez
-::X|FR|cl.selfmove.optyhome.064|                           que rien ne la lit : :shortcut ne pose jamais la
-::X|FR|cl.selfmove.optyhome.065|                           question et déplace automatiquement.
-::X|FR|cl.selfmove.optyhome.066|
-::X|FR|cl.selfmove.optyhome.067|  Pourquoi ces profils : Quatre ASK et un KEEP. Les quatre profils de
-::X|FR|cl.selfmove.optyhome.068|                         machine réelle ont ASK pour la même raison, sans
-::X|FR|cl.selfmove.optyhome.069|                         rapport avec les performances : la réponse dépend
-::X|FR|cl.selfmove.optyhome.070|                         de l endroit où se trouve le fichier maintenant.
-::X|FR|cl.selfmove.optyhome.071|                         WINDOWS dit KEEP parce que ne rien faire est bien
-::X|FR|cl.selfmove.optyhome.072|                         défini et sans danger. En pratique cette ligne est
-::X|FR|cl.selfmove.optyhome.073|                         purement informative : le déplacement a lieu avant
-::X|FR|cl.selfmove.optyhome.074|                         le choix du profil et ne la consulte pas.
-::X|FR|cl.selfmove.optyhome.075|
-::X|FR|cl.selfmove.optyhome.076|  Problemes connus : Trois. D abord, la ligne ::P dit ASK mais aucune
-::X|FR|cl.selfmove.optyhome.077|                     question n est jamais posée : le déplacement est
-::X|FR|cl.selfmove.optyhome.078|                     inconditionnel, sauf depuis un dépôt git. Ensuite,
-::X|FR|cl.selfmove.optyhome.079|                     copy /y écrase sans comparer les versions : lancez un
-::X|FR|cl.selfmove.optyhome.080|                     OPTY.bat plus ancien depuis Téléchargements et il
-::X|FR|cl.selfmove.optyhome.081|                     remplace la copie plus récente de C:\OPTY_by-YannD,
-::X|FR|cl.selfmove.optyhome.082|                     puis supprime le fichier que vous avez lancé. Enfin,
-::X|FR|cl.selfmove.optyhome.083|                     si la copie démarre après que l attente de 20 secondes
-::X|FR|cl.selfmove.optyhome.084|                     a abandonné, l original continue aussi, et deux
-::X|FR|cl.selfmove.optyhome.085|                     fenêtres OPTY peuvent travailler en même temps.
-::X|FR|cl.selfmove.optyhome.086|
-::X|FR|cl.selfmove.optyhome.087|  Non verifie (en)  : The claim that the inherited ACL at the root of C:
-::X|FR|cl.selfmove.optyhome.088|                      grants standard users modify rights comes from the
-::X|FR|cl.selfmove.optyhome.089|                      source comment (measured on the reference machine);
-::X|FR|cl.selfmove.optyhome.090|                      it was not re-measured here. Check icacls
-::X|FR|cl.selfmove.optyhome.091|                      C:\OPTY_by-YannD yourself if other people have
-::X|FR|cl.selfmove.optyhome.092|                      accounts here.
-::X|FR|cl.selfmove.optyhome.093|
-::X|FR|cl.selfmove.optyhome.094|  Cible           : :shortcut - la comparaison if /i avec %OPTY_HOME%
-::X|FR|cl.selfmove.optyhome.095|                    (C:\OPTY_by-YannD), le test .git (:shortcut_checkout),
-::X|FR|cl.selfmove.optyhome.096|                    md, les quatre lignes icacls, copy /y "%~f0", start,
-::X|FR|cl.selfmove.optyhome.097|                    puis la boucle d attente de :shortcut_wait.
-::X|FR|cl.selfmove.optyhome.098|                    :shortcut_confirmed supprime l original ;
-::X|FR|cl.selfmove.optyhome.099|                    :shortcut_unconfirmed et :shortcut_copyfailed le
-::X|FR|cl.selfmove.optyhome.100|                    gardent. :shortcut_done écrit OPTY_started.tmp quand le
-::X|FR|cl.selfmove.optyhome.101|                    script tourne depuis %OPTY_HOME%.
+::X|FR|cl.selfmove.optyhome.007|  Effet reel      : D abord deux sorties anticipées : le script tourne déjà
+::X|FR|cl.selfmove.optyhome.008|                    depuis C:\OPTY_by-YannD (comparaison if /i, insensible à
+::X|FR|cl.selfmove.optyhome.009|                    la casse), ou un dossier .git se trouve à côté du script -
+::X|FR|cl.selfmove.optyhome.010|                    un dépôt git s exécute sur place, rien n est copié ni
+::X|FR|cl.selfmove.optyhome.011|                    supprimé. Sinon : md, puis icacls verrouille le dossier
+::X|FR|cl.selfmove.optyhome.012|                    (héritage retiré, Administrateurs et SYSTEM en contrôle
+::X|FR|cl.selfmove.optyhome.013|                    total, Utilisateurs en lecture et exécution, le tout par
+::X|FR|cl.selfmove.optyhome.014|                    SID pour qu un Windows français fonctionne aussi). Si
+::X|FR|cl.selfmove.optyhome.015|                    C:\OPTY_by-YannD contient déjà un OPTY.bat dont le set
+::X|FR|cl.selfmove.optyhome.016|                    current_version= est plus récent (comparaison de chaînes,
+::X|FR|cl.selfmove.optyhome.017|                    qui ordonne le format fixe NN.N), rien n est copié : la
+::X|FR|cl.selfmove.optyhome.018|                    copie installée est lancée à la place, et le fichier plus
+::X|FR|cl.selfmove.optyhome.019|                    ancien que vous avez lancé est quand même supprimé une
+::X|FR|cl.selfmove.optyhome.020|                    fois qu elle a confirmé. Sinon copy /y "%~f0" - le fichier
+::X|FR|cl.selfmove.optyhome.021|                    réellement lancé, donc le « OPTY (1).bat » d un navigateur
+::X|FR|cl.selfmove.optyhome.022|                    est bien celui copié - avec vérification de son code de
+::X|FR|cl.selfmove.optyhome.023|                    sortie. start lance la copie après avoir effacé les deux
+::X|FR|cl.selfmove.optyhome.024|                    marqueurs, OPTY_started.tmp et OPTY_abandoned.tmp, et l
+::X|FR|cl.selfmove.optyhome.025|                    original n est supprimé qu une fois que la copie prouve qu
+::X|FR|cl.selfmove.optyhome.026|                    elle tourne en écrivant OPTY_started.tmp. L original l
+::X|FR|cl.selfmove.optyhome.027|                    attend jusqu à 20 secondes ; s il n apparaît pas, l
+::X|FR|cl.selfmove.optyhome.028|                    original est gardé, écrit OPTY_abandoned.tmp, un
+::X|FR|cl.selfmove.optyhome.029|                    avertissement rouge désigne l antivirus comme cause
+::X|FR|cl.selfmove.optyhome.030|                    probable, et l exécution continue sur place. Une copie
+::X|FR|cl.selfmove.optyhome.031|                    déplacée qui démarre en retard voit ce marqueur, le
+::X|FR|cl.selfmove.optyhome.032|                    supprime et se ferme avec un message au lieu de tourner
+::X|FR|cl.selfmove.optyhome.033|                    comme un second OPTY. Une copie ratée garde aussi l
+::X|FR|cl.selfmove.optyhome.034|                    original et tourne sur place.
+::X|FR|cl.selfmove.optyhome.035|
+::X|FR|cl.selfmove.optyhome.036|  Gain            : Un chemin unique et connu. Les journaux d OPTY, son
+::X|FR|cl.selfmove.optyhome.037|                    fichier de rollback et son suivi des points de
+::X|FR|cl.selfmove.optyhome.038|                    restauration se retrouvent dans un seul dossier au
+::X|FR|cl.selfmove.optyhome.039|                    lieu d être éparpillés entre Téléchargements, le
+::X|FR|cl.selfmove.optyhome.040|                    bureau et une clé USB. Aucun gain de performance,
+::X|FR|cl.selfmove.optyhome.041|                    d aucune sorte, pour quoi que ce soit.
+::X|FR|cl.selfmove.optyhome.042|
+::X|FR|cl.selfmove.optyhome.043|  Cout            : Le fichier disparaît de là où vous l aviez mis. Dans
+::X|FR|cl.selfmove.optyhome.044|                    un dossier synchronisé (OneDrive et autres), la
+::X|FR|cl.selfmove.optyhome.045|                    suppression se propage à tous vos appareils. Un dépôt
+::X|FR|cl.selfmove.optyhome.046|                    git est épargné par le test .git. Le retour arrière
+::X|FR|cl.selfmove.optyhome.047|                    est manuel : remettre le fichier en place et supprimer
+::X|FR|cl.selfmove.optyhome.048|                    C:\OPTY_by-YannD vous-même. Le dossier est à la racine
+::X|FR|cl.selfmove.optyhome.049|                    de C:, dont les permissions héritées laisseraient les
+::X|FR|cl.selfmove.optyhome.050|                    comptes standard modifier un script qui s exécute en
+::X|FR|cl.selfmove.optyhome.051|                    administrateur ; c est pourquoi OPTY retire l héritage
+::X|FR|cl.selfmove.optyhome.052|                    et laisse les Utilisateurs en lecture seule avant d y
+::X|FR|cl.selfmove.optyhome.053|                    copier quoi que ce soit. OPTY se relance depuis cette
+::X|FR|cl.selfmove.optyhome.054|                    copie et peut s y remplacer lui-même depuis GitHub :
+::X|FR|cl.selfmove.optyhome.055|                    c est ce qui rend l emplacement digne d une ligne.
+::X|FR|cl.selfmove.optyhome.056|
+::X|FR|cl.selfmove.optyhome.057|  Defaut Windows  : Sans objet. C:\OPTY_by-YannD n est pas un dossier
+::X|FR|cl.selfmove.optyhome.058|                    Windows et n existe pas avant qu OPTY ne le crée.
+::X|FR|cl.selfmove.optyhome.059|
+::X|FR|cl.selfmove.optyhome.060|  Valeurs possibles :
+::X|FR|cl.selfmove.optyhome.061|    DELETE               : Signifierait : copier OPTY.bat dans
+::X|FR|cl.selfmove.optyhome.062|                           C:\OPTY_by-YannD, se relancer de là et supprimer le
+::X|FR|cl.selfmove.optyhome.063|                           fichier que vous avez lancé. C est ce que le code
+::X|FR|cl.selfmove.optyhome.064|                           fait toujours aujourd hui hors d un dépôt git -
+::X|FR|cl.selfmove.optyhome.065|                           sauf qu une copie installée plus récente est lancée
+::X|FR|cl.selfmove.optyhome.066|                           au lieu d être écrasée.
+::X|FR|cl.selfmove.optyhome.067|    KEEP                 : Signifierait : exécuter OPTY là où il se
+::X|FR|cl.selfmove.optyhome.068|                           trouve. Le code n offre aucun moyen de le
+::X|FR|cl.selfmove.optyhome.069|                           demander aujourd hui ; seul un dépôt git (un
+::X|FR|cl.selfmove.optyhome.070|                           dossier .git à côté du script) tourne sur place.
+::X|FR|cl.selfmove.optyhome.071|    ASK                  : La valeur des quatre profils de machine réelle,
+::X|FR|cl.selfmove.optyhome.072|                           parce que ce qui décide n est pas l usage du PC
+::X|FR|cl.selfmove.optyhome.073|                           mais l endroit où se trouve le fichier. Sachez
+::X|FR|cl.selfmove.optyhome.074|                           que rien ne la lit : :shortcut ne pose jamais la
+::X|FR|cl.selfmove.optyhome.075|                           question et déplace automatiquement.
+::X|FR|cl.selfmove.optyhome.076|
+::X|FR|cl.selfmove.optyhome.077|  Pourquoi ces profils : Quatre ASK et un KEEP. Les quatre profils de
+::X|FR|cl.selfmove.optyhome.078|                         machine réelle ont ASK pour la même raison, sans
+::X|FR|cl.selfmove.optyhome.079|                         rapport avec les performances : la réponse dépend
+::X|FR|cl.selfmove.optyhome.080|                         de l endroit où se trouve le fichier maintenant.
+::X|FR|cl.selfmove.optyhome.081|                         WINDOWS dit KEEP parce que ne rien faire est bien
+::X|FR|cl.selfmove.optyhome.082|                         défini et sans danger. En pratique cette ligne est
+::X|FR|cl.selfmove.optyhome.083|                         purement informative : le déplacement a lieu avant
+::X|FR|cl.selfmove.optyhome.084|                         le choix du profil et ne la consulte pas.
+::X|FR|cl.selfmove.optyhome.085|
+::X|FR|cl.selfmove.optyhome.086|  Problemes connus : La ligne ::P dit ASK mais aucune question n est jamais
+::X|FR|cl.selfmove.optyhome.087|                     posée : le déplacement est inconditionnel, sauf depuis un
+::X|FR|cl.selfmove.optyhome.088|                     dépôt git. Deux anciens problèmes sont corrigés : un
+::X|FR|cl.selfmove.optyhome.089|                     OPTY.bat plus ancien lancé depuis Téléchargements ne
+::X|FR|cl.selfmove.optyhome.090|                     remplace plus une copie plus récente de C:\OPTY_by-YannD,
+::X|FR|cl.selfmove.optyhome.091|                     et une copie déplacée qui démarre après l abandon de l
+::X|FR|cl.selfmove.optyhome.092|                     attente de 20 secondes se retire au lieu de tourner à
+::X|FR|cl.selfmove.optyhome.093|                     côté de l original. Un effet de bord de ce marqueur : si
+::X|FR|cl.selfmove.optyhome.094|                     la copie déplacée ne démarre jamais, OPTY_abandoned.tmp
+::X|FR|cl.selfmove.optyhome.095|                     reste en place, et la prochaine fois que vous lancez
+::X|FR|cl.selfmove.optyhome.096|                     directement C:\OPTY_by-YannD\OPTY.bat, il se ferme une
+::X|FR|cl.selfmove.optyhome.097|                     fois avec le message « Another OPTY window is already
+::X|FR|cl.selfmove.optyhome.098|                     running » (le marqueur est alors supprimé, donc le
+::X|FR|cl.selfmove.optyhome.099|                     lancement suivant fonctionne).
+::X|FR|cl.selfmove.optyhome.100|
+::X|FR|cl.selfmove.optyhome.101|  Non verifie (en)  : The claim that the inherited ACL at the root of C:
+::X|FR|cl.selfmove.optyhome.102|                      grants standard users modify rights comes from the
+::X|FR|cl.selfmove.optyhome.103|                      source comment (measured on the reference machine);
+::X|FR|cl.selfmove.optyhome.104|                      it was not re-measured here. Check icacls
+::X|FR|cl.selfmove.optyhome.105|                      C:\OPTY_by-YannD yourself if other people have
+::X|FR|cl.selfmove.optyhome.106|                      accounts here.
+::X|FR|cl.selfmove.optyhome.107|
+::X|FR|cl.selfmove.optyhome.108|  Cible           : :shortcut - la comparaison if /i avec %OPTY_HOME%
+::X|FR|cl.selfmove.optyhome.109|                    (C:\OPTY_by-YannD), le test .git (:shortcut_checkout), md,
+::X|FR|cl.selfmove.optyhome.110|                    les quatre lignes icacls, le findstr de set
+::X|FR|cl.selfmove.optyhome.111|                    current_version= dans la copie installée (une copie plus
+::X|FR|cl.selfmove.optyhome.112|                    récente saute à :shortcut_start), copy /y "%~f0", puis
+::X|FR|cl.selfmove.optyhome.113|                    :shortcut_start (efface les deux marqueurs, start) et la
+::X|FR|cl.selfmove.optyhome.114|                    boucle d attente de :shortcut_wait. :shortcut_confirmed
+::X|FR|cl.selfmove.optyhome.115|                    supprime l original ; :shortcut_unconfirmed écrit
+::X|FR|cl.selfmove.optyhome.116|                    OPTY_abandoned.tmp et le garde, et :shortcut_copyfailed le
+::X|FR|cl.selfmove.optyhome.117|                    garde. :shortcut_done, quand le script tourne depuis
+::X|FR|cl.selfmove.optyhome.118|                    %OPTY_HOME%, se ferme si OPTY_abandoned.tmp existe (en le
+::X|FR|cl.selfmove.optyhome.119|                    supprimant) et sinon écrit OPTY_started.tmp
+::X|FR|cl.selfmove.optyhome.120|                    (:shortcut_announce).
 ::
 :: ---- cl.dnscache.flush (cleanup) ---------------------------------
 ::P|cl.dnscache.flush|DELETE|DELETE|DELETE|DELETE|KEEP|
@@ -39930,33 +40002,38 @@ goto :eof
 ::X|EN|diag.freeze.capture.027|                    services interrupts, which points at hardware (CPU,
 ::X|EN|diag.freeze.capture.028|                    RAM, power) rather than at a driver.
 ::X|EN|diag.freeze.capture.029|
-::X|EN|diag.freeze.capture.030|  Cost            : Pressing it is a real crash: anything unsaved is lost
-::X|EN|diag.freeze.capture.031|                    and the PC restarts. The kernel dump is roughly the
-::X|EN|diag.freeze.capture.032|                    kernel memory in use - a few GB on a busy machine -
-::X|EN|diag.freeze.capture.033|                    in C:\Windows\MEMORY.DMP, overwritten at each crash.
-::X|EN|diag.freeze.capture.034|                    While capture is on, CLEAN keeps the crash dumps
-::X|EN|diag.freeze.capture.035|                    (both its own delete and the Disk Cleanup handlers),
-::X|EN|diag.freeze.capture.036|                    so they accumulate until option 2 turns it off.
-::X|EN|diag.freeze.capture.037|
-::X|EN|diag.freeze.capture.038|  Windows default : No crash key - the values are absent - and
-::X|EN|diag.freeze.capture.039|                    CrashDumpEnabled=7 (automatic memory dump). Option 2
-::X|EN|diag.freeze.capture.040|                    deletes the first and writes 7 back.
-::X|EN|diag.freeze.capture.041|
-::X|EN|diag.freeze.capture.042|  Measured        : On the reference machine (Windows 11, USB tenkeyless
-::X|EN|diag.freeze.capture.043|                    keyboard) Right Ctrl + Space twice raised 0xE2 from
-::X|EN|diag.freeze.capture.044|                    kbdhid and left a complete MEMORY.DMP plus a minidump,
-::X|EN|diag.freeze.capture.045|                    both readable by cdb.
-::X|EN|diag.freeze.capture.046|
-::X|EN|diag.freeze.capture.047|  Unverified      : Never tested on a PS/2 keyboard. And a dump can still
-::X|EN|diag.freeze.capture.048|                    be lost: the same machine once logged a real 0x133
-::X|EN|diag.freeze.capture.049|                    blue screen with volmgr event 161 (dump creation
-::X|EN|diag.freeze.capture.050|                    failed, BugCheckProgress 0x81) and no file, cause
-::X|EN|diag.freeze.capture.051|                    unknown. Option 4 lists those events so a lost dump
-::X|EN|diag.freeze.capture.052|                    is visible instead of silent.
-::X|EN|diag.freeze.capture.053|
-::X|EN|diag.freeze.capture.054|  Target          : :crash_capture - HKLM\SYSTEM\CurrentControlSet\Services
-::X|EN|diag.freeze.capture.055|                    \kbdhid and \i8042prt (crashdump, Parameters), and
-::X|EN|diag.freeze.capture.056|                    HKLM\SYSTEM\CurrentControlSet\Control\CrashControl.
+::X|EN|diag.freeze.capture.030|  Cost            : Pressing it is a real crash: anything unsaved is lost and
+::X|EN|diag.freeze.capture.031|                    the PC restarts. The kernel dump is roughly the kernel
+::X|EN|diag.freeze.capture.032|                    memory in use - a few GB on a busy machine - in
+::X|EN|diag.freeze.capture.033|                    C:\Windows\MEMORY.DMP, overwritten at each crash. While
+::X|EN|diag.freeze.capture.034|                    capture is on - a crash key (Dump2Key) set for either
+::X|EN|diag.freeze.capture.035|                    keyboard driver, USB kbdhid or PS/2 i8042prt; before, only
+::X|EN|diag.freeze.capture.036|                    the USB one counted - CLEAN keeps the crash dumps (both
+::X|EN|diag.freeze.capture.037|                    its own delete and the Disk Cleanup handlers), so they
+::X|EN|diag.freeze.capture.038|                    accumulate until option 2 turns it off.
+::X|EN|diag.freeze.capture.039|
+::X|EN|diag.freeze.capture.040|  Windows default : No crash key - the values are absent - and
+::X|EN|diag.freeze.capture.041|                    CrashDumpEnabled=7 (automatic memory dump). Option 2
+::X|EN|diag.freeze.capture.042|                    deletes the first and writes 7 back.
+::X|EN|diag.freeze.capture.043|
+::X|EN|diag.freeze.capture.044|  Measured        : On the reference machine (Windows 11, USB tenkeyless
+::X|EN|diag.freeze.capture.045|                    keyboard) Right Ctrl + Space twice raised 0xE2 from
+::X|EN|diag.freeze.capture.046|                    kbdhid and left a complete MEMORY.DMP plus a minidump,
+::X|EN|diag.freeze.capture.047|                    both readable by cdb.
+::X|EN|diag.freeze.capture.048|
+::X|EN|diag.freeze.capture.049|  Unverified      : Never tested on a PS/2 keyboard. And a dump can still
+::X|EN|diag.freeze.capture.050|                    be lost: the same machine once logged a real 0x133
+::X|EN|diag.freeze.capture.051|                    blue screen with volmgr event 161 (dump creation
+::X|EN|diag.freeze.capture.052|                    failed, BugCheckProgress 0x81) and no file, cause
+::X|EN|diag.freeze.capture.053|                    unknown. Option 4 lists those events so a lost dump
+::X|EN|diag.freeze.capture.054|                    is visible instead of silent.
+::X|EN|diag.freeze.capture.055|
+::X|EN|diag.freeze.capture.056|  Target          : :crash_capture -
+::X|EN|diag.freeze.capture.057|                    HKLM\SYSTEM\CurrentControlSet\Services\kbdhid and
+::X|EN|diag.freeze.capture.058|                    \i8042prt (crashdump, Parameters), and
+::X|EN|diag.freeze.capture.059|                    HKLM\SYSTEM\CurrentControlSet\Control\CrashControl. CLEAN
+::X|EN|diag.freeze.capture.060|                    tests the capture with :capturestate (Dump2Key under
+::X|EN|diag.freeze.capture.061|                    kbdhid\crashdump or i8042prt\crashdump).
 ::X|FR|diag.freeze.capture.001|  Ce que c est    : Un gel complet sans ecran bleu est journalise ensuite
 ::X|FR|diag.freeze.capture.002|                    en Kernel-Power 41 avec BugcheckCode 0 : Windows n a
 ::X|FR|diag.freeze.capture.003|                    rien pu ecrire, il n y a donc rien a analyser. Les
@@ -39989,34 +40066,39 @@ goto :eof
 ::X|FR|diag.freeze.capture.030|                    materiel (CPU, RAM, alimentation) plutot qu un pilote.
 ::X|FR|diag.freeze.capture.031|
 ::X|FR|diag.freeze.capture.032|  Cout            : L appui est un vrai crash : tout ce qui n est pas
-::X|FR|diag.freeze.capture.033|                    enregistre est perdu et le PC redemarre. Le vidage
-::X|FR|diag.freeze.capture.034|                    noyau fait a peu pres la memoire noyau utilisee -
-::X|FR|diag.freeze.capture.035|                    quelques Go sur une machine chargee - dans
-::X|FR|diag.freeze.capture.036|                    C:\Windows\MEMORY.DMP, ecrase a chaque crash. Tant que
-::X|FR|diag.freeze.capture.037|                    la capture est active, CLEAN garde les vidages (sa
-::X|FR|diag.freeze.capture.038|                    propre suppression comme les gestionnaires du
-::X|FR|diag.freeze.capture.039|                    Nettoyage de disque) : ils s accumulent jusqu a ce que
-::X|FR|diag.freeze.capture.040|                    l option 2 la coupe.
-::X|FR|diag.freeze.capture.041|
-::X|FR|diag.freeze.capture.042|  Defaut Windows  : Aucune touche de crash - les valeurs sont absentes - et
-::X|FR|diag.freeze.capture.043|                    CrashDumpEnabled=7 (vidage memoire automatique).
-::X|FR|diag.freeze.capture.044|                    L option 2 supprime les premieres et remet 7.
-::X|FR|diag.freeze.capture.045|
-::X|FR|diag.freeze.capture.046|  Mesure          : Sur la machine de reference (Windows 11, clavier USB
-::X|FR|diag.freeze.capture.047|                    TKL), Ctrl droit + Espace deux fois a leve 0xE2 depuis
-::X|FR|diag.freeze.capture.048|                    kbdhid et laisse un MEMORY.DMP complet plus un
-::X|FR|diag.freeze.capture.049|                    minidump, tous deux lisibles par cdb.
-::X|FR|diag.freeze.capture.050|
-::X|FR|diag.freeze.capture.051|  Non verifie     : Jamais teste sur un clavier PS/2. Et un vidage peut
-::X|FR|diag.freeze.capture.052|                    quand meme se perdre : la meme machine a journalise un
-::X|FR|diag.freeze.capture.053|                    vrai ecran bleu 0x133 avec l evenement volmgr 161
-::X|FR|diag.freeze.capture.054|                    (creation du vidage echouee, BugCheckProgress 0x81) et
-::X|FR|diag.freeze.capture.055|                    aucun fichier, cause inconnue. L option 4 liste ces
-::X|FR|diag.freeze.capture.056|                    evenements pour qu un vidage perdu se voie.
-::X|FR|diag.freeze.capture.057|
-::X|FR|diag.freeze.capture.058|  Cible           : :crash_capture - HKLM\SYSTEM\CurrentControlSet\Services
-::X|FR|diag.freeze.capture.059|                    \kbdhid et \i8042prt (crashdump, Parameters), et
-::X|FR|diag.freeze.capture.060|                    HKLM\SYSTEM\CurrentControlSet\Control\CrashControl.
+::X|FR|diag.freeze.capture.033|                    enregistre est perdu et le PC redemarre. Le vidage noyau
+::X|FR|diag.freeze.capture.034|                    fait a peu pres la memoire noyau utilisee - quelques Go
+::X|FR|diag.freeze.capture.035|                    sur une machine chargee - dans C:\Windows\MEMORY.DMP,
+::X|FR|diag.freeze.capture.036|                    ecrase a chaque crash. Tant que la capture est active -
+::X|FR|diag.freeze.capture.037|                    une touche de crash (Dump2Key) definie pour l un ou l
+::X|FR|diag.freeze.capture.038|                    autre pilote clavier, USB kbdhid ou PS/2 i8042prt ; avant,
+::X|FR|diag.freeze.capture.039|                    seul l USB comptait - CLEAN garde les vidages (sa propre
+::X|FR|diag.freeze.capture.040|                    suppression comme les gestionnaires du Nettoyage de
+::X|FR|diag.freeze.capture.041|                    disque) : ils s accumulent jusqu a ce que l option 2 la
+::X|FR|diag.freeze.capture.042|                    coupe.
+::X|FR|diag.freeze.capture.043|
+::X|FR|diag.freeze.capture.044|  Defaut Windows  : Aucune touche de crash - les valeurs sont absentes - et
+::X|FR|diag.freeze.capture.045|                    CrashDumpEnabled=7 (vidage memoire automatique).
+::X|FR|diag.freeze.capture.046|                    L option 2 supprime les premieres et remet 7.
+::X|FR|diag.freeze.capture.047|
+::X|FR|diag.freeze.capture.048|  Mesure          : Sur la machine de reference (Windows 11, clavier USB
+::X|FR|diag.freeze.capture.049|                    TKL), Ctrl droit + Espace deux fois a leve 0xE2 depuis
+::X|FR|diag.freeze.capture.050|                    kbdhid et laisse un MEMORY.DMP complet plus un
+::X|FR|diag.freeze.capture.051|                    minidump, tous deux lisibles par cdb.
+::X|FR|diag.freeze.capture.052|
+::X|FR|diag.freeze.capture.053|  Non verifie     : Jamais teste sur un clavier PS/2. Et un vidage peut
+::X|FR|diag.freeze.capture.054|                    quand meme se perdre : la meme machine a journalise un
+::X|FR|diag.freeze.capture.055|                    vrai ecran bleu 0x133 avec l evenement volmgr 161
+::X|FR|diag.freeze.capture.056|                    (creation du vidage echouee, BugCheckProgress 0x81) et
+::X|FR|diag.freeze.capture.057|                    aucun fichier, cause inconnue. L option 4 liste ces
+::X|FR|diag.freeze.capture.058|                    evenements pour qu un vidage perdu se voie.
+::X|FR|diag.freeze.capture.059|
+::X|FR|diag.freeze.capture.060|  Cible           : :crash_capture -
+::X|FR|diag.freeze.capture.061|                    HKLM\SYSTEM\CurrentControlSet\Services\kbdhid et \i8042prt
+::X|FR|diag.freeze.capture.062|                    (crashdump, Parameters), et
+::X|FR|diag.freeze.capture.063|                    HKLM\SYSTEM\CurrentControlSet\Control\CrashControl. CLEAN
+::X|FR|diag.freeze.capture.064|                    teste la capture avec :capturestate (Dump2Key sous
+::X|FR|diag.freeze.capture.065|                    kbdhid\crashdump ou i8042prt\crashdump).
 ::
 :: ---- diag.freeze.restore (restore) ----------------------------------
 ::T|EN|diag.freeze.restore.001|CRASH SETTINGS BACK TO THE WINDOWS DEFAULTS
