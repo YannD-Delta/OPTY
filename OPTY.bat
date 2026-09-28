@@ -18431,9 +18431,10 @@ goto :eof
 ::X|EN|net.tcp.defaults.netdns.083|  Target          : netsh int tcp set global autotuninglevel=normal ;
 ::X|EN|net.tcp.defaults.netdns.084|                    netsh int tcp set heuristics disabled ; netsh int tcp
 ::X|EN|net.tcp.defaults.netdns.085|                    set global rss=enabled - the three lines at
-::X|EN|net.tcp.defaults.netdns.086|                    :netdns_tcp (OPTY.bat ~590), run unconditionally
-::X|EN|net.tcp.defaults.netdns.087|                    during the maintenance pass right after ipconfig
-::X|EN|net.tcp.defaults.netdns.088|                    /flushdns
+::X|EN|net.tcp.defaults.netdns.086|                    :netdns_tcp, run without a question of their own
+::X|EN|net.tcp.defaults.netdns.087|                    whenever the DNS FLUSH step of the maintenance pass
+::X|EN|net.tcp.defaults.netdns.088|                    (:netdns, card cl.dnscache.flush) runs, right after
+::X|EN|net.tcp.defaults.netdns.089|                    ipconfig /flushdns
 ::X|FR|net.tcp.defaults.netdns.001|  Ce que c est    : Trois reglages TCP valables pour toute la machine :
 ::X|FR|net.tcp.defaults.netdns.002|                    l ajustement automatique de la fenetre de reception
 ::X|FR|net.tcp.defaults.netdns.003|                    (jusqu ou Windows accepte de la faire grandir), les
@@ -18527,10 +18528,11 @@ goto :eof
 ::X|FR|net.tcp.defaults.netdns.091|
 ::X|FR|net.tcp.defaults.netdns.092|  Cible           : netsh int tcp set global autotuninglevel=normal ;
 ::X|FR|net.tcp.defaults.netdns.093|                    netsh int tcp set heuristics disabled ; netsh int tcp
-::X|FR|net.tcp.defaults.netdns.094|                    set global rss=enabled - the three lines at
-::X|FR|net.tcp.defaults.netdns.095|                    :netdns_tcp (OPTY.bat ~590), run unconditionally
-::X|FR|net.tcp.defaults.netdns.096|                    during the maintenance pass right after ipconfig
-::X|FR|net.tcp.defaults.netdns.097|                    /flushdns
+::X|FR|net.tcp.defaults.netdns.094|                    set global rss=enabled - les trois lignes de
+::X|FR|net.tcp.defaults.netdns.095|                    :netdns_tcp, executees sans question dediee chaque
+::X|FR|net.tcp.defaults.netdns.096|                    fois que l etape DNS FLUSH de la passe d entretien
+::X|FR|net.tcp.defaults.netdns.097|                    (:netdns, fiche cl.dnscache.flush) tourne, juste apres
+::X|FR|net.tcp.defaults.netdns.098|                    ipconfig /flushdns
 ::
 :: ---- net.nti.setup.write10 (repair) -----------------------------
 ::P|net.nti.setup.write10|10|10|10|10|10|
@@ -18700,121 +18702,136 @@ goto :eof
 ::X|EN|net.nagle.setup.del.003|                    order to disable Nagle's algorithm and reduce ping.
 ::X|EN|net.nagle.setup.del.004|                    Windows ships with neither present.
 ::X|EN|net.nagle.setup.del.005|
-::X|EN|net.nagle.setup.del.006|  Actual effect   : Both values are deleted from every interface GUID
-::X|EN|net.nagle.setup.del.007|                    under Tcpip\Parameters\Interfaces, restoring the
-::X|EN|net.nagle.setup.del.008|                    shipped configuration. Immediate, no reboot.
-::X|EN|net.nagle.setup.del.009|
-::X|EN|net.nagle.setup.del.010|  Gain            : Restores default TCP behaviour. Be clear about what
-::X|EN|net.nagle.setup.del.011|                    the tweak was worth in the first place: competitive
-::X|EN|net.nagle.setup.del.012|                    game traffic is almost entirely UDP, which neither
-::X|EN|net.nagle.setup.del.013|                    Nagle nor delayed ACK touches at all, so it could not
-::X|EN|net.nagle.setup.del.014|                    have been lowering your ping. What it did do was
-::X|EN|net.nagle.setup.del.015|                    double your ACK count and reduce maximum download
-::X|EN|net.nagle.setup.del.016|                    throughput.
-::X|EN|net.nagle.setup.del.017|
-::X|EN|net.nagle.setup.del.018|  Cost            : Nothing measurable. If you have a genuinely latency-
-::X|EN|net.nagle.setup.del.019|                    sensitive TCP application and knowingly added these,
-::X|EN|net.nagle.setup.del.020|                    you would re-add them per adapter GUID by hand.
-::X|EN|net.nagle.setup.del.021|
-::X|EN|net.nagle.setup.del.022|  Windows default : Both values absent on every interface.
-::X|EN|net.nagle.setup.del.023|
-::X|EN|net.nagle.setup.del.024|  Possible values:
-::X|EN|net.nagle.setup.del.025|    TcpAckFrequency absent :
-::X|EN|net.nagle.setup.del.026|        Shipped state. Windows uses delayed ACK: an acknowledgement is
-::X|EN|net.nagle.setup.del.027|        sent after the second full-size segment or after up to 200 ms,
-::X|EN|net.nagle.setup.del.028|        whichever comes first.
-::X|EN|net.nagle.setup.del.029|    TcpAckFrequency=1    : An acknowledgement is sent for every single
-::X|EN|net.nagle.setup.del.030|                           received segment. That doubles the ACK volume
-::X|EN|net.nagle.setup.del.031|                           going upstream, which on an asymmetric line
-::X|EN|net.nagle.setup.del.032|                           eats the upload your downloads depend on.
-::X|EN|net.nagle.setup.del.033|    TcpAckFrequency=2 to 13 :
-::X|EN|net.nagle.setup.del.034|        An acknowledgement after N segments. Above the default it delays
-::X|EN|net.nagle.setup.del.035|        feedback to the sender and can slow the congestion window climb.
-::X|EN|net.nagle.setup.del.036|    TCPNoDelay absent    : Shipped state. Nagle's algorithm coalesces
-::X|EN|net.nagle.setup.del.037|                           small writes for sockets that did not opt out
-::X|EN|net.nagle.setup.del.038|                           with TCP_NODELAY themselves.
-::X|EN|net.nagle.setup.del.039|    TCPNoDelay=1         : Nagle is disabled for that interface, machine-
-::X|EN|net.nagle.setup.del.040|                           wide: every small write leaves as its own
-::X|EN|net.nagle.setup.del.041|                           segment, with its own 40 bytes of header.
-::X|EN|net.nagle.setup.del.042|    TCPNoDelay=0         : An explicit enable. This is a third state, not
-::X|EN|net.nagle.setup.del.043|                           the shipped one - which is why OPTY deletes
-::X|EN|net.nagle.setup.del.044|                           rather than writing 0.
-::X|EN|net.nagle.setup.del.045|
-::X|EN|net.nagle.setup.del.046|  Why these profiles : Five identical DELETE columns, and DELETE rather
-::X|EN|net.nagle.setup.del.047|                       than 0 in every one, because the Windows default is
-::X|EN|net.nagle.setup.del.048|                       the value not existing - writing 0 would be a third
-::X|EN|net.nagle.setup.del.049|                       state, not a restoration. No usage profile
-::X|EN|net.nagle.setup.del.050|                       benefits: an application that really needs Nagle
-::X|EN|net.nagle.setup.del.051|                       off sets TCP_NODELAY on its own socket, which no
-::X|EN|net.nagle.setup.del.052|                       registry value is needed for.
-::X|EN|net.nagle.setup.del.053|
-::X|EN|net.nagle.setup.del.054|  Target          : for each key under HKLM\SYSTEM\CurrentControlSet\Servi
-::X|EN|net.nagle.setup.del.055|                    ces\Tcpip\Parameters\Interfaces\{GUID}: reg delete /v
-::X|EN|net.nagle.setup.del.056|                    TcpAckFrequency /f and reg delete /v TCPNoDelay /f
-::X|EN|net.nagle.setup.del.057|                    (OPTY.bat ~1552-1555)
+::X|EN|net.nagle.setup.del.006|  Actual effect   : No SETUP path runs this deletion today: no setup
+::X|EN|net.nagle.setup.del.007|                    menu, profile walk or setup question touches these two
+::X|EN|net.nagle.setup.del.008|                    values. The only place OPTY deletes them is the restore
+::X|EN|net.nagle.setup.del.009|                    pass :gaming_restore (menu Restore defaults, option 2,
+::X|EN|net.nagle.setup.del.010|                    Undo ALL OPTY profiles), which removes both from every
+::X|EN|net.nagle.setup.del.011|                    interface GUID under Tcpip\Parameters\Interfaces
+::X|EN|net.nagle.setup.del.012|                    without asking - see the card net.nagle.restore.del.
+::X|EN|net.nagle.setup.del.013|                    Immediate, no reboot.
+::X|EN|net.nagle.setup.del.014|
+::X|EN|net.nagle.setup.del.015|  Gain            : Restores default TCP behaviour. Be clear about what
+::X|EN|net.nagle.setup.del.016|                    the tweak was worth in the first place: competitive
+::X|EN|net.nagle.setup.del.017|                    game traffic is almost entirely UDP, which neither
+::X|EN|net.nagle.setup.del.018|                    Nagle nor delayed ACK touches at all, so it could not
+::X|EN|net.nagle.setup.del.019|                    have been lowering your ping. What it did do was
+::X|EN|net.nagle.setup.del.020|                    double your ACK count and reduce maximum download
+::X|EN|net.nagle.setup.del.021|                    throughput.
+::X|EN|net.nagle.setup.del.022|
+::X|EN|net.nagle.setup.del.023|  Cost            : Nothing measurable. If you have a genuinely latency-
+::X|EN|net.nagle.setup.del.024|                    sensitive TCP application and knowingly added these,
+::X|EN|net.nagle.setup.del.025|                    you would re-add them per adapter GUID by hand.
+::X|EN|net.nagle.setup.del.026|
+::X|EN|net.nagle.setup.del.027|  Windows default : Both values absent on every interface.
+::X|EN|net.nagle.setup.del.028|
+::X|EN|net.nagle.setup.del.029|  Possible values:
+::X|EN|net.nagle.setup.del.030|    TcpAckFrequency absent :
+::X|EN|net.nagle.setup.del.031|        Shipped state. Windows uses delayed ACK: an acknowledgement is
+::X|EN|net.nagle.setup.del.032|        sent after the second full-size segment or after up to 200 ms,
+::X|EN|net.nagle.setup.del.033|        whichever comes first.
+::X|EN|net.nagle.setup.del.034|    TcpAckFrequency=1    : An acknowledgement is sent for every single
+::X|EN|net.nagle.setup.del.035|                           received segment. That doubles the ACK volume
+::X|EN|net.nagle.setup.del.036|                           going upstream, which on an asymmetric line
+::X|EN|net.nagle.setup.del.037|                           eats the upload your downloads depend on.
+::X|EN|net.nagle.setup.del.038|    TcpAckFrequency=2 to 13 :
+::X|EN|net.nagle.setup.del.039|        An acknowledgement after N segments. Above the default it delays
+::X|EN|net.nagle.setup.del.040|        feedback to the sender and can slow the congestion window climb.
+::X|EN|net.nagle.setup.del.041|    TCPNoDelay absent    : Shipped state. Nagle's algorithm coalesces
+::X|EN|net.nagle.setup.del.042|                           small writes for sockets that did not opt out
+::X|EN|net.nagle.setup.del.043|                           with TCP_NODELAY themselves.
+::X|EN|net.nagle.setup.del.044|    TCPNoDelay=1         : Nagle is disabled for that interface, machine-
+::X|EN|net.nagle.setup.del.045|                           wide: every small write leaves as its own
+::X|EN|net.nagle.setup.del.046|                           segment, with its own 40 bytes of header.
+::X|EN|net.nagle.setup.del.047|    TCPNoDelay=0         : An explicit enable. This is a third state, not
+::X|EN|net.nagle.setup.del.048|                           the shipped one - which is why OPTY deletes
+::X|EN|net.nagle.setup.del.049|                           rather than writing 0.
+::X|EN|net.nagle.setup.del.050|
+::X|EN|net.nagle.setup.del.051|  Why these profiles : Five identical DELETE columns, and DELETE rather
+::X|EN|net.nagle.setup.del.052|                       than 0 in every one, because the Windows default is
+::X|EN|net.nagle.setup.del.053|                       the value not existing - writing 0 would be a third
+::X|EN|net.nagle.setup.del.054|                       state, not a restoration. No usage profile
+::X|EN|net.nagle.setup.del.055|                       benefits: an application that really needs Nagle
+::X|EN|net.nagle.setup.del.056|                       off sets TCP_NODELAY on its own socket, which no
+::X|EN|net.nagle.setup.del.057|                       registry value is needed for.
+::X|EN|net.nagle.setup.del.058|
+::X|EN|net.nagle.setup.del.059|  Target          : for each key under HKLM\SYSTEM\CurrentControlSet\Servi
+::X|EN|net.nagle.setup.del.060|                    ces\Tcpip\Parameters\Interfaces\{GUID}: reg delete /v
+::X|EN|net.nagle.setup.del.061|                    TcpAckFrequency /f and reg delete /v TCPNoDelay /f -
+::X|EN|net.nagle.setup.del.062|                    only in :gaming_restore, under "Restoring network
+::X|EN|net.nagle.setup.del.063|                    defaults (throttling index + Nagle)". No setup label
+::X|EN|net.nagle.setup.del.064|                    runs it.
 ::X|FR|net.nagle.setup.del.001|  Ce que c est    : TcpAckFrequency et TCPNoDelay sont des valeurs par
 ::X|FR|net.nagle.setup.del.002|                    carte reseau que dix ans de guides gaming ont
 ::X|FR|net.nagle.setup.del.003|                    conseille d ajouter pour desactiver l algorithme de
 ::X|FR|net.nagle.setup.del.004|                    Nagle et baisser le ping. Windows est livre sans
 ::X|FR|net.nagle.setup.del.005|                    aucune des deux.
 ::X|FR|net.nagle.setup.del.006|
-::X|FR|net.nagle.setup.del.007|  Effet reel      : Les deux valeurs sont supprimees de chaque GUID
-::X|FR|net.nagle.setup.del.008|                    d interface sous Tcpip\Parameters\Interfaces, ce qui
-::X|FR|net.nagle.setup.del.009|                    retablit la configuration d origine. Effet immediat,
-::X|FR|net.nagle.setup.del.010|                    sans redemarrage.
-::X|FR|net.nagle.setup.del.011|
-::X|FR|net.nagle.setup.del.012|  Gain            : Retablit le comportement TCP par defaut. Soyons clairs
-::X|FR|net.nagle.setup.del.013|                    sur ce que valait le tweak au depart : le trafic des
-::X|FR|net.nagle.setup.del.014|                    jeux competitifs est presque entierement en UDP, que
-::X|FR|net.nagle.setup.del.015|                    ni Nagle ni l ACK retarde ne touchent - il ne pouvait
-::X|FR|net.nagle.setup.del.016|                    donc pas baisser votre ping. En revanche, il doublait
-::X|FR|net.nagle.setup.del.017|                    bel et bien le nombre d ACK et reduisait le debit
-::X|FR|net.nagle.setup.del.018|                    maximal en telechargement.
-::X|FR|net.nagle.setup.del.019|
-::X|FR|net.nagle.setup.del.020|  Cout            : Rien de mesurable. Si vous avez une application TCP
-::X|FR|net.nagle.setup.del.021|                    reellement sensible a la latence et que vous les aviez
-::X|FR|net.nagle.setup.del.022|                    ajoutees sciemment, il faudra les remettre a la main,
-::X|FR|net.nagle.setup.del.023|                    GUID par GUID.
-::X|FR|net.nagle.setup.del.024|
-::X|FR|net.nagle.setup.del.025|  Defaut Windows  : Les deux valeurs absentes sur toutes les interfaces.
-::X|FR|net.nagle.setup.del.026|
-::X|FR|net.nagle.setup.del.027|  Valeurs possibles :
-::X|FR|net.nagle.setup.del.028|    TcpAckFrequency absent :
-::X|FR|net.nagle.setup.del.029|        Etat livre. Windows utilise l ACK retarde : un accuse est envoye
-::X|FR|net.nagle.setup.del.030|        apres le deuxieme segment plein ou au bout de 200 ms au plus, le
-::X|FR|net.nagle.setup.del.031|        premier des deux.
-::X|FR|net.nagle.setup.del.032|    TcpAckFrequency=1    : Un accuse est envoye pour chaque segment recu.
-::X|FR|net.nagle.setup.del.033|                           Le volume d ACK en emission double, ce qui sur
-::X|FR|net.nagle.setup.del.034|                           une ligne asymetrique grignote l envoi dont vos
-::X|FR|net.nagle.setup.del.035|                           telechargements dependent.
-::X|FR|net.nagle.setup.del.036|    TcpAckFrequency=2 to 13 :
-::X|FR|net.nagle.setup.del.037|        Un accuse tous les N segments. Au-dessus du defaut, cela retarde
-::X|FR|net.nagle.setup.del.038|        le retour vers l emetteur et peut ralentir la montee de la fenetre
-::X|FR|net.nagle.setup.del.039|        de congestion.
-::X|FR|net.nagle.setup.del.040|    TCPNoDelay absent    : Etat livre. L algorithme de Nagle regroupe les
-::X|FR|net.nagle.setup.del.041|                           petites ecritures pour les sockets qui n ont
-::X|FR|net.nagle.setup.del.042|                           pas demande TCP_NODELAY elles-memes.
-::X|FR|net.nagle.setup.del.043|    TCPNoDelay=1         : Nagle est desactive pour cette interface, pour
-::X|FR|net.nagle.setup.del.044|                           toute la machine : chaque petite ecriture part
-::X|FR|net.nagle.setup.del.045|                           dans son propre segment, avec ses 40 octets
-::X|FR|net.nagle.setup.del.046|                           d en-tete.
-::X|FR|net.nagle.setup.del.047|    TCPNoDelay=0         : Une activation explicite. C est un troisieme
-::X|FR|net.nagle.setup.del.048|                           etat, pas l etat livre : c est pourquoi OPTY
-::X|FR|net.nagle.setup.del.049|                           supprime au lieu d ecrire 0.
-::X|FR|net.nagle.setup.del.050|
-::X|FR|net.nagle.setup.del.051|  Pourquoi ces profils : Cinq colonnes identiques a DELETE, et DELETE
-::X|FR|net.nagle.setup.del.052|                         plutot que 0 dans chacune, parce que le defaut
-::X|FR|net.nagle.setup.del.053|                         Windows est l absence de la valeur : ecrire 0
-::X|FR|net.nagle.setup.del.054|                         serait un troisieme etat, pas une restauration.
-::X|FR|net.nagle.setup.del.055|                         Aucun profil n y gagne : une application qui a
-::X|FR|net.nagle.setup.del.056|                         vraiment besoin de couper Nagle pose TCP_NODELAY
-::X|FR|net.nagle.setup.del.057|                         sur sa propre socket, sans qu aucune valeur de
-::X|FR|net.nagle.setup.del.058|                         registre soit necessaire.
-::X|FR|net.nagle.setup.del.059|
-::X|FR|net.nagle.setup.del.060|  Cible           : for each key under HKLM\SYSTEM\CurrentControlSet\Servi
-::X|FR|net.nagle.setup.del.061|                    ces\Tcpip\Parameters\Interfaces\{GUID}: reg delete /v
-::X|FR|net.nagle.setup.del.062|                    TcpAckFrequency /f and reg delete /v TCPNoDelay /f
-::X|FR|net.nagle.setup.del.063|                    (OPTY.bat ~1552-1555)
+::X|FR|net.nagle.setup.del.007|  Effet reel      : Aucun chemin de CONFIGURATION ne fait cette
+::X|FR|net.nagle.setup.del.008|                    suppression aujourd hui : ni menu de configuration, ni
+::X|FR|net.nagle.setup.del.009|                    passe par profil, ni question de configuration ne
+::X|FR|net.nagle.setup.del.010|                    touche ces deux valeurs. Le seul endroit ou OPTY les
+::X|FR|net.nagle.setup.del.011|                    supprime est la passe de restauration :gaming_restore
+::X|FR|net.nagle.setup.del.012|                    (menu Restore defaults, option 2, Undo ALL OPTY
+::X|FR|net.nagle.setup.del.013|                    profiles), qui les retire de chaque GUID d interface
+::X|FR|net.nagle.setup.del.014|                    sous Tcpip\Parameters\Interfaces sans rien demander -
+::X|FR|net.nagle.setup.del.015|                    voir la fiche net.nagle.restore.del. Effet immediat,
+::X|FR|net.nagle.setup.del.016|                    sans redemarrage.
+::X|FR|net.nagle.setup.del.017|
+::X|FR|net.nagle.setup.del.018|  Gain            : Retablit le comportement TCP par defaut. Soyons clairs
+::X|FR|net.nagle.setup.del.019|                    sur ce que valait le tweak au depart : le trafic des
+::X|FR|net.nagle.setup.del.020|                    jeux competitifs est presque entierement en UDP, que
+::X|FR|net.nagle.setup.del.021|                    ni Nagle ni l ACK retarde ne touchent - il ne pouvait
+::X|FR|net.nagle.setup.del.022|                    donc pas baisser votre ping. En revanche, il doublait
+::X|FR|net.nagle.setup.del.023|                    bel et bien le nombre d ACK et reduisait le debit
+::X|FR|net.nagle.setup.del.024|                    maximal en telechargement.
+::X|FR|net.nagle.setup.del.025|
+::X|FR|net.nagle.setup.del.026|  Cout            : Rien de mesurable. Si vous avez une application TCP
+::X|FR|net.nagle.setup.del.027|                    reellement sensible a la latence et que vous les aviez
+::X|FR|net.nagle.setup.del.028|                    ajoutees sciemment, il faudra les remettre a la main,
+::X|FR|net.nagle.setup.del.029|                    GUID par GUID.
+::X|FR|net.nagle.setup.del.030|
+::X|FR|net.nagle.setup.del.031|  Defaut Windows  : Les deux valeurs absentes sur toutes les interfaces.
+::X|FR|net.nagle.setup.del.032|
+::X|FR|net.nagle.setup.del.033|  Valeurs possibles :
+::X|FR|net.nagle.setup.del.034|    TcpAckFrequency absent :
+::X|FR|net.nagle.setup.del.035|        Etat livre. Windows utilise l ACK retarde : un accuse est envoye
+::X|FR|net.nagle.setup.del.036|        apres le deuxieme segment plein ou au bout de 200 ms au plus, le
+::X|FR|net.nagle.setup.del.037|        premier des deux.
+::X|FR|net.nagle.setup.del.038|    TcpAckFrequency=1    : Un accuse est envoye pour chaque segment recu.
+::X|FR|net.nagle.setup.del.039|                           Le volume d ACK en emission double, ce qui sur
+::X|FR|net.nagle.setup.del.040|                           une ligne asymetrique grignote l envoi dont vos
+::X|FR|net.nagle.setup.del.041|                           telechargements dependent.
+::X|FR|net.nagle.setup.del.042|    TcpAckFrequency=2 to 13 :
+::X|FR|net.nagle.setup.del.043|        Un accuse tous les N segments. Au-dessus du defaut, cela retarde
+::X|FR|net.nagle.setup.del.044|        le retour vers l emetteur et peut ralentir la montee de la fenetre
+::X|FR|net.nagle.setup.del.045|        de congestion.
+::X|FR|net.nagle.setup.del.046|    TCPNoDelay absent    : Etat livre. L algorithme de Nagle regroupe les
+::X|FR|net.nagle.setup.del.047|                           petites ecritures pour les sockets qui n ont
+::X|FR|net.nagle.setup.del.048|                           pas demande TCP_NODELAY elles-memes.
+::X|FR|net.nagle.setup.del.049|    TCPNoDelay=1         : Nagle est desactive pour cette interface, pour
+::X|FR|net.nagle.setup.del.050|                           toute la machine : chaque petite ecriture part
+::X|FR|net.nagle.setup.del.051|                           dans son propre segment, avec ses 40 octets
+::X|FR|net.nagle.setup.del.052|                           d en-tete.
+::X|FR|net.nagle.setup.del.053|    TCPNoDelay=0         : Une activation explicite. C est un troisieme
+::X|FR|net.nagle.setup.del.054|                           etat, pas l etat livre : c est pourquoi OPTY
+::X|FR|net.nagle.setup.del.055|                           supprime au lieu d ecrire 0.
+::X|FR|net.nagle.setup.del.056|
+::X|FR|net.nagle.setup.del.057|  Pourquoi ces profils : Cinq colonnes identiques a DELETE, et DELETE
+::X|FR|net.nagle.setup.del.058|                         plutot que 0 dans chacune, parce que le defaut
+::X|FR|net.nagle.setup.del.059|                         Windows est l absence de la valeur : ecrire 0
+::X|FR|net.nagle.setup.del.060|                         serait un troisieme etat, pas une restauration.
+::X|FR|net.nagle.setup.del.061|                         Aucun profil n y gagne : une application qui a
+::X|FR|net.nagle.setup.del.062|                         vraiment besoin de couper Nagle pose TCP_NODELAY
+::X|FR|net.nagle.setup.del.063|                         sur sa propre socket, sans qu aucune valeur de
+::X|FR|net.nagle.setup.del.064|                         registre soit necessaire.
+::X|FR|net.nagle.setup.del.065|
+::X|FR|net.nagle.setup.del.066|  Cible           : pour chaque cle sous HKLM\SYSTEM\CurrentControlSet\Se
+::X|FR|net.nagle.setup.del.067|                    rvices\Tcpip\Parameters\Interfaces\{GUID} : reg delete
+::X|FR|net.nagle.setup.del.068|                    /v TcpAckFrequency /f et reg delete /v TCPNoDelay /f -
+::X|FR|net.nagle.setup.del.069|                    uniquement dans :gaming_restore, sous "Restoring
+::X|FR|net.nagle.setup.del.070|                    network defaults (throttling index + Nagle)". Aucun
+::X|FR|net.nagle.setup.del.071|                    label de configuration ne le fait.
 ::
 :: ---- net.nti.restore.write10 (repair) ---------------------------
 ::P|net.nti.restore.write10|10|10|10|10|10|
@@ -18827,97 +18844,112 @@ goto :eof
 ::X|EN|net.nti.restore.write10.003|                    millisecond while media is playing, so audio threads
 ::X|EN|net.nti.restore.write10.004|                    are not starved by network interrupt work.
 ::X|EN|net.nti.restore.write10.005|
-::X|EN|net.nti.restore.write10.006|  Actual effect   : Writes 10. It is a plain reg add, unconditional, so on
-::X|EN|net.nti.restore.write10.007|                    a fresh machine it confirms rather than changes.
-::X|EN|net.nti.restore.write10.008|
-::X|EN|net.nti.restore.write10.009|  Gain            : None if the value is already 10. What it buys is the
-::X|EN|net.nti.restore.write10.010|                    removal of an audio dropout risk that a previous tweak
-::X|EN|net.nti.restore.write10.011|                    introduced by setting 0xFFFFFFFF.
-::X|EN|net.nti.restore.write10.012|
-::X|EN|net.nti.restore.write10.013|  Cost            : Nothing on a slow link. Be clear what the cap actually
-::X|EN|net.nti.restore.write10.014|                    is: about 10000 packets per second, which is roughly
-::X|EN|net.nti.restore.write10.015|                    120 Mbit/s with full-size frames, and only while a
-::X|EN|net.nti.restore.write10.016|                    multimedia stream is playing. On a fibre or cable
-::X|EN|net.nti.restore.write10.017|                    connection that is a real soft ceiling on downloads
-::X|EN|net.nti.restore.write10.018|                    during playback - which is exactly why the throughput
-::X|EN|net.nti.restore.write10.019|                    profile offers to lift it. Below about 100 Mbit/s you
-::X|EN|net.nti.restore.write10.020|                    never reach it.
-::X|EN|net.nti.restore.write10.021|
-::X|EN|net.nti.restore.write10.022|  Windows default : 10 (0xa).
-::X|EN|net.nti.restore.write10.023|
-::X|EN|net.nti.restore.write10.024|  Possible values:
-::X|EN|net.nti.restore.write10.025|    10 (0xa)             : Shipped value. Caps non-multimedia network
-::X|EN|net.nti.restore.write10.026|                           processing at 10 packets per millisecond -
-::X|EN|net.nti.restore.write10.027|                           about 10000 packets per second - while an MMCSS
-::X|EN|net.nti.restore.write10.028|                           multimedia stream is registered.
-::X|EN|net.nti.restore.write10.029|    4294967295 (0xFFFFFFFF) :
-::X|EN|net.nti.restore.write10.030|        Cap removed. This is what tweak guides write, and what the restore
-::X|EN|net.nti.restore.write10.031|        path is here to undo.
-::X|EN|net.nti.restore.write10.032|    any other N          : Cap set to N packets per millisecond, neither
-::X|EN|net.nti.restore.write10.033|                           the shipped protection nor its removal.
-::X|EN|net.nti.restore.write10.034|
-::X|EN|net.nti.restore.write10.035|  Why these profiles : Five identical columns at 10. This is the restore
-::X|EN|net.nti.restore.write10.036|                       path, and its whole job is to put the Windows value
-::X|EN|net.nti.restore.write10.037|                       back - so every profile gets 10, including the
-::X|EN|net.nti.restore.write10.038|                       server, which is the one that may want the cap
-::X|EN|net.nti.restore.write10.039|                       lifted. A machine that wants that asks for it in
-::X|EN|net.nti.restore.write10.040|                       the network throughput profile, not in an undo
-::X|EN|net.nti.restore.write10.041|                       step.
-::X|EN|net.nti.restore.write10.042|
-::X|EN|net.nti.restore.write10.043|  Target          : reg add "HKLM\SOFTWARE\Microsoft\Windows
-::X|EN|net.nti.restore.write10.044|                    NT\CurrentVersion\Multimedia\SystemProfile" /v
-::X|EN|net.nti.restore.write10.045|                    NetworkThrottlingIndex /t REG_DWORD /d 10 /f in the
-::X|EN|net.nti.restore.write10.046|                    restore path (OPTY.bat ~1628)
+::X|EN|net.nti.restore.write10.006|  Actual effect   : Writes 10, unconditionally, in both restore passes: a
+::X|EN|net.nti.restore.write10.007|                    plain reg add in :gaming_restore, and a call :regset in
+::X|EN|net.nti.restore.write10.008|                    :reassert_defaults, which reads the old value first
+::X|EN|net.nti.restore.write10.009|                    and logs whether it repaired anything. On a fresh
+::X|EN|net.nti.restore.write10.010|                    machine it confirms rather than changes.
+::X|EN|net.nti.restore.write10.011|
+::X|EN|net.nti.restore.write10.012|  Gain            : None if the value is already 10. What it buys is the
+::X|EN|net.nti.restore.write10.013|                    removal of an audio dropout risk that a previous tweak
+::X|EN|net.nti.restore.write10.014|                    introduced by setting 0xFFFFFFFF.
+::X|EN|net.nti.restore.write10.015|
+::X|EN|net.nti.restore.write10.016|  Cost            : Nothing on a slow link. Be clear what the cap actually
+::X|EN|net.nti.restore.write10.017|                    is: about 10000 packets per second, which is roughly
+::X|EN|net.nti.restore.write10.018|                    120 Mbit/s with full-size frames, and only while a
+::X|EN|net.nti.restore.write10.019|                    multimedia stream is playing. On a fibre or cable
+::X|EN|net.nti.restore.write10.020|                    connection that is a real soft ceiling on downloads
+::X|EN|net.nti.restore.write10.021|                    during playback - which is exactly why the
+::X|EN|net.nti.restore.write10.022|                    mmcss.network.throttling question of the system setup
+::X|EN|net.nti.restore.write10.023|                    offers to lift it. Below about 100 Mbit/s you never
+::X|EN|net.nti.restore.write10.024|                    reach it.
+::X|EN|net.nti.restore.write10.025|
+::X|EN|net.nti.restore.write10.026|  Windows default : 10 (0xa).
+::X|EN|net.nti.restore.write10.027|
+::X|EN|net.nti.restore.write10.028|  Possible values:
+::X|EN|net.nti.restore.write10.029|    10 (0xa)             : Shipped value. Caps non-multimedia network
+::X|EN|net.nti.restore.write10.030|                           processing at 10 packets per millisecond -
+::X|EN|net.nti.restore.write10.031|                           about 10000 packets per second - while an MMCSS
+::X|EN|net.nti.restore.write10.032|                           multimedia stream is registered.
+::X|EN|net.nti.restore.write10.033|    4294967295 (0xFFFFFFFF) :
+::X|EN|net.nti.restore.write10.034|        Cap removed. This is what tweak guides write, and what the restore
+::X|EN|net.nti.restore.write10.035|        path is here to undo.
+::X|EN|net.nti.restore.write10.036|    any other N          : Cap set to N packets per millisecond, neither
+::X|EN|net.nti.restore.write10.037|                           the shipped protection nor its removal.
+::X|EN|net.nti.restore.write10.038|
+::X|EN|net.nti.restore.write10.039|  Why these profiles : Five identical columns at 10. This is the restore
+::X|EN|net.nti.restore.write10.040|                       path, and its whole job is to put the Windows value
+::X|EN|net.nti.restore.write10.041|                       back - so every profile gets 10, including the
+::X|EN|net.nti.restore.write10.042|                       server, which is the one that may want the cap
+::X|EN|net.nti.restore.write10.043|                       lifted. A machine that wants that asks for it in
+::X|EN|net.nti.restore.write10.044|                       the mmcss.network.throttling question of the system
+::X|EN|net.nti.restore.write10.045|                       setup, where the server profile answers
+::X|EN|net.nti.restore.write10.046|                       0xffffffff, not in an undo step.
+::X|EN|net.nti.restore.write10.047|
+::X|EN|net.nti.restore.write10.048|  Target          : "HKLM\SOFTWARE\Microsoft\Windows
+::X|EN|net.nti.restore.write10.049|                    NT\CurrentVersion\Multimedia\SystemProfile"
+::X|EN|net.nti.restore.write10.050|                    NetworkThrottlingIndex REG_DWORD 10 - reg add ... /d 10
+::X|EN|net.nti.restore.write10.051|                    /f in :gaming_restore (under "Restoring network
+::X|EN|net.nti.restore.write10.052|                    defaults"), and call :regset in :reassert_defaults
+::X|EN|net.nti.restore.write10.053|                    (under "MMCSS + scheduler back to Windows defaults").
 ::X|FR|net.nti.restore.write10.001|  Ce que c est    : Le plafond reseau de MMCSS, sur le chemin de
 ::X|FR|net.nti.restore.write10.002|                    restauration. Il limite le traitement reseau non
 ::X|FR|net.nti.restore.write10.003|                    multimedia a 10 paquets par milliseconde pendant une
 ::X|FR|net.nti.restore.write10.004|                    lecture, pour que les threads audio ne soient pas
 ::X|FR|net.nti.restore.write10.005|                    etouffes par le travail d interruption reseau.
 ::X|FR|net.nti.restore.write10.006|
-::X|FR|net.nti.restore.write10.007|  Effet reel      : Ecrit 10. C est un simple reg add, sans condition :
-::X|FR|net.nti.restore.write10.008|                    sur une machine neuve il confirme au lieu de changer
-::X|FR|net.nti.restore.write10.009|                    quoi que ce soit.
-::X|FR|net.nti.restore.write10.010|
-::X|FR|net.nti.restore.write10.011|  Gain            : Aucun si la valeur est deja a 10. Ce qu il apporte,
-::X|FR|net.nti.restore.write10.012|                    c est la disparition d un risque de coupure audio
-::X|FR|net.nti.restore.write10.013|                    introduit par un tweak precedent qui avait mis
-::X|FR|net.nti.restore.write10.014|                    0xFFFFFFFF.
-::X|FR|net.nti.restore.write10.015|
-::X|FR|net.nti.restore.write10.016|  Cout            : Rien sur une ligne lente. Mais soyons precis sur ce
-::X|FR|net.nti.restore.write10.017|                    qu est ce plafond : environ 10000 paquets par seconde,
-::X|FR|net.nti.restore.write10.018|                    soit a peu pres 120 Mbit/s avec des trames pleines, et
-::X|FR|net.nti.restore.write10.019|                    uniquement pendant qu un flux multimedia joue. Sur une
-::X|FR|net.nti.restore.write10.020|                    fibre ou un cable, c est un vrai plafond souple sur
-::X|FR|net.nti.restore.write10.021|                    les telechargements en cours de lecture - et c est
-::X|FR|net.nti.restore.write10.022|                    exactement pour cela que le profil Debit propose de le
-::X|FR|net.nti.restore.write10.023|                    lever. En dessous d environ 100 Mbit/s, vous ne
-::X|FR|net.nti.restore.write10.024|                    l atteindrez jamais.
-::X|FR|net.nti.restore.write10.025|
-::X|FR|net.nti.restore.write10.026|  Defaut Windows  : 10 (0xa).
-::X|FR|net.nti.restore.write10.027|
-::X|FR|net.nti.restore.write10.028|  Valeurs possibles :
-::X|FR|net.nti.restore.write10.029|    10 (0xa)             : Valeur d origine. Plafonne le traitement reseau
-::X|FR|net.nti.restore.write10.030|                           non multimedia a 10 paquets par milliseconde,
-::X|FR|net.nti.restore.write10.031|                           soit environ 10000 paquets par seconde, tant
-::X|FR|net.nti.restore.write10.032|                           qu un flux multimedia MMCSS est enregistre.
-::X|FR|net.nti.restore.write10.033|    4294967295 (0xFFFFFFFF) :
-::X|FR|net.nti.restore.write10.034|        Plafond supprime. C est ce qu ecrivent les guides de tweak, et ce
-::X|FR|net.nti.restore.write10.035|        que le chemin de restauration est la pour annuler.
-::X|FR|net.nti.restore.write10.036|    any other N          : Plafond fixe a N paquets par milliseconde, ni
-::X|FR|net.nti.restore.write10.037|                           la protection d origine ni sa suppression.
-::X|FR|net.nti.restore.write10.038|
-::X|FR|net.nti.restore.write10.039|  Pourquoi ces profils : Cinq colonnes identiques a 10. C est le chemin de
-::X|FR|net.nti.restore.write10.040|                         restauration : son role entier est de remettre la
-::X|FR|net.nti.restore.write10.041|                         valeur Windows, donc tous les profils recoivent
-::X|FR|net.nti.restore.write10.042|                         10, y compris le serveur, qui est pourtant celui
-::X|FR|net.nti.restore.write10.043|                         qui pourrait vouloir lever le plafond. Une
-::X|FR|net.nti.restore.write10.044|                         machine dans ce cas le demande via le profil
-::X|FR|net.nti.restore.write10.045|                         reseau Debit, pas dans une etape d annulation.
-::X|FR|net.nti.restore.write10.046|
-::X|FR|net.nti.restore.write10.047|  Cible           : reg add "HKLM\SOFTWARE\Microsoft\Windows
-::X|FR|net.nti.restore.write10.048|                    NT\CurrentVersion\Multimedia\SystemProfile" /v
-::X|FR|net.nti.restore.write10.049|                    NetworkThrottlingIndex /t REG_DWORD /d 10 /f in the
-::X|FR|net.nti.restore.write10.050|                    restore path (OPTY.bat ~1628)
+::X|FR|net.nti.restore.write10.007|  Effet reel      : Ecrit 10, sans condition, dans les deux passes de
+::X|FR|net.nti.restore.write10.008|                    restauration : un simple reg add dans :gaming_restore,
+::X|FR|net.nti.restore.write10.009|                    et un call :regset dans :reassert_defaults, qui lit
+::X|FR|net.nti.restore.write10.010|                    d abord l ancienne valeur et note au journal s il a
+::X|FR|net.nti.restore.write10.011|                    repare quelque chose. Sur une machine neuve il
+::X|FR|net.nti.restore.write10.012|                    confirme au lieu de changer quoi que ce soit.
+::X|FR|net.nti.restore.write10.013|
+::X|FR|net.nti.restore.write10.014|  Gain            : Aucun si la valeur est deja a 10. Ce qu il apporte,
+::X|FR|net.nti.restore.write10.015|                    c est la disparition d un risque de coupure audio
+::X|FR|net.nti.restore.write10.016|                    introduit par un tweak precedent qui avait mis
+::X|FR|net.nti.restore.write10.017|                    0xFFFFFFFF.
+::X|FR|net.nti.restore.write10.018|
+::X|FR|net.nti.restore.write10.019|  Cout            : Rien sur une ligne lente. Mais soyons precis sur ce
+::X|FR|net.nti.restore.write10.020|                    qu est ce plafond : environ 10000 paquets par seconde,
+::X|FR|net.nti.restore.write10.021|                    soit a peu pres 120 Mbit/s avec des trames pleines, et
+::X|FR|net.nti.restore.write10.022|                    uniquement pendant qu un flux multimedia joue. Sur une
+::X|FR|net.nti.restore.write10.023|                    fibre ou un cable, c est un vrai plafond souple sur
+::X|FR|net.nti.restore.write10.024|                    les telechargements en cours de lecture - et c est
+::X|FR|net.nti.restore.write10.025|                    exactement pour cela que la question
+::X|FR|net.nti.restore.write10.026|                    mmcss.network.throttling de la configuration systeme
+::X|FR|net.nti.restore.write10.027|                    propose de le lever. En dessous d environ 100 Mbit/s,
+::X|FR|net.nti.restore.write10.028|                    vous ne l atteindrez jamais.
+::X|FR|net.nti.restore.write10.029|
+::X|FR|net.nti.restore.write10.030|  Defaut Windows  : 10 (0xa).
+::X|FR|net.nti.restore.write10.031|
+::X|FR|net.nti.restore.write10.032|  Valeurs possibles :
+::X|FR|net.nti.restore.write10.033|    10 (0xa)             : Valeur d origine. Plafonne le traitement reseau
+::X|FR|net.nti.restore.write10.034|                           non multimedia a 10 paquets par milliseconde,
+::X|FR|net.nti.restore.write10.035|                           soit environ 10000 paquets par seconde, tant
+::X|FR|net.nti.restore.write10.036|                           qu un flux multimedia MMCSS est enregistre.
+::X|FR|net.nti.restore.write10.037|    4294967295 (0xFFFFFFFF) :
+::X|FR|net.nti.restore.write10.038|        Plafond supprime. C est ce qu ecrivent les guides de tweak, et ce
+::X|FR|net.nti.restore.write10.039|        que le chemin de restauration est la pour annuler.
+::X|FR|net.nti.restore.write10.040|    any other N          : Plafond fixe a N paquets par milliseconde, ni
+::X|FR|net.nti.restore.write10.041|                           la protection d origine ni sa suppression.
+::X|FR|net.nti.restore.write10.042|
+::X|FR|net.nti.restore.write10.043|  Pourquoi ces profils : Cinq colonnes identiques a 10. C est le chemin de
+::X|FR|net.nti.restore.write10.044|                         restauration : son role entier est de remettre la
+::X|FR|net.nti.restore.write10.045|                         valeur Windows, donc tous les profils recoivent
+::X|FR|net.nti.restore.write10.046|                         10, y compris le serveur, qui est pourtant celui
+::X|FR|net.nti.restore.write10.047|                         qui pourrait vouloir lever le plafond. Une
+::X|FR|net.nti.restore.write10.048|                         machine dans ce cas le demande via la question
+::X|FR|net.nti.restore.write10.049|                         mmcss.network.throttling de la configuration
+::X|FR|net.nti.restore.write10.050|                         systeme, ou le profil serveur repond 0xffffffff,
+::X|FR|net.nti.restore.write10.051|                         pas dans une etape d annulation.
+::X|FR|net.nti.restore.write10.052|
+::X|FR|net.nti.restore.write10.053|  Cible           : "HKLM\SOFTWARE\Microsoft\Windows
+::X|FR|net.nti.restore.write10.054|                    NT\CurrentVersion\Multimedia\SystemProfile"
+::X|FR|net.nti.restore.write10.055|                    NetworkThrottlingIndex REG_DWORD 10 - reg add ... /d 10
+::X|FR|net.nti.restore.write10.056|                    /f dans :gaming_restore (sous "Restoring network
+::X|FR|net.nti.restore.write10.057|                    defaults"), et call :regset dans :reassert_defaults
+::X|FR|net.nti.restore.write10.058|                    (sous "MMCSS + scheduler back to Windows defaults").
 ::
 :: ---- net.nagle.restore.del (repair) -----------------------------
 ::P|net.nagle.restore.del|DELETE|DELETE|DELETE|DELETE|DELETE|
@@ -18926,95 +18958,105 @@ goto :eof
 ::T|FR|net.nagle.restore.del.001|SUPPRESSION DES ANCIENS REGLAGES NAGLE / ACK RETARDE
 ::T|FR|net.nagle.restore.del.002|Efface deux valeurs de registre laissees par d anciens scripts anti-lag pour que TCP redevienne normal ; la plupart des jeux utilisent l UDP, donc rien n est perdu, seul du trafic reseau inutile disparait.
 ::X|EN|net.nagle.restore.del.001|  What it is      : TcpAckFrequency and TCPNoDelay are per-adapter values
-::X|EN|net.nagle.restore.del.002|                    left behind by ping tuning scripts. This is the
-::X|EN|net.nagle.restore.del.003|                    restore-path copy of the deletion.
-::X|EN|net.nagle.restore.del.004|
-::X|EN|net.nagle.restore.del.005|  Actual effect   : Deletes both on every network interface, so TCP
-::X|EN|net.nagle.restore.del.006|                    behaves as Windows ships it. No reboot needed.
-::X|EN|net.nagle.restore.del.007|
-::X|EN|net.nagle.restore.del.008|  Gain            : Removes settings whose latency benefit has never been
-::X|EN|net.nagle.restore.del.009|                    reproduced. Most games use UDP, which these values do
-::X|EN|net.nagle.restore.del.010|                    not touch at all - so there is no latency being given
-::X|EN|net.nagle.restore.del.011|                    up, only ACK overhead being removed.
-::X|EN|net.nagle.restore.del.012|
-::X|EN|net.nagle.restore.del.013|  Cost            : Nothing, this is a pure repair. A latency-sensitive
-::X|EN|net.nagle.restore.del.014|                    TCP application you added them for would need them re-
-::X|EN|net.nagle.restore.del.015|                    added per adapter GUID.
-::X|EN|net.nagle.restore.del.016|
-::X|EN|net.nagle.restore.del.017|  Windows default : Both absent on every interface.
-::X|EN|net.nagle.restore.del.018|
-::X|EN|net.nagle.restore.del.019|  Possible values:
-::X|EN|net.nagle.restore.del.020|    TcpAckFrequency absent / TCPNoDelay absent :
-::X|EN|net.nagle.restore.del.021|        Shipped state on every interface. Delayed ACK and Nagle behave as
-::X|EN|net.nagle.restore.del.022|        Windows designed them, and per-socket TCP_NODELAY still works for
-::X|EN|net.nagle.restore.del.023|        applications that ask.
-::X|EN|net.nagle.restore.del.024|    TcpAckFrequency=1    : One ACK per received segment. Doubles upstream
-::X|EN|net.nagle.restore.del.025|                           ACK volume for no measurable latency gain on
-::X|EN|net.nagle.restore.del.026|                           UDP game traffic.
-::X|EN|net.nagle.restore.del.027|    TCPNoDelay=1         : Nagle disabled machine-wide on that interface.
-::X|EN|net.nagle.restore.del.028|                           Every small write becomes its own segment.
-::X|EN|net.nagle.restore.del.029|    either value = 0     : An explicit disable written as a value, which
-::X|EN|net.nagle.restore.del.030|                           is a third state. Restoring means deleting, not
-::X|EN|net.nagle.restore.del.031|                           writing 0.
-::X|EN|net.nagle.restore.del.032|
-::X|EN|net.nagle.restore.del.033|  Why these profiles : Five identical DELETE columns. The Windows default
-::X|EN|net.nagle.restore.del.034|                       is the absence of the value, so DELETE and not 0 is
-::X|EN|net.nagle.restore.del.035|                       the correct literal in every column, including the
-::X|EN|net.nagle.restore.del.036|                       Windows one - writing 0 would leave the machine in
-::X|EN|net.nagle.restore.del.037|                       a state it never shipped in.
-::X|EN|net.nagle.restore.del.038|
-::X|EN|net.nagle.restore.del.039|  Target          : for each key under HKLM\SYSTEM\CurrentControlSet\Servi
-::X|EN|net.nagle.restore.del.040|                    ces\Tcpip\Parameters\Interfaces\{GUID}: reg delete /v
-::X|EN|net.nagle.restore.del.041|                    TcpAckFrequency /f and reg delete /v TCPNoDelay /f, in
-::X|EN|net.nagle.restore.del.042|                    the restore path (OPTY.bat ~1630-1632)
+::X|EN|net.nagle.restore.del.002|                    left behind by ping tuning scripts. This card is the
+::X|EN|net.nagle.restore.del.003|                    deletion that the restore path runs - the only place
+::X|EN|net.nagle.restore.del.004|                    in OPTY that removes them.
+::X|EN|net.nagle.restore.del.005|
+::X|EN|net.nagle.restore.del.006|  Actual effect   : Deletes both on every network interface, so TCP
+::X|EN|net.nagle.restore.del.007|                    behaves as Windows ships it. It runs without a
+::X|EN|net.nagle.restore.del.008|                    question of its own, and a value that is already
+::X|EN|net.nagle.restore.del.009|                    absent is ignored silently. No reboot needed.
+::X|EN|net.nagle.restore.del.010|
+::X|EN|net.nagle.restore.del.011|  Gain            : Removes settings whose latency benefit has never been
+::X|EN|net.nagle.restore.del.012|                    reproduced. Most games use UDP, which these values do
+::X|EN|net.nagle.restore.del.013|                    not touch at all - so there is no latency being given
+::X|EN|net.nagle.restore.del.014|                    up, only ACK overhead being removed.
+::X|EN|net.nagle.restore.del.015|
+::X|EN|net.nagle.restore.del.016|  Cost            : Nothing, this is a pure repair. A latency-sensitive
+::X|EN|net.nagle.restore.del.017|                    TCP application you added them for would need them re-
+::X|EN|net.nagle.restore.del.018|                    added per adapter GUID.
+::X|EN|net.nagle.restore.del.019|
+::X|EN|net.nagle.restore.del.020|  Windows default : Both absent on every interface.
+::X|EN|net.nagle.restore.del.021|
+::X|EN|net.nagle.restore.del.022|  Possible values:
+::X|EN|net.nagle.restore.del.023|    TcpAckFrequency absent / TCPNoDelay absent :
+::X|EN|net.nagle.restore.del.024|        Shipped state on every interface. Delayed ACK and Nagle behave as
+::X|EN|net.nagle.restore.del.025|        Windows designed them, and per-socket TCP_NODELAY still works for
+::X|EN|net.nagle.restore.del.026|        applications that ask.
+::X|EN|net.nagle.restore.del.027|    TcpAckFrequency=1    : One ACK per received segment. Doubles upstream
+::X|EN|net.nagle.restore.del.028|                           ACK volume for no measurable latency gain on
+::X|EN|net.nagle.restore.del.029|                           UDP game traffic.
+::X|EN|net.nagle.restore.del.030|    TCPNoDelay=1         : Nagle disabled machine-wide on that interface.
+::X|EN|net.nagle.restore.del.031|                           Every small write becomes its own segment.
+::X|EN|net.nagle.restore.del.032|    either value = 0     : An explicit disable written as a value, which
+::X|EN|net.nagle.restore.del.033|                           is a third state. Restoring means deleting, not
+::X|EN|net.nagle.restore.del.034|                           writing 0.
+::X|EN|net.nagle.restore.del.035|
+::X|EN|net.nagle.restore.del.036|  Why these profiles : Five identical DELETE columns. The Windows default
+::X|EN|net.nagle.restore.del.037|                       is the absence of the value, so DELETE and not 0 is
+::X|EN|net.nagle.restore.del.038|                       the correct literal in every column, including the
+::X|EN|net.nagle.restore.del.039|                       Windows one - writing 0 would leave the machine in
+::X|EN|net.nagle.restore.del.040|                       a state it never shipped in.
+::X|EN|net.nagle.restore.del.041|
+::X|EN|net.nagle.restore.del.042|  Target          : for each key under HKLM\SYSTEM\CurrentControlSet\Servi
+::X|EN|net.nagle.restore.del.043|                    ces\Tcpip\Parameters\Interfaces\{GUID}: reg delete /v
+::X|EN|net.nagle.restore.del.044|                    TcpAckFrequency /f and reg delete /v TCPNoDelay /f, in
+::X|EN|net.nagle.restore.del.045|                    :gaming_restore under "Restoring network defaults
+::X|EN|net.nagle.restore.del.046|                    (throttling index + Nagle)" - menu Restore defaults,
+::X|EN|net.nagle.restore.del.047|                    option 2, Undo ALL OPTY profiles.
 ::X|FR|net.nagle.restore.del.001|  Ce que c est    : TcpAckFrequency et TCPNoDelay sont des valeurs par
-::X|FR|net.nagle.restore.del.002|                    carte reseau laissees par les scripts anti-lag. Ceci
-::X|FR|net.nagle.restore.del.003|                    est la copie de la suppression sur le chemin de
-::X|FR|net.nagle.restore.del.004|                    restauration.
-::X|FR|net.nagle.restore.del.005|
-::X|FR|net.nagle.restore.del.006|  Effet reel      : Efface les deux sur toutes les interfaces : TCP
-::X|FR|net.nagle.restore.del.007|                    redevient conforme a ce que livre Windows. Aucun
-::X|FR|net.nagle.restore.del.008|                    redemarrage necessaire.
-::X|FR|net.nagle.restore.del.009|
-::X|FR|net.nagle.restore.del.010|  Gain            : Retire des reglages dont le gain de latence n a jamais
-::X|FR|net.nagle.restore.del.011|                    ete reproduit. La plupart des jeux passent en UDP, que
-::X|FR|net.nagle.restore.del.012|                    ces valeurs ne touchent pas du tout : on n abandonne
-::X|FR|net.nagle.restore.del.013|                    donc aucune latence, on supprime seulement du surcout
-::X|FR|net.nagle.restore.del.014|                    d ACK.
-::X|FR|net.nagle.restore.del.015|
-::X|FR|net.nagle.restore.del.016|  Cout            : Rien, c est une simple remise en ordre. Une
-::X|FR|net.nagle.restore.del.017|                    application TCP sensible a la latence pour laquelle
-::X|FR|net.nagle.restore.del.018|                    vous les auriez ajoutees exigerait de les remettre,
-::X|FR|net.nagle.restore.del.019|                    GUID par GUID.
-::X|FR|net.nagle.restore.del.020|
-::X|FR|net.nagle.restore.del.021|  Defaut Windows  : Les deux absentes sur toutes les interfaces.
-::X|FR|net.nagle.restore.del.022|
-::X|FR|net.nagle.restore.del.023|  Valeurs possibles :
-::X|FR|net.nagle.restore.del.024|    TcpAckFrequency absent / TCPNoDelay absent :
-::X|FR|net.nagle.restore.del.025|        Etat livre sur toutes les interfaces. L ACK retarde et Nagle se
-::X|FR|net.nagle.restore.del.026|        comportent comme Windows les a concus, et le TCP_NODELAY par
-::X|FR|net.nagle.restore.del.027|        socket fonctionne toujours pour les applications qui le demandent.
-::X|FR|net.nagle.restore.del.028|    TcpAckFrequency=1    : Un ACK par segment recu. Double le volume d ACK
-::X|FR|net.nagle.restore.del.029|                           en emission sans gain de latence mesurable sur
-::X|FR|net.nagle.restore.del.030|                           du trafic de jeu en UDP.
-::X|FR|net.nagle.restore.del.031|    TCPNoDelay=1         : Nagle desactive sur toute la machine pour cette
-::X|FR|net.nagle.restore.del.032|                           interface. Chaque petite ecriture devient un
-::X|FR|net.nagle.restore.del.033|                           segment a part.
-::X|FR|net.nagle.restore.del.034|    either value = 0     : Une desactivation ecrite comme valeur, donc un
-::X|FR|net.nagle.restore.del.035|                           troisieme etat. Restaurer, c est supprimer, pas
-::X|FR|net.nagle.restore.del.036|                           ecrire 0.
-::X|FR|net.nagle.restore.del.037|
-::X|FR|net.nagle.restore.del.038|  Pourquoi ces profils : Cinq colonnes identiques a DELETE. Le defaut
-::X|FR|net.nagle.restore.del.039|                         Windows est l absence de la valeur : DELETE, et
-::X|FR|net.nagle.restore.del.040|                         non 0, est donc le bon litteral dans chaque
-::X|FR|net.nagle.restore.del.041|                         colonne, y compris celle de Windows - ecrire 0
-::X|FR|net.nagle.restore.del.042|                         laisserait la machine dans un etat qu elle n a
-::X|FR|net.nagle.restore.del.043|                         jamais eu d origine.
-::X|FR|net.nagle.restore.del.044|
-::X|FR|net.nagle.restore.del.045|  Cible           : for each key under HKLM\SYSTEM\CurrentControlSet\Servi
-::X|FR|net.nagle.restore.del.046|                    ces\Tcpip\Parameters\Interfaces\{GUID}: reg delete /v
-::X|FR|net.nagle.restore.del.047|                    TcpAckFrequency /f and reg delete /v TCPNoDelay /f, in
-::X|FR|net.nagle.restore.del.048|                    the restore path (OPTY.bat ~1630-1632)
+::X|FR|net.nagle.restore.del.002|                    carte reseau laissees par les scripts anti-lag. Cette
+::X|FR|net.nagle.restore.del.003|                    fiche decrit la suppression faite par le chemin de
+::X|FR|net.nagle.restore.del.004|                    restauration - le seul endroit d OPTY qui les
+::X|FR|net.nagle.restore.del.005|                    retire.
+::X|FR|net.nagle.restore.del.006|
+::X|FR|net.nagle.restore.del.007|  Effet reel      : Efface les deux sur toutes les interfaces : TCP
+::X|FR|net.nagle.restore.del.008|                    redevient conforme a ce que livre Windows. Cela se
+::X|FR|net.nagle.restore.del.009|                    fait sans question dediee, et une valeur deja absente
+::X|FR|net.nagle.restore.del.010|                    est ignoree sans message. Aucun redemarrage
+::X|FR|net.nagle.restore.del.011|                    necessaire.
+::X|FR|net.nagle.restore.del.012|
+::X|FR|net.nagle.restore.del.013|  Gain            : Retire des reglages dont le gain de latence n a jamais
+::X|FR|net.nagle.restore.del.014|                    ete reproduit. La plupart des jeux passent en UDP, que
+::X|FR|net.nagle.restore.del.015|                    ces valeurs ne touchent pas du tout : on n abandonne
+::X|FR|net.nagle.restore.del.016|                    donc aucune latence, on supprime seulement du surcout
+::X|FR|net.nagle.restore.del.017|                    d ACK.
+::X|FR|net.nagle.restore.del.018|
+::X|FR|net.nagle.restore.del.019|  Cout            : Rien, c est une simple remise en ordre. Une
+::X|FR|net.nagle.restore.del.020|                    application TCP sensible a la latence pour laquelle
+::X|FR|net.nagle.restore.del.021|                    vous les auriez ajoutees exigerait de les remettre,
+::X|FR|net.nagle.restore.del.022|                    GUID par GUID.
+::X|FR|net.nagle.restore.del.023|
+::X|FR|net.nagle.restore.del.024|  Defaut Windows  : Les deux absentes sur toutes les interfaces.
+::X|FR|net.nagle.restore.del.025|
+::X|FR|net.nagle.restore.del.026|  Valeurs possibles :
+::X|FR|net.nagle.restore.del.027|    TcpAckFrequency absent / TCPNoDelay absent :
+::X|FR|net.nagle.restore.del.028|        Etat livre sur toutes les interfaces. L ACK retarde et Nagle se
+::X|FR|net.nagle.restore.del.029|        comportent comme Windows les a concus, et le TCP_NODELAY par
+::X|FR|net.nagle.restore.del.030|        socket fonctionne toujours pour les applications qui le demandent.
+::X|FR|net.nagle.restore.del.031|    TcpAckFrequency=1    : Un ACK par segment recu. Double le volume d ACK
+::X|FR|net.nagle.restore.del.032|                           en emission sans gain de latence mesurable sur
+::X|FR|net.nagle.restore.del.033|                           du trafic de jeu en UDP.
+::X|FR|net.nagle.restore.del.034|    TCPNoDelay=1         : Nagle desactive sur toute la machine pour cette
+::X|FR|net.nagle.restore.del.035|                           interface. Chaque petite ecriture devient un
+::X|FR|net.nagle.restore.del.036|                           segment a part.
+::X|FR|net.nagle.restore.del.037|    either value = 0     : Une desactivation ecrite comme valeur, donc un
+::X|FR|net.nagle.restore.del.038|                           troisieme etat. Restaurer, c est supprimer, pas
+::X|FR|net.nagle.restore.del.039|                           ecrire 0.
+::X|FR|net.nagle.restore.del.040|
+::X|FR|net.nagle.restore.del.041|  Pourquoi ces profils : Cinq colonnes identiques a DELETE. Le defaut
+::X|FR|net.nagle.restore.del.042|                         Windows est l absence de la valeur : DELETE, et
+::X|FR|net.nagle.restore.del.043|                         non 0, est donc le bon litteral dans chaque
+::X|FR|net.nagle.restore.del.044|                         colonne, y compris celle de Windows - ecrire 0
+::X|FR|net.nagle.restore.del.045|                         laisserait la machine dans un etat qu elle n a
+::X|FR|net.nagle.restore.del.046|                         jamais eu d origine.
+::X|FR|net.nagle.restore.del.047|
+::X|FR|net.nagle.restore.del.048|  Cible           : pour chaque cle sous HKLM\SYSTEM\CurrentControlSet\Se
+::X|FR|net.nagle.restore.del.049|                    rvices\Tcpip\Parameters\Interfaces\{GUID} : reg delete
+::X|FR|net.nagle.restore.del.050|                    /v TcpAckFrequency /f et reg delete /v TCPNoDelay /f,
+::X|FR|net.nagle.restore.del.051|                    dans :gaming_restore sous "Restoring network defaults
+::X|FR|net.nagle.restore.del.052|                    (throttling index + Nagle)" - menu Restore defaults,
+::X|FR|net.nagle.restore.del.053|                    option 2, Undo ALL OPTY profiles.
 ::
 :: ---- net.firewall.allprofiles.on (repair) -----------------------
 ::P|net.firewall.allprofiles.on|on|on|on|on|on|
@@ -19063,7 +19105,9 @@ goto :eof
 ::X|EN|net.firewall.allprofiles.on.039|                       yourself.
 ::X|EN|net.firewall.allprofiles.on.040|
 ::X|EN|net.firewall.allprofiles.on.041|  Target          : netsh advfirewall set allprofiles state on - in
-::X|EN|net.firewall.allprofiles.on.042|                    :reassert_defaults (OPTY.bat ~1792)
+::X|EN|net.firewall.allprofiles.on.042|                    :reassert_defaults, under "Windows Firewall ON (all
+::X|EN|net.firewall.allprofiles.on.043|                    profiles)" (menu Restore defaults, option 1, Re-assert
+::X|EN|net.firewall.allprofiles.on.044|                    good defaults); it runs there without a question.
 ::X|FR|net.firewall.allprofiles.on.001|  Ce que c est    : Le filtre de paquets integre, sur les trois profils
 ::X|FR|net.firewall.allprofiles.on.002|                    reseau : Domaine, Prive et Public.
 ::X|FR|net.firewall.allprofiles.on.003|
@@ -19108,8 +19152,10 @@ goto :eof
 ::X|FR|net.firewall.allprofiles.on.042|                         machine derriere un pare-feu materiel que vous
 ::X|FR|net.firewall.allprofiles.on.043|                         administrez vous-meme.
 ::X|FR|net.firewall.allprofiles.on.044|
-::X|FR|net.firewall.allprofiles.on.045|  Cible           : netsh advfirewall set allprofiles state on - in
-::X|FR|net.firewall.allprofiles.on.046|                    :reassert_defaults (OPTY.bat ~1792)
+::X|FR|net.firewall.allprofiles.on.045|  Cible           : netsh advfirewall set allprofiles state on - dans
+::X|FR|net.firewall.allprofiles.on.046|                    :reassert_defaults, sous "Windows Firewall ON (all
+::X|FR|net.firewall.allprofiles.on.047|                    profiles)" (menu Restore defaults, option 1, Re-assert
+::X|FR|net.firewall.allprofiles.on.048|                    good defaults) ; la commande y passe sans question.
 ::
 :: ---- net.svc.dnscache.auto (repair) -----------------------------
 ::P|net.svc.dnscache.auto|auto|auto|auto|auto|auto|
@@ -19277,78 +19323,81 @@ goto :eof
 ::X|EN|net.nic.itr.adaptive.006|
 ::X|EN|net.nic.itr.adaptive.007|  Actual effect   : Writes *InterruptModeration=1 and ITR=65535 as REG_SZ
 ::X|EN|net.nic.itr.adaptive.008|                    into the adapter's class key, clamped to the driver's
-::X|EN|net.nic.itr.adaptive.009|                    own maximum. The card then batches interrupts under
-::X|EN|net.nic.itr.adaptive.010|                    load and stops batching when traffic is sparse.
-::X|EN|net.nic.itr.adaptive.011|                    Nothing happens until the adapter restarts or the
-::X|EN|net.nic.itr.adaptive.012|                    machine reboots.
-::X|EN|net.nic.itr.adaptive.013|
-::X|EN|net.nic.itr.adaptive.014|  Gain            : A large drop in interrupts and DPC time under load,
-::X|EN|net.nic.itr.adaptive.015|                    visible in the CPU column during a big download. At
-::X|EN|net.nic.itr.adaptive.016|                    the packet rate a game produces, adaptive mode is
-::X|EN|net.nic.itr.adaptive.017|                    already effectively not batching, so it is not paid
-::X|EN|net.nic.itr.adaptive.018|                    for in latency.
-::X|EN|net.nic.itr.adaptive.019|
-::X|EN|net.nic.itr.adaptive.020|  Cost            : In the theoretical worst case a fixed moderation rate
-::X|EN|net.nic.itr.adaptive.021|                    adds tens of microseconds to a single packet's
-::X|EN|net.nic.itr.adaptive.022|                    delivery. Adaptive exists precisely to avoid that. The
-::X|EN|net.nic.itr.adaptive.023|                    popular advice to disable moderation entirely trades a
-::X|EN|net.nic.itr.adaptive.024|                    measurable CPU increase for a latency win nobody has
-::X|EN|net.nic.itr.adaptive.025|                    demonstrated on a home link.
-::X|EN|net.nic.itr.adaptive.026|
-::X|EN|net.nic.itr.adaptive.027|  Windows default : Driver-supplied, not a Windows value. Intel wired
-::X|EN|net.nic.itr.adaptive.028|                    adapters ship *InterruptModeration=1 with ITR=65535
-::X|EN|net.nic.itr.adaptive.029|                    (Adaptive). Other vendors differ, and the
-::X|EN|net.nic.itr.adaptive.030|                    authoritative value for your card is
-::X|EN|net.nic.itr.adaptive.031|                    Ndi\Params\<keyword>\default, which this step does not
-::X|EN|net.nic.itr.adaptive.032|                    consult.
-::X|EN|net.nic.itr.adaptive.033|
-::X|EN|net.nic.itr.adaptive.034|  Possible values:
-::X|EN|net.nic.itr.adaptive.035|    *InterruptModeration=0 :
-::X|EN|net.nic.itr.adaptive.036|        The card raises one interrupt per received packet. Maximum
-::X|EN|net.nic.itr.adaptive.037|        interrupt and DPC load on the CPU, and the theoretical minimum
-::X|EN|net.nic.itr.adaptive.038|        delivery delay for one packet.
-::X|EN|net.nic.itr.adaptive.039|    *InterruptModeration=1 :
-::X|EN|net.nic.itr.adaptive.040|        The card groups received packets and raises fewer interrupts. ITR
-::X|EN|net.nic.itr.adaptive.041|        then decides at what rate.
-::X|EN|net.nic.itr.adaptive.042|    ITR=65535            : Adaptive. The driver picks the moderation rate
-::X|EN|net.nic.itr.adaptive.043|                           from the observed traffic pattern - it batches
-::X|EN|net.nic.itr.adaptive.044|                           under load and effectively stops batching when
-::X|EN|net.nic.itr.adaptive.045|                           traffic is sparse, which is why it costs
-::X|EN|net.nic.itr.adaptive.046|                           nothing in latency at game packet rates.
-::X|EN|net.nic.itr.adaptive.047|    ITR=0                : No moderation rate at all, even with
-::X|EN|net.nic.itr.adaptive.048|                           *InterruptModeration=1 - equivalent in practice
-::X|EN|net.nic.itr.adaptive.049|                           to turning moderation off.
-::X|EN|net.nic.itr.adaptive.050|    ITR=any other enumerated number :
-::X|EN|net.nic.itr.adaptive.051|        A fixed moderation rate. The numbers and the names vendors give
-::X|EN|net.nic.itr.adaptive.052|        them differ between drivers; the list that applies to your card is
-::X|EN|net.nic.itr.adaptive.053|        at Ndi\Params\ITR\Enum on your own machine.
-::X|EN|net.nic.itr.adaptive.054|    SKIP                 : Neither keyword is written, so the adapter
-::X|EN|net.nic.itr.adaptive.055|                           keeps whatever the driver shipped - the value
-::X|EN|net.nic.itr.adaptive.056|                           published at Ndi\Params\<keyword>\default.
-::X|EN|net.nic.itr.adaptive.057|
-::X|EN|net.nic.itr.adaptive.058|  Why these profiles : Four identical columns because adaptive moderation
-::X|EN|net.nic.itr.adaptive.059|                       is right whatever the machine does - it batches
-::X|EN|net.nic.itr.adaptive.060|                       when there is load and stops when there is not, so
-::X|EN|net.nic.itr.adaptive.061|                       nothing is traded and there is no distinction to
-::X|EN|net.nic.itr.adaptive.062|                       invent. The Windows column is SKIP rather than
-::X|EN|net.nic.itr.adaptive.063|                       1/65535: writing Intel's numbers onto a Realtek or
-::X|EN|net.nic.itr.adaptive.064|                       Killer card imposes a value, it does not restore
-::X|EN|net.nic.itr.adaptive.065|                       one. The only honest way to get the shipped value
-::X|EN|net.nic.itr.adaptive.066|                       is to leave the keywords alone, or to use the
-::X|EN|net.nic.itr.adaptive.067|                       restore step, which reads them.
-::X|EN|net.nic.itr.adaptive.068|
-::X|EN|net.nic.itr.adaptive.069|  Unverified      : Realtek and Killer factory values for these two
-::X|EN|net.nic.itr.adaptive.070|                    keywords were not verified. The names attached to the
-::X|EN|net.nic.itr.adaptive.071|                    intermediate ITR numbers come from vendor
-::X|EN|net.nic.itr.adaptive.072|                    documentation, not from a reading on this machine -
-::X|EN|net.nic.itr.adaptive.073|                    the authoritative list for your card is
-::X|EN|net.nic.itr.adaptive.074|                    Ndi\Params\ITR\Enum.
-::X|EN|net.nic.itr.adaptive.075|
-::X|EN|net.nic.itr.adaptive.076|  Target          : call :nicset "%NICKEY%" "*InterruptModeration" "1" and
-::X|EN|net.nic.itr.adaptive.077|                    call :nicset "%NICKEY%" "ITR" "65535" - REG_SZ writes
-::X|EN|net.nic.itr.adaptive.078|                    into HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36
-::X|EN|net.nic.itr.adaptive.079|                    e972-e325-11ce-bfc1-08002be10318}\<NNNN> (OPTY.bat
-::X|EN|net.nic.itr.adaptive.080|                    ~2845-2846)
+::X|EN|net.nic.itr.adaptive.009|                    own maximum and step, refused when the driver's Enum
+::X|EN|net.nic.itr.adaptive.010|                    list does not contain the value, skipped when the
+::X|EN|net.nic.itr.adaptive.011|                    driver does not expose the keyword. The card then
+::X|EN|net.nic.itr.adaptive.012|                    batches interrupts under load and stops batching when
+::X|EN|net.nic.itr.adaptive.013|                    traffic is sparse. Nothing happens until the adapter
+::X|EN|net.nic.itr.adaptive.014|                    restarts or the machine reboots.
+::X|EN|net.nic.itr.adaptive.015|
+::X|EN|net.nic.itr.adaptive.016|  Gain            : A large drop in interrupts and DPC time under load,
+::X|EN|net.nic.itr.adaptive.017|                    visible in the CPU column during a big download. At
+::X|EN|net.nic.itr.adaptive.018|                    the packet rate a game produces, adaptive mode is
+::X|EN|net.nic.itr.adaptive.019|                    already effectively not batching, so it is not paid
+::X|EN|net.nic.itr.adaptive.020|                    for in latency.
+::X|EN|net.nic.itr.adaptive.021|
+::X|EN|net.nic.itr.adaptive.022|  Cost            : In the theoretical worst case a fixed moderation rate
+::X|EN|net.nic.itr.adaptive.023|                    adds tens of microseconds to a single packet's
+::X|EN|net.nic.itr.adaptive.024|                    delivery. Adaptive exists precisely to avoid that. The
+::X|EN|net.nic.itr.adaptive.025|                    popular advice to disable moderation entirely trades a
+::X|EN|net.nic.itr.adaptive.026|                    measurable CPU increase for a latency win nobody has
+::X|EN|net.nic.itr.adaptive.027|                    demonstrated on a home link.
+::X|EN|net.nic.itr.adaptive.028|
+::X|EN|net.nic.itr.adaptive.029|  Windows default : Driver-supplied, not a Windows value. Intel wired
+::X|EN|net.nic.itr.adaptive.030|                    adapters ship *InterruptModeration=1 with ITR=65535
+::X|EN|net.nic.itr.adaptive.031|                    (Adaptive). Other vendors differ, and the
+::X|EN|net.nic.itr.adaptive.032|                    authoritative value for your card is
+::X|EN|net.nic.itr.adaptive.033|                    Ndi\Params\<keyword>\default, which this step does not
+::X|EN|net.nic.itr.adaptive.034|                    consult.
+::X|EN|net.nic.itr.adaptive.035|
+::X|EN|net.nic.itr.adaptive.036|  Possible values:
+::X|EN|net.nic.itr.adaptive.037|    *InterruptModeration=0 :
+::X|EN|net.nic.itr.adaptive.038|        The card raises one interrupt per received packet. Maximum
+::X|EN|net.nic.itr.adaptive.039|        interrupt and DPC load on the CPU, and the theoretical minimum
+::X|EN|net.nic.itr.adaptive.040|        delivery delay for one packet.
+::X|EN|net.nic.itr.adaptive.041|    *InterruptModeration=1 :
+::X|EN|net.nic.itr.adaptive.042|        The card groups received packets and raises fewer interrupts. ITR
+::X|EN|net.nic.itr.adaptive.043|        then decides at what rate.
+::X|EN|net.nic.itr.adaptive.044|    ITR=65535            : Adaptive. The driver picks the moderation rate
+::X|EN|net.nic.itr.adaptive.045|                           from the observed traffic pattern - it batches
+::X|EN|net.nic.itr.adaptive.046|                           under load and effectively stops batching when
+::X|EN|net.nic.itr.adaptive.047|                           traffic is sparse, which is why it costs
+::X|EN|net.nic.itr.adaptive.048|                           nothing in latency at game packet rates.
+::X|EN|net.nic.itr.adaptive.049|    ITR=0                : No moderation rate at all, even with
+::X|EN|net.nic.itr.adaptive.050|                           *InterruptModeration=1 - equivalent in practice
+::X|EN|net.nic.itr.adaptive.051|                           to turning moderation off.
+::X|EN|net.nic.itr.adaptive.052|    ITR=any other enumerated number :
+::X|EN|net.nic.itr.adaptive.053|        A fixed moderation rate. The numbers and the names vendors give
+::X|EN|net.nic.itr.adaptive.054|        them differ between drivers; the list that applies to your card is
+::X|EN|net.nic.itr.adaptive.055|        at Ndi\Params\ITR\Enum on your own machine.
+::X|EN|net.nic.itr.adaptive.056|    SKIP                 : Neither keyword is written, so the adapter
+::X|EN|net.nic.itr.adaptive.057|                           keeps whatever the driver shipped - the value
+::X|EN|net.nic.itr.adaptive.058|                           published at Ndi\Params\<keyword>\default.
+::X|EN|net.nic.itr.adaptive.059|
+::X|EN|net.nic.itr.adaptive.060|  Why these profiles : Four identical columns because adaptive moderation
+::X|EN|net.nic.itr.adaptive.061|                       is right whatever the machine does - it batches
+::X|EN|net.nic.itr.adaptive.062|                       when there is load and stops when there is not, so
+::X|EN|net.nic.itr.adaptive.063|                       nothing is traded and there is no distinction to
+::X|EN|net.nic.itr.adaptive.064|                       invent. The Windows column is SKIP rather than
+::X|EN|net.nic.itr.adaptive.065|                       1/65535: writing Intel's numbers onto a Realtek or
+::X|EN|net.nic.itr.adaptive.066|                       Killer card imposes a value, it does not restore
+::X|EN|net.nic.itr.adaptive.067|                       one. The only honest way to get the shipped value
+::X|EN|net.nic.itr.adaptive.068|                       is to leave the keywords alone, or to use the
+::X|EN|net.nic.itr.adaptive.069|                       restore step, which reads them.
+::X|EN|net.nic.itr.adaptive.070|
+::X|EN|net.nic.itr.adaptive.071|  Unverified      : Realtek and Killer factory values for these two
+::X|EN|net.nic.itr.adaptive.072|                    keywords were not verified. The names attached to the
+::X|EN|net.nic.itr.adaptive.073|                    intermediate ITR numbers come from vendor
+::X|EN|net.nic.itr.adaptive.074|                    documentation, not from a reading on this machine -
+::X|EN|net.nic.itr.adaptive.075|                    the authoritative list for your card is
+::X|EN|net.nic.itr.adaptive.076|                    Ndi\Params\ITR\Enum.
+::X|EN|net.nic.itr.adaptive.077|
+::X|EN|net.nic.itr.adaptive.078|  Target          : call :nicset "%NICKEY%" "*InterruptModeration" "1" and
+::X|EN|net.nic.itr.adaptive.079|                    call :nicset "%NICKEY%" "ITR" "65535" (the two halves
+::X|EN|net.nic.itr.adaptive.080|                    of the 1/65535 profile value) - REG_SZ writes into
+::X|EN|net.nic.itr.adaptive.081|                    HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e97
+::X|EN|net.nic.itr.adaptive.082|                    2-e325-11ce-bfc1-08002be10318}\<NNNN>, asked and
+::X|EN|net.nic.itr.adaptive.083|                    written in :se_picked of :setup_ethernet
 ::X|FR|net.nic.itr.adaptive.001|  Ce que c est    : La moderation d interruptions permet a la carte reseau
 ::X|FR|net.nic.itr.adaptive.002|                    de regrouper plusieurs paquets recus en une seule
 ::X|FR|net.nic.itr.adaptive.003|                    interruption, au lieu de deranger le CPU pour chacun.
@@ -19357,83 +19406,86 @@ goto :eof
 ::X|FR|net.nic.itr.adaptive.006|
 ::X|FR|net.nic.itr.adaptive.007|  Effet reel      : Ecrit *InterruptModeration=1 et ITR=65535 en REG_SZ
 ::X|FR|net.nic.itr.adaptive.008|                    dans la cle de classe de la carte, bornes au maximum
-::X|FR|net.nic.itr.adaptive.009|                    du pilote. La carte regroupe alors les interruptions
-::X|FR|net.nic.itr.adaptive.010|                    sous charge et cesse de le faire quand le trafic est
-::X|FR|net.nic.itr.adaptive.011|                    faible. Rien ne prend effet avant un redemarrage de la
-::X|FR|net.nic.itr.adaptive.012|                    carte ou de la machine.
-::X|FR|net.nic.itr.adaptive.013|
-::X|FR|net.nic.itr.adaptive.014|  Gain            : Une forte baisse du nombre d interruptions et du temps
-::X|FR|net.nic.itr.adaptive.015|                    passe en DPC sous charge, visible dans la colonne CPU
-::X|FR|net.nic.itr.adaptive.016|                    pendant un gros telechargement. Au debit de paquets
-::X|FR|net.nic.itr.adaptive.017|                    d un jeu, le mode adaptatif ne regroupe deja
-::X|FR|net.nic.itr.adaptive.018|                    pratiquement rien : cela ne se paie donc pas en
-::X|FR|net.nic.itr.adaptive.019|                    latence.
-::X|FR|net.nic.itr.adaptive.020|
-::X|FR|net.nic.itr.adaptive.021|  Cout            : Dans le pire cas theorique, une cadence fixe ajoute
-::X|FR|net.nic.itr.adaptive.022|                    quelques dizaines de microsecondes a la remise d un
-::X|FR|net.nic.itr.adaptive.023|                    paquet. Le mode adaptatif existe precisement pour
-::X|FR|net.nic.itr.adaptive.024|                    eviter cela. Le conseil repandu de couper completement
-::X|FR|net.nic.itr.adaptive.025|                    la moderation echange une hausse de CPU mesurable
-::X|FR|net.nic.itr.adaptive.026|                    contre un gain de latence que personne n a demontre
-::X|FR|net.nic.itr.adaptive.027|                    sur une ligne domestique.
-::X|FR|net.nic.itr.adaptive.028|
-::X|FR|net.nic.itr.adaptive.029|  Defaut Windows  : Valeur fournie par le pilote, pas par Windows. Les
-::X|FR|net.nic.itr.adaptive.030|                    cartes filaires Intel sont livrees avec
-::X|FR|net.nic.itr.adaptive.031|                    *InterruptModeration=1 et ITR=65535 (Adaptatif). Les
-::X|FR|net.nic.itr.adaptive.032|                    autres fabricants different, et la valeur qui fait foi
-::X|FR|net.nic.itr.adaptive.033|                    pour votre carte est Ndi\Params\<mot-cle>\default, que
-::X|FR|net.nic.itr.adaptive.034|                    cette etape ne consulte pas.
-::X|FR|net.nic.itr.adaptive.035|
-::X|FR|net.nic.itr.adaptive.036|  Valeurs possibles :
-::X|FR|net.nic.itr.adaptive.037|    *InterruptModeration=0 :
-::X|FR|net.nic.itr.adaptive.038|        La carte leve une interruption par paquet recu. Charge
-::X|FR|net.nic.itr.adaptive.039|        d interruptions et de DPC maximale pour le CPU, et delai de remise
-::X|FR|net.nic.itr.adaptive.040|        theorique minimal pour un paquet isole.
-::X|FR|net.nic.itr.adaptive.041|    *InterruptModeration=1 :
-::X|FR|net.nic.itr.adaptive.042|        La carte regroupe les paquets recus et leve moins d interruptions.
-::X|FR|net.nic.itr.adaptive.043|        C est ensuite ITR qui fixe la cadence.
-::X|FR|net.nic.itr.adaptive.044|    ITR=65535            : Adaptatif. Le pilote choisit la cadence selon
-::X|FR|net.nic.itr.adaptive.045|                           le trafic observe : il regroupe sous charge et
-::X|FR|net.nic.itr.adaptive.046|                           cesse pratiquement de regrouper quand le trafic
-::X|FR|net.nic.itr.adaptive.047|                           est faible, ce qui explique qu il ne coute rien
-::X|FR|net.nic.itr.adaptive.048|                           en latence au debit de paquets d un jeu.
-::X|FR|net.nic.itr.adaptive.049|    ITR=0                : Aucune cadence de moderation, meme avec
-::X|FR|net.nic.itr.adaptive.050|                           *InterruptModeration=1 : equivaut en pratique a
-::X|FR|net.nic.itr.adaptive.051|                           couper la moderation.
-::X|FR|net.nic.itr.adaptive.052|    ITR=any other enumerated number :
-::X|FR|net.nic.itr.adaptive.053|        Une cadence de moderation fixe. Les nombres et les noms que les
-::X|FR|net.nic.itr.adaptive.054|        fabricants leur donnent varient d un pilote a l autre ; la liste
-::X|FR|net.nic.itr.adaptive.055|        qui s applique a votre carte est dans Ndi\Params\ITR\Enum, sur
-::X|FR|net.nic.itr.adaptive.056|        votre propre machine.
-::X|FR|net.nic.itr.adaptive.057|    SKIP                 : Aucun des deux mots-cles n est ecrit : la carte
-::X|FR|net.nic.itr.adaptive.058|                           garde ce que le pilote a livre, la valeur
-::X|FR|net.nic.itr.adaptive.059|                           publiee dans Ndi\Params\<mot-cle>\default.
-::X|FR|net.nic.itr.adaptive.060|
-::X|FR|net.nic.itr.adaptive.061|  Pourquoi ces profils : Quatre colonnes identiques, parce que la
-::X|FR|net.nic.itr.adaptive.062|                         moderation adaptative est le bon reglage quoi que
-::X|FR|net.nic.itr.adaptive.063|                         fasse la machine : elle regroupe quand il y a de
-::X|FR|net.nic.itr.adaptive.064|                         la charge et s arrete quand il n y en a pas, donc
-::X|FR|net.nic.itr.adaptive.065|                         rien n est echange et il n y a aucune distinction
-::X|FR|net.nic.itr.adaptive.066|                         a inventer. La colonne Windows est SKIP et non
-::X|FR|net.nic.itr.adaptive.067|                         1/65535 : ecrire les nombres d Intel sur une
-::X|FR|net.nic.itr.adaptive.068|                         Realtek ou une Killer impose une valeur, cela
-::X|FR|net.nic.itr.adaptive.069|                         n en restaure aucune. La seule facon honnete
-::X|FR|net.nic.itr.adaptive.070|                         d obtenir la valeur livree est de ne pas toucher
-::X|FR|net.nic.itr.adaptive.071|                         aux mots-cles, ou de passer par l etape de
-::X|FR|net.nic.itr.adaptive.072|                         restauration, qui les lit.
-::X|FR|net.nic.itr.adaptive.073|
-::X|FR|net.nic.itr.adaptive.074|  Non verifie (en)  : Realtek and Killer factory values for these two
-::X|FR|net.nic.itr.adaptive.075|                      keywords were not verified. The names attached to
-::X|FR|net.nic.itr.adaptive.076|                      the intermediate ITR numbers come from vendor
-::X|FR|net.nic.itr.adaptive.077|                      documentation, not from a reading on this machine -
-::X|FR|net.nic.itr.adaptive.078|                      the authoritative list for your card is
-::X|FR|net.nic.itr.adaptive.079|                      Ndi\Params\ITR\Enum.
-::X|FR|net.nic.itr.adaptive.080|
-::X|FR|net.nic.itr.adaptive.081|  Cible           : call :nicset "%NICKEY%" "*InterruptModeration" "1" and
-::X|FR|net.nic.itr.adaptive.082|                    call :nicset "%NICKEY%" "ITR" "65535" - REG_SZ writes
-::X|FR|net.nic.itr.adaptive.083|                    into HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36
-::X|FR|net.nic.itr.adaptive.084|                    e972-e325-11ce-bfc1-08002be10318}\<NNNN> (OPTY.bat
-::X|FR|net.nic.itr.adaptive.085|                    ~2845-2846)
+::X|FR|net.nic.itr.adaptive.009|                    et au pas du pilote, refuses si la liste Enum du
+::X|FR|net.nic.itr.adaptive.010|                    pilote ne contient pas la valeur, ignores si le pilote
+::X|FR|net.nic.itr.adaptive.011|                    n expose pas le mot-cle. La carte regroupe alors les
+::X|FR|net.nic.itr.adaptive.012|                    interruptions sous charge et cesse de le faire quand le
+::X|FR|net.nic.itr.adaptive.013|                    trafic est faible. Rien ne prend effet avant un
+::X|FR|net.nic.itr.adaptive.014|                    redemarrage de la carte ou de la machine.
+::X|FR|net.nic.itr.adaptive.015|
+::X|FR|net.nic.itr.adaptive.016|  Gain            : Une forte baisse du nombre d interruptions et du temps
+::X|FR|net.nic.itr.adaptive.017|                    passe en DPC sous charge, visible dans la colonne CPU
+::X|FR|net.nic.itr.adaptive.018|                    pendant un gros telechargement. Au debit de paquets
+::X|FR|net.nic.itr.adaptive.019|                    d un jeu, le mode adaptatif ne regroupe deja
+::X|FR|net.nic.itr.adaptive.020|                    pratiquement rien : cela ne se paie donc pas en
+::X|FR|net.nic.itr.adaptive.021|                    latence.
+::X|FR|net.nic.itr.adaptive.022|
+::X|FR|net.nic.itr.adaptive.023|  Cout            : Dans le pire cas theorique, une cadence fixe ajoute
+::X|FR|net.nic.itr.adaptive.024|                    quelques dizaines de microsecondes a la remise d un
+::X|FR|net.nic.itr.adaptive.025|                    paquet. Le mode adaptatif existe precisement pour
+::X|FR|net.nic.itr.adaptive.026|                    eviter cela. Le conseil repandu de couper completement
+::X|FR|net.nic.itr.adaptive.027|                    la moderation echange une hausse de CPU mesurable
+::X|FR|net.nic.itr.adaptive.028|                    contre un gain de latence que personne n a demontre
+::X|FR|net.nic.itr.adaptive.029|                    sur une ligne domestique.
+::X|FR|net.nic.itr.adaptive.030|
+::X|FR|net.nic.itr.adaptive.031|  Defaut Windows  : Valeur fournie par le pilote, pas par Windows. Les
+::X|FR|net.nic.itr.adaptive.032|                    cartes filaires Intel sont livrees avec
+::X|FR|net.nic.itr.adaptive.033|                    *InterruptModeration=1 et ITR=65535 (Adaptatif). Les
+::X|FR|net.nic.itr.adaptive.034|                    autres fabricants different, et la valeur qui fait foi
+::X|FR|net.nic.itr.adaptive.035|                    pour votre carte est Ndi\Params\<mot-cle>\default, que
+::X|FR|net.nic.itr.adaptive.036|                    cette etape ne consulte pas.
+::X|FR|net.nic.itr.adaptive.037|
+::X|FR|net.nic.itr.adaptive.038|  Valeurs possibles :
+::X|FR|net.nic.itr.adaptive.039|    *InterruptModeration=0 :
+::X|FR|net.nic.itr.adaptive.040|        La carte leve une interruption par paquet recu. Charge
+::X|FR|net.nic.itr.adaptive.041|        d interruptions et de DPC maximale pour le CPU, et delai de remise
+::X|FR|net.nic.itr.adaptive.042|        theorique minimal pour un paquet isole.
+::X|FR|net.nic.itr.adaptive.043|    *InterruptModeration=1 :
+::X|FR|net.nic.itr.adaptive.044|        La carte regroupe les paquets recus et leve moins d interruptions.
+::X|FR|net.nic.itr.adaptive.045|        C est ensuite ITR qui fixe la cadence.
+::X|FR|net.nic.itr.adaptive.046|    ITR=65535            : Adaptatif. Le pilote choisit la cadence selon
+::X|FR|net.nic.itr.adaptive.047|                           le trafic observe : il regroupe sous charge et
+::X|FR|net.nic.itr.adaptive.048|                           cesse pratiquement de regrouper quand le trafic
+::X|FR|net.nic.itr.adaptive.049|                           est faible, ce qui explique qu il ne coute rien
+::X|FR|net.nic.itr.adaptive.050|                           en latence au debit de paquets d un jeu.
+::X|FR|net.nic.itr.adaptive.051|    ITR=0                : Aucune cadence de moderation, meme avec
+::X|FR|net.nic.itr.adaptive.052|                           *InterruptModeration=1 : equivaut en pratique a
+::X|FR|net.nic.itr.adaptive.053|                           couper la moderation.
+::X|FR|net.nic.itr.adaptive.054|    ITR=any other enumerated number :
+::X|FR|net.nic.itr.adaptive.055|        Une cadence de moderation fixe. Les nombres et les noms que les
+::X|FR|net.nic.itr.adaptive.056|        fabricants leur donnent varient d un pilote a l autre ; la liste
+::X|FR|net.nic.itr.adaptive.057|        qui s applique a votre carte est dans Ndi\Params\ITR\Enum, sur
+::X|FR|net.nic.itr.adaptive.058|        votre propre machine.
+::X|FR|net.nic.itr.adaptive.059|    SKIP                 : Aucun des deux mots-cles n est ecrit : la carte
+::X|FR|net.nic.itr.adaptive.060|                           garde ce que le pilote a livre, la valeur
+::X|FR|net.nic.itr.adaptive.061|                           publiee dans Ndi\Params\<mot-cle>\default.
+::X|FR|net.nic.itr.adaptive.062|
+::X|FR|net.nic.itr.adaptive.063|  Pourquoi ces profils : Quatre colonnes identiques, parce que la
+::X|FR|net.nic.itr.adaptive.064|                         moderation adaptative est le bon reglage quoi que
+::X|FR|net.nic.itr.adaptive.065|                         fasse la machine : elle regroupe quand il y a de
+::X|FR|net.nic.itr.adaptive.066|                         la charge et s arrete quand il n y en a pas, donc
+::X|FR|net.nic.itr.adaptive.067|                         rien n est echange et il n y a aucune distinction
+::X|FR|net.nic.itr.adaptive.068|                         a inventer. La colonne Windows est SKIP et non
+::X|FR|net.nic.itr.adaptive.069|                         1/65535 : ecrire les nombres d Intel sur une
+::X|FR|net.nic.itr.adaptive.070|                         Realtek ou une Killer impose une valeur, cela
+::X|FR|net.nic.itr.adaptive.071|                         n en restaure aucune. La seule facon honnete
+::X|FR|net.nic.itr.adaptive.072|                         d obtenir la valeur livree est de ne pas toucher
+::X|FR|net.nic.itr.adaptive.073|                         aux mots-cles, ou de passer par l etape de
+::X|FR|net.nic.itr.adaptive.074|                         restauration, qui les lit.
+::X|FR|net.nic.itr.adaptive.075|
+::X|FR|net.nic.itr.adaptive.076|  Non verifie (en)  : Realtek and Killer factory values for these two
+::X|FR|net.nic.itr.adaptive.077|                      keywords were not verified. The names attached to
+::X|FR|net.nic.itr.adaptive.078|                      the intermediate ITR numbers come from vendor
+::X|FR|net.nic.itr.adaptive.079|                      documentation, not from a reading on this machine -
+::X|FR|net.nic.itr.adaptive.080|                      the authoritative list for your card is
+::X|FR|net.nic.itr.adaptive.081|                      Ndi\Params\ITR\Enum.
+::X|FR|net.nic.itr.adaptive.082|
+::X|FR|net.nic.itr.adaptive.083|  Cible           : call :nicset "%NICKEY%" "*InterruptModeration" "1" et
+::X|FR|net.nic.itr.adaptive.084|                    call :nicset "%NICKEY%" "ITR" "65535" (les deux moities
+::X|FR|net.nic.itr.adaptive.085|                    de la valeur de profil 1/65535) - ecritures REG_SZ dans
+::X|FR|net.nic.itr.adaptive.086|                    HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e97
+::X|FR|net.nic.itr.adaptive.087|                    2-e325-11ce-bfc1-08002be10318}\<NNNN>, demandees et
+::X|FR|net.nic.itr.adaptive.088|                    ecrites dans :se_picked de :setup_ethernet
 ::
 :: ---- net.nic.offloads.apply (repair) ----------------------------
 ::P|net.nic.offloads.apply|1/3|1/3|1/3|1/3|SKIP|
@@ -19505,7 +19557,8 @@ goto :eof
 ::X|EN|net.nic.offloads.apply.062|                    *LsoV2IPv4=1, *LsoV2IPv6=1, *TCPChecksumOffloadIPv4=3,
 ::X|EN|net.nic.offloads.apply.063|                    *TCPChecksumOffloadIPv6=3, *UDPChecksumOffloadIPv4=3,
 ::X|EN|net.nic.offloads.apply.064|                    *UDPChecksumOffloadIPv6=3, *IPChecksumOffloadIPv4=3,
-::X|EN|net.nic.offloads.apply.065|                    all REG_SZ (OPTY.bat ~2849-2856)
+::X|EN|net.nic.offloads.apply.065|                    all REG_SZ - asked and written in :se_offloads of
+::X|EN|net.nic.offloads.apply.066|                    :setup_ethernet (profile value 1/3 = LSO/checksums)
 ::X|FR|net.nic.offloads.apply.001|  Ce que c est    : Sept mots-cles du pilote qui decident si la puce
 ::X|FR|net.nic.offloads.apply.002|                    reseau prend en charge la segmentation TCP et les
 ::X|FR|net.nic.offloads.apply.003|                    sommes de controle IPv4/IPv6/TCP/UDP, ou si c est
@@ -19574,11 +19627,12 @@ goto :eof
 ::X|FR|net.nic.offloads.apply.066|                         de Windows, et que seule l etape de restauration
 ::X|FR|net.nic.offloads.apply.067|                         lit les vraies.
 ::X|FR|net.nic.offloads.apply.068|
-::X|FR|net.nic.offloads.apply.069|  Cible           : call :nicset on the adapter class key for
+::X|FR|net.nic.offloads.apply.069|  Cible           : call :nicset sur la cle de classe de la carte pour
 ::X|FR|net.nic.offloads.apply.070|                    *LsoV2IPv4=1, *LsoV2IPv6=1, *TCPChecksumOffloadIPv4=3,
 ::X|FR|net.nic.offloads.apply.071|                    *TCPChecksumOffloadIPv6=3, *UDPChecksumOffloadIPv4=3,
 ::X|FR|net.nic.offloads.apply.072|                    *UDPChecksumOffloadIPv6=3, *IPChecksumOffloadIPv4=3,
-::X|FR|net.nic.offloads.apply.073|                    all REG_SZ (OPTY.bat ~2849-2856)
+::X|FR|net.nic.offloads.apply.073|                    tous en REG_SZ - demande et ecrit dans :se_offloads de
+::X|FR|net.nic.offloads.apply.074|                    :setup_ethernet (valeur de profil 1/3 = LSO/sommes)
 ::
 :: ---- net.nic.rss.queues (preference) --------------------------------
 ::P|net.nic.rss.queues|1/ENUMMAX|1/ENUMMAX|1/ENUMMAX|1/ENUMMAX|SKIP|
@@ -19926,8 +19980,8 @@ goto :eof
 ::X|EN|net.nic.buffers.raise.065|  Target          : call :nicset "%NICKEY%" "*ReceiveBuffers" "1024" and
 ::X|EN|net.nic.buffers.raise.066|                    "*TransmitBuffers" "1024", clamped to
 ::X|EN|net.nic.buffers.raise.067|                    Ndi\Params\<keyword>\max by :nicclamp and rounded down
-::X|EN|net.nic.buffers.raise.068|                    to \step by :nicround (OPTY.bat ~2866-2867, helpers
-::X|EN|net.nic.buffers.raise.069|                    ~3470-3480)
+::X|EN|net.nic.buffers.raise.068|                    to \step by :nicround, both called from :nicset - asked
+::X|EN|net.nic.buffers.raise.069|                    and written in :se_jumbo of :setup_ethernet
 ::X|FR|net.nic.buffers.raise.001|  Ce que c est    : Les anneaux de descripteurs sont les files que la
 ::X|FR|net.nic.buffers.raise.002|                    carte utilise pour passer les paquets au pilote et en
 ::X|FR|net.nic.buffers.raise.003|                    recuperer. Plus il y a d entrees, plus il y a de marge
@@ -19994,11 +20048,12 @@ goto :eof
 ::X|FR|net.nic.buffers.raise.064|                      the driver s default, so it cannot report how far
 ::X|FR|net.nic.buffers.raise.065|                      above factory the written value is.
 ::X|FR|net.nic.buffers.raise.066|
-::X|FR|net.nic.buffers.raise.067|  Cible           : call :nicset "%NICKEY%" "*ReceiveBuffers" "1024" and
-::X|FR|net.nic.buffers.raise.068|                    "*TransmitBuffers" "1024", clamped to
-::X|FR|net.nic.buffers.raise.069|                    Ndi\Params\<keyword>\max by :nicclamp and rounded down
-::X|FR|net.nic.buffers.raise.070|                    to \step by :nicround (OPTY.bat ~2866-2867, helpers
-::X|FR|net.nic.buffers.raise.071|                    ~3470-3480)
+::X|FR|net.nic.buffers.raise.067|  Cible           : call :nicset "%NICKEY%" "*ReceiveBuffers" "1024" et
+::X|FR|net.nic.buffers.raise.068|                    "*TransmitBuffers" "1024", bornes a
+::X|FR|net.nic.buffers.raise.069|                    Ndi\Params\<mot-cle>\max par :nicclamp et arrondis vers
+::X|FR|net.nic.buffers.raise.070|                    le bas selon \step par :nicround, tous deux appeles par
+::X|FR|net.nic.buffers.raise.071|                    :nicset - demande et ecrit dans :se_jumbo de
+::X|FR|net.nic.buffers.raise.072|                    :setup_ethernet
 ::
 :: ---- net.nic.eee.off (preference) -----------------------------------
 ::P|net.nic.eee.off|SKIP|SKIP|SKIP|SKIP|SKIP|
@@ -20162,156 +20217,175 @@ goto :eof
 ::T|FR|net.nic.flowcontrol.profile.002|Determine si votre switch peut brievement mettre votre envoi en pause au lieu de jeter des paquets quand sa memoire se remplit ; la plupart des reseaux domestiques ne declenchent jamais ce mecanisme, donc l effet est en general exactement nul.
 ::X|EN|net.nic.flowcontrol.profile.001|  What it is      : Flow control lets a switch send a PAUSE frame telling
 ::X|EN|net.nic.flowcontrol.profile.002|                    your card to stop transmitting for a moment when the
-::X|EN|net.nic.flowcontrol.profile.003|                    switch's buffer fills. OPTY writes 3 for the Balanced
-::X|EN|net.nic.flowcontrol.profile.004|                    and Throughput profiles and 0 for the Low latency
-::X|EN|net.nic.flowcontrol.profile.005|                    profile.
+::X|EN|net.nic.flowcontrol.profile.003|                    switch's buffer fills. The gaming, server, office and
+::X|EN|net.nic.flowcontrol.profile.004|                    laptop profiles all write 3; the Windows profile
+::X|EN|net.nic.flowcontrol.profile.005|                    leaves the keyword alone. OPTY never writes 0.
 ::X|EN|net.nic.flowcontrol.profile.006|
-::X|EN|net.nic.flowcontrol.profile.007|  Actual effect   : With it on, a PAUSE frame can stall your upload for up
-::X|EN|net.nic.flowcontrol.profile.008|                    to about 33.6 ms at gigabit. With it off, the switch
-::X|EN|net.nic.flowcontrol.profile.009|                    drops those packets instead and TCP retransmits them.
-::X|EN|net.nic.flowcontrol.profile.010|
-::X|EN|net.nic.flowcontrol.profile.011|  Gain            : Only if something on your LAN actually sends PAUSE
-::X|EN|net.nic.flowcontrol.profile.012|                    frames, and most consumer switches and routers never
-::X|EN|net.nic.flowcontrol.profile.013|                    do. When one does, turning it off replaces an
-::X|EN|net.nic.flowcontrol.profile.014|                    occasional multi-millisecond upload stall with dropped
-::X|EN|net.nic.flowcontrol.profile.015|                    packets, which a game tolerates better than a stall.
-::X|EN|net.nic.flowcontrol.profile.016|                    If nothing sends PAUSE frames the measured effect is
-::X|EN|net.nic.flowcontrol.profile.017|                    exactly zero, and the script says so instead of
-::X|EN|net.nic.flowcontrol.profile.018|                    claiming a win.
-::X|EN|net.nic.flowcontrol.profile.019|
-::X|EN|net.nic.flowcontrol.profile.020|  Cost            : Under saturation you trade a brief pause for real
-::X|EN|net.nic.flowcontrol.profile.021|                    packet loss, which hurts bulk uploads and backups. And
-::X|EN|net.nic.flowcontrol.profile.022|                    the network Restore does not cover *FlowControl, so if
-::X|EN|net.nic.flowcontrol.profile.023|                    you write 0 you undo it by hand in Device Manager.
-::X|EN|net.nic.flowcontrol.profile.024|
-::X|EN|net.nic.flowcontrol.profile.025|  Windows default : Driver-supplied, commonly 3 (Rx and Tx Enabled) on
-::X|EN|net.nic.flowcontrol.profile.026|                    Intel adapters. Your card's real default is at
-::X|EN|net.nic.flowcontrol.profile.027|                    Ndi\Params\*FlowControl\default.
-::X|EN|net.nic.flowcontrol.profile.028|
-::X|EN|net.nic.flowcontrol.profile.029|  Possible values:
-::X|EN|net.nic.flowcontrol.profile.030|    0                    : Disabled. The card neither sends nor honours
-::X|EN|net.nic.flowcontrol.profile.031|                           802.3x PAUSE frames. A switch whose buffer
-::X|EN|net.nic.flowcontrol.profile.032|                           fills drops your packets instead of stalling
-::X|EN|net.nic.flowcontrol.profile.033|                           you, and TCP retransmits them.
-::X|EN|net.nic.flowcontrol.profile.034|    1                    : Tx Enabled. The card sends PAUSE frames when
-::X|EN|net.nic.flowcontrol.profile.035|                           its own receive ring fills, but ignores
-::X|EN|net.nic.flowcontrol.profile.036|                           incoming ones. This is the surgical option if
-::X|EN|net.nic.flowcontrol.profile.037|                           what you want is never to have your upload
-::X|EN|net.nic.flowcontrol.profile.038|                           stalled - OPTY does not offer it, but it is a
-::X|EN|net.nic.flowcontrol.profile.039|                           valid keyword value.
-::X|EN|net.nic.flowcontrol.profile.040|    2                    : Rx Enabled. The card honours incoming PAUSE
-::X|EN|net.nic.flowcontrol.profile.041|                           frames but never sends them.
-::X|EN|net.nic.flowcontrol.profile.042|    3                    : Rx and Tx Enabled, the usual shipped value on
-::X|EN|net.nic.flowcontrol.profile.043|                           Intel adapters. A received PAUSE frame can
-::X|EN|net.nic.flowcontrol.profile.044|                           stall your transmit for up to about 33.6 ms at
-::X|EN|net.nic.flowcontrol.profile.045|                           gigabit.
-::X|EN|net.nic.flowcontrol.profile.046|    SKIP                 : The keyword is not written; it stays at
-::X|EN|net.nic.flowcontrol.profile.047|                           Ndi\Params\*FlowControl\default, and the
-::X|EN|net.nic.flowcontrol.profile.048|                           missing automatic undo never becomes a problem.
-::X|EN|net.nic.flowcontrol.profile.049|
-::X|EN|net.nic.flowcontrol.profile.050|  Why these profiles : Four identical columns at 3, gaming included,
-::X|EN|net.nic.flowcontrol.profile.051|                       because the low-latency choice has no mechanism
-::X|EN|net.nic.flowcontrol.profile.052|                       unless a switch on your LAN really sends PAUSE
-::X|EN|net.nic.flowcontrol.profile.053|                       frames - and if none does, writing 0 buys nothing
-::X|EN|net.nic.flowcontrol.profile.054|                       and costs you the automatic undo. The server column
-::X|EN|net.nic.flowcontrol.profile.055|                       is the least ambiguous of the four: it does bulk
-::X|EN|net.nic.flowcontrol.profile.056|                       uploads, where a brief pause is cheaper than
-::X|EN|net.nic.flowcontrol.profile.057|                       retransmitting. Windows is SKIP because 3 is the
-::X|EN|net.nic.flowcontrol.profile.058|                       driver's value rather than a Windows one. Choose 0
-::X|EN|net.nic.flowcontrol.profile.059|                       only if you administer a managed switch and can see
-::X|EN|net.nic.flowcontrol.profile.060|                       it sending pause frames.
-::X|EN|net.nic.flowcontrol.profile.061|
-::X|EN|net.nic.flowcontrol.profile.062|  Unverified      : Whether your LAN sends PAUSE frames at all cannot be
-::X|EN|net.nic.flowcontrol.profile.063|                    determined from a batch script. The only honest signal
-::X|EN|net.nic.flowcontrol.profile.064|                    is the adapter's own Pause Frames Received counter,
-::X|EN|net.nic.flowcontrol.profile.065|                    which the driver does not expose through any
-::X|EN|net.nic.flowcontrol.profile.066|                    scriptable interface - so OPTY deliberately makes no
-::X|EN|net.nic.flowcontrol.profile.067|                    claim about whether the change helped.
-::X|EN|net.nic.flowcontrol.profile.068|
-::X|EN|net.nic.flowcontrol.profile.069|  Target          : call :nicset "%NICKEY%" "*FlowControl" - 3 in the
-::X|EN|net.nic.flowcontrol.profile.070|                    Balanced branch and in :net_prof_thr, 0 in
-::X|EN|net.nic.flowcontrol.profile.071|                    :net_prof_lat (OPTY.bat ~2898, ~2903, ~2916). Excluded
-::X|EN|net.nic.flowcontrol.profile.072|                    from the :net_restore keyword filter.
+::X|EN|net.nic.flowcontrol.profile.007|  Actual effect   : Writes *FlowControl=3 as REG_SZ into the adapter's
+::X|EN|net.nic.flowcontrol.profile.008|                    class key. The question is only shown when the adapter
+::X|EN|net.nic.flowcontrol.profile.009|                    exposes *FlowControl, and the write is refused if the
+::X|EN|net.nic.flowcontrol.profile.010|                    driver's Enum list does not contain 3. With it on, a
+::X|EN|net.nic.flowcontrol.profile.011|                    PAUSE frame can stall your upload for up to about
+::X|EN|net.nic.flowcontrol.profile.012|                    33.6 ms at gigabit. With it off, the switch drops
+::X|EN|net.nic.flowcontrol.profile.013|                    those packets instead and TCP retransmits them.
+::X|EN|net.nic.flowcontrol.profile.014|
+::X|EN|net.nic.flowcontrol.profile.015|  Gain            : Only if something on your LAN actually sends PAUSE
+::X|EN|net.nic.flowcontrol.profile.016|                    frames, and most consumer switches and routers never
+::X|EN|net.nic.flowcontrol.profile.017|                    do. When one does, turning it off replaces an
+::X|EN|net.nic.flowcontrol.profile.018|                    occasional multi-millisecond upload stall with dropped
+::X|EN|net.nic.flowcontrol.profile.019|                    packets, which a game tolerates better than a stall.
+::X|EN|net.nic.flowcontrol.profile.020|                    If nothing sends PAUSE frames the measured effect is
+::X|EN|net.nic.flowcontrol.profile.021|                    exactly zero, and the script says so instead of
+::X|EN|net.nic.flowcontrol.profile.022|                    claiming a win.
+::X|EN|net.nic.flowcontrol.profile.023|
+::X|EN|net.nic.flowcontrol.profile.024|  Cost            : With it off, under saturation you trade a brief pause
+::X|EN|net.nic.flowcontrol.profile.025|                    for real packet loss, which hurts bulk uploads and
+::X|EN|net.nic.flowcontrol.profile.026|                    backups. The network Restore covers *FlowControl: it
+::X|EN|net.nic.flowcontrol.profile.027|                    writes back the driver's own
+::X|EN|net.nic.flowcontrol.profile.028|                    Ndi\Params\*FlowControl\default, so any value set here
+::X|EN|net.nic.flowcontrol.profile.029|                    or by hand in Device Manager can be undone.
+::X|EN|net.nic.flowcontrol.profile.030|
+::X|EN|net.nic.flowcontrol.profile.031|  Windows default : Driver-supplied, commonly 3 (Rx and Tx Enabled) on
+::X|EN|net.nic.flowcontrol.profile.032|                    Intel adapters. Your card's real default is at
+::X|EN|net.nic.flowcontrol.profile.033|                    Ndi\Params\*FlowControl\default.
+::X|EN|net.nic.flowcontrol.profile.034|
+::X|EN|net.nic.flowcontrol.profile.035|  Possible values:
+::X|EN|net.nic.flowcontrol.profile.036|    0                    : Disabled. The card neither sends nor honours
+::X|EN|net.nic.flowcontrol.profile.037|                           802.3x PAUSE frames. A switch whose buffer
+::X|EN|net.nic.flowcontrol.profile.038|                           fills drops your packets instead of stalling
+::X|EN|net.nic.flowcontrol.profile.039|                           you, and TCP retransmits them.
+::X|EN|net.nic.flowcontrol.profile.040|    1                    : Tx Enabled. The card sends PAUSE frames when
+::X|EN|net.nic.flowcontrol.profile.041|                           its own receive ring fills, but ignores
+::X|EN|net.nic.flowcontrol.profile.042|                           incoming ones. This is the surgical option if
+::X|EN|net.nic.flowcontrol.profile.043|                           what you want is never to have your upload
+::X|EN|net.nic.flowcontrol.profile.044|                           stalled - OPTY does not offer it, but it is a
+::X|EN|net.nic.flowcontrol.profile.045|                           valid keyword value.
+::X|EN|net.nic.flowcontrol.profile.046|    2                    : Rx Enabled. The card honours incoming PAUSE
+::X|EN|net.nic.flowcontrol.profile.047|                           frames but never sends them.
+::X|EN|net.nic.flowcontrol.profile.048|    3                    : Rx and Tx Enabled, the usual shipped value on
+::X|EN|net.nic.flowcontrol.profile.049|                           Intel adapters. A received PAUSE frame can
+::X|EN|net.nic.flowcontrol.profile.050|                           stall your transmit for up to about 33.6 ms at
+::X|EN|net.nic.flowcontrol.profile.051|                           gigabit.
+::X|EN|net.nic.flowcontrol.profile.052|    SKIP                 : The keyword is not written; it keeps whatever
+::X|EN|net.nic.flowcontrol.profile.053|                           value it has now, which is
+::X|EN|net.nic.flowcontrol.profile.054|                           Ndi\Params\*FlowControl\default unless something
+::X|EN|net.nic.flowcontrol.profile.055|                           changed it.
+::X|EN|net.nic.flowcontrol.profile.056|
+::X|EN|net.nic.flowcontrol.profile.057|  Why these profiles : Four identical columns at 3, gaming included,
+::X|EN|net.nic.flowcontrol.profile.058|                       because turning it off has no mechanism to help
+::X|EN|net.nic.flowcontrol.profile.059|                       unless a switch on your LAN really sends PAUSE
+::X|EN|net.nic.flowcontrol.profile.060|                       frames - and if none does, writing 0 buys nothing
+::X|EN|net.nic.flowcontrol.profile.061|                       and turns every pause into packet loss. The server
+::X|EN|net.nic.flowcontrol.profile.062|                       column is the least ambiguous of the four: it does
+::X|EN|net.nic.flowcontrol.profile.063|                       bulk uploads, where a brief pause is cheaper than
+::X|EN|net.nic.flowcontrol.profile.064|                       retransmitting. Windows is SKIP because 3 is the
+::X|EN|net.nic.flowcontrol.profile.065|                       driver's value rather than a Windows one. Set 0
+::X|EN|net.nic.flowcontrol.profile.066|                       yourself in Device Manager only if you administer a
+::X|EN|net.nic.flowcontrol.profile.067|                       managed switch and can see it sending pause frames
+::X|EN|net.nic.flowcontrol.profile.068|                       - no OPTY profile writes it.
+::X|EN|net.nic.flowcontrol.profile.069|
+::X|EN|net.nic.flowcontrol.profile.070|  Unverified      : Whether your LAN sends PAUSE frames at all cannot be
+::X|EN|net.nic.flowcontrol.profile.071|                    determined from a batch script. The only honest signal
+::X|EN|net.nic.flowcontrol.profile.072|                    is the adapter's own Pause Frames Received counter,
+::X|EN|net.nic.flowcontrol.profile.073|                    which the driver does not expose through any
+::X|EN|net.nic.flowcontrol.profile.074|                    scriptable interface - so OPTY deliberately makes no
+::X|EN|net.nic.flowcontrol.profile.075|                    claim about whether the change helped.
+::X|EN|net.nic.flowcontrol.profile.076|
+::X|EN|net.nic.flowcontrol.profile.077|  Target          : call :asknic "net.nic.flowcontrol.profile" 1
+::X|EN|net.nic.flowcontrol.profile.078|                    "*FlowControl" in :se_flow of :setup_ethernet, which
+::X|EN|net.nic.flowcontrol.profile.079|                    writes the profile value (3) through :nicset as
+::X|EN|net.nic.flowcontrol.profile.080|                    REG_SZ. *FlowControl is in the :net_restore keyword
+::X|EN|net.nic.flowcontrol.profile.081|                    filter, so the network Restore puts back the driver's
+::X|EN|net.nic.flowcontrol.profile.082|                    default through :nicdefault.
 ::X|FR|net.nic.flowcontrol.profile.001|  Ce que c est    : Le controle de flux permet a un switch d envoyer une
 ::X|FR|net.nic.flowcontrol.profile.002|                    trame PAUSE demandant a votre carte d arreter
 ::X|FR|net.nic.flowcontrol.profile.003|                    d emettre un instant quand sa memoire tampon se
-::X|FR|net.nic.flowcontrol.profile.004|                    remplit. OPTY ecrit 3 pour les profils Equilibre et
-::X|FR|net.nic.flowcontrol.profile.005|                    Debit, et 0 pour le profil Faible latence.
-::X|FR|net.nic.flowcontrol.profile.006|
-::X|FR|net.nic.flowcontrol.profile.007|  Effet reel      : Active, une trame PAUSE peut bloquer votre envoi
-::X|FR|net.nic.flowcontrol.profile.008|                    jusqu a environ 33,6 ms en gigabit. Desactive, le
-::X|FR|net.nic.flowcontrol.profile.009|                    switch jette ces paquets a la place et TCP les
-::X|FR|net.nic.flowcontrol.profile.010|                    retransmet.
-::X|FR|net.nic.flowcontrol.profile.011|
-::X|FR|net.nic.flowcontrol.profile.012|  Gain            : Seulement si quelque chose sur votre reseau local
-::X|FR|net.nic.flowcontrol.profile.013|                    envoie reellement des trames PAUSE, ce que la plupart
-::X|FR|net.nic.flowcontrol.profile.014|                    des switchs et box grand public ne font jamais. Quand
-::X|FR|net.nic.flowcontrol.profile.015|                    c est le cas, le desactiver remplace un blocage
-::X|FR|net.nic.flowcontrol.profile.016|                    d envoi de quelques millisecondes par des paquets
-::X|FR|net.nic.flowcontrol.profile.017|                    perdus, ce qu un jeu supporte mieux qu un blocage. Si
-::X|FR|net.nic.flowcontrol.profile.018|                    rien n envoie de PAUSE, l effet mesure est exactement
-::X|FR|net.nic.flowcontrol.profile.019|                    nul, et le script le dit au lieu de s attribuer un
-::X|FR|net.nic.flowcontrol.profile.020|                    gain.
-::X|FR|net.nic.flowcontrol.profile.021|
-::X|FR|net.nic.flowcontrol.profile.022|  Cout            : En saturation, vous echangez une breve pause contre de
-::X|FR|net.nic.flowcontrol.profile.023|                    vraies pertes de paquets, ce qui penalise les gros
-::X|FR|net.nic.flowcontrol.profile.024|                    envois et les sauvegardes. Et la restauration reseau
-::X|FR|net.nic.flowcontrol.profile.025|                    ne couvre pas *FlowControl : si vous ecrivez 0,
-::X|FR|net.nic.flowcontrol.profile.026|                    l annulation se fait a la main dans le Gestionnaire de
-::X|FR|net.nic.flowcontrol.profile.027|                    peripheriques.
-::X|FR|net.nic.flowcontrol.profile.028|
-::X|FR|net.nic.flowcontrol.profile.029|  Defaut Windows  : Valeur fournie par le pilote, souvent 3 (Rx et Tx
-::X|FR|net.nic.flowcontrol.profile.030|                    actives) sur les cartes Intel. La vraie valeur de
-::X|FR|net.nic.flowcontrol.profile.031|                    votre carte est dans Ndi\Params\*FlowControl\default.
-::X|FR|net.nic.flowcontrol.profile.032|
-::X|FR|net.nic.flowcontrol.profile.033|  Valeurs possibles :
-::X|FR|net.nic.flowcontrol.profile.034|    0                    : Desactive. La carte n envoie ni n honore les
-::X|FR|net.nic.flowcontrol.profile.035|                           trames PAUSE 802.3x. Un switch dont la memoire
-::X|FR|net.nic.flowcontrol.profile.036|                           tampon se remplit jette vos paquets au lieu de
-::X|FR|net.nic.flowcontrol.profile.037|                           vous bloquer, et TCP les retransmet.
-::X|FR|net.nic.flowcontrol.profile.038|    1                    : Tx Enabled. La carte envoie des trames PAUSE
-::X|FR|net.nic.flowcontrol.profile.039|                           quand son propre anneau de reception se
-::X|FR|net.nic.flowcontrol.profile.040|                           remplit, mais ignore celles qu elle recoit.
-::X|FR|net.nic.flowcontrol.profile.041|                           C est l option chirurgicale si ce que vous
-::X|FR|net.nic.flowcontrol.profile.042|                           voulez est que votre envoi ne soit jamais
-::X|FR|net.nic.flowcontrol.profile.043|                           bloque - OPTY ne la propose pas, mais c est une
-::X|FR|net.nic.flowcontrol.profile.044|                           valeur valide du mot-cle.
-::X|FR|net.nic.flowcontrol.profile.045|    2                    : Rx Enabled. La carte honore les trames PAUSE
-::X|FR|net.nic.flowcontrol.profile.046|                           recues mais n en envoie jamais.
-::X|FR|net.nic.flowcontrol.profile.047|    3                    : Rx et Tx Enabled, la valeur livree habituelle
-::X|FR|net.nic.flowcontrol.profile.048|                           sur les cartes Intel. Une trame PAUSE recue
-::X|FR|net.nic.flowcontrol.profile.049|                           peut bloquer votre emission jusqu a environ
-::X|FR|net.nic.flowcontrol.profile.050|                           33,6 ms en gigabit.
-::X|FR|net.nic.flowcontrol.profile.051|    SKIP                 : Le mot-cle n est pas ecrit ; il reste a
-::X|FR|net.nic.flowcontrol.profile.052|                           Ndi\Params\*FlowControl\default, et l absence
-::X|FR|net.nic.flowcontrol.profile.053|                           d annulation automatique ne devient jamais un
-::X|FR|net.nic.flowcontrol.profile.054|                           probleme.
-::X|FR|net.nic.flowcontrol.profile.055|
-::X|FR|net.nic.flowcontrol.profile.056|  Pourquoi ces profils : Quatre colonnes identiques a 3, gaming compris,
-::X|FR|net.nic.flowcontrol.profile.057|                         parce que le choix Faible latence n a aucun
-::X|FR|net.nic.flowcontrol.profile.058|                         mecanisme tant qu un switch de votre reseau
-::X|FR|net.nic.flowcontrol.profile.059|                         n envoie pas reellement des trames PAUSE - et si
-::X|FR|net.nic.flowcontrol.profile.060|                         aucun ne le fait, ecrire 0 n apporte rien et vous
-::X|FR|net.nic.flowcontrol.profile.061|                         coute l annulation automatique. La colonne
-::X|FR|net.nic.flowcontrol.profile.062|                         serveur est la moins ambigue des quatre : elle
-::X|FR|net.nic.flowcontrol.profile.063|                         fait de gros envois, ou une breve pause coute
-::X|FR|net.nic.flowcontrol.profile.064|                         moins cher qu une retransmission. Windows est
-::X|FR|net.nic.flowcontrol.profile.065|                         SKIP parce que 3 est une valeur du pilote et non
-::X|FR|net.nic.flowcontrol.profile.066|                         de Windows. Ne choisissez 0 que si vous
-::X|FR|net.nic.flowcontrol.profile.067|                         administrez un switch manageable et que vous le
-::X|FR|net.nic.flowcontrol.profile.068|                         voyez envoyer des trames de pause.
-::X|FR|net.nic.flowcontrol.profile.069|
-::X|FR|net.nic.flowcontrol.profile.070|  Non verifie (en)  : Whether your LAN sends PAUSE frames at all cannot be
-::X|FR|net.nic.flowcontrol.profile.071|                      determined from a batch script. The only honest
-::X|FR|net.nic.flowcontrol.profile.072|                      signal is the adapter s own Pause Frames Received
-::X|FR|net.nic.flowcontrol.profile.073|                      counter, which the driver does not expose through
-::X|FR|net.nic.flowcontrol.profile.074|                      any scriptable interface - so OPTY deliberately
-::X|FR|net.nic.flowcontrol.profile.075|                      makes no claim about whether the change helped.
+::X|FR|net.nic.flowcontrol.profile.004|                    remplit. Les profils gaming, serveur, bureautique et
+::X|FR|net.nic.flowcontrol.profile.005|                    portable ecrivent tous 3 ; le profil Windows ne touche
+::X|FR|net.nic.flowcontrol.profile.006|                    pas au mot-cle. OPTY n ecrit jamais 0.
+::X|FR|net.nic.flowcontrol.profile.007|
+::X|FR|net.nic.flowcontrol.profile.008|  Effet reel      : Ecrit *FlowControl=3 en REG_SZ dans la cle de classe
+::X|FR|net.nic.flowcontrol.profile.009|                    de la carte. La question n apparait que si la carte
+::X|FR|net.nic.flowcontrol.profile.010|                    expose *FlowControl, et l ecriture est refusee si la
+::X|FR|net.nic.flowcontrol.profile.011|                    liste Enum du pilote ne contient pas 3. Active, une
+::X|FR|net.nic.flowcontrol.profile.012|                    trame PAUSE peut bloquer votre envoi jusqu a environ
+::X|FR|net.nic.flowcontrol.profile.013|                    33,6 ms en gigabit. Desactive, le switch jette ces
+::X|FR|net.nic.flowcontrol.profile.014|                    paquets a la place et TCP les retransmet.
+::X|FR|net.nic.flowcontrol.profile.015|
+::X|FR|net.nic.flowcontrol.profile.016|  Gain            : Seulement si quelque chose sur votre reseau local
+::X|FR|net.nic.flowcontrol.profile.017|                    envoie reellement des trames PAUSE, ce que la plupart
+::X|FR|net.nic.flowcontrol.profile.018|                    des switchs et box grand public ne font jamais. Quand
+::X|FR|net.nic.flowcontrol.profile.019|                    c est le cas, le desactiver remplace un blocage
+::X|FR|net.nic.flowcontrol.profile.020|                    d envoi de quelques millisecondes par des paquets
+::X|FR|net.nic.flowcontrol.profile.021|                    perdus, ce qu un jeu supporte mieux qu un blocage. Si
+::X|FR|net.nic.flowcontrol.profile.022|                    rien n envoie de PAUSE, l effet mesure est exactement
+::X|FR|net.nic.flowcontrol.profile.023|                    nul, et le script le dit au lieu de s attribuer un
+::X|FR|net.nic.flowcontrol.profile.024|                    gain.
+::X|FR|net.nic.flowcontrol.profile.025|
+::X|FR|net.nic.flowcontrol.profile.026|  Cout            : Desactive, en saturation, vous echangez une breve pause
+::X|FR|net.nic.flowcontrol.profile.027|                    contre de vraies pertes de paquets, ce qui penalise les
+::X|FR|net.nic.flowcontrol.profile.028|                    gros envois et les sauvegardes. La restauration reseau
+::X|FR|net.nic.flowcontrol.profile.029|                    couvre *FlowControl : elle reecrit la valeur propre du
+::X|FR|net.nic.flowcontrol.profile.030|                    pilote, Ndi\Params\*FlowControl\default, donc toute
+::X|FR|net.nic.flowcontrol.profile.031|                    valeur posee ici ou a la main dans le Gestionnaire de
+::X|FR|net.nic.flowcontrol.profile.032|                    peripheriques peut etre annulee.
+::X|FR|net.nic.flowcontrol.profile.033|
+::X|FR|net.nic.flowcontrol.profile.034|  Defaut Windows  : Valeur fournie par le pilote, souvent 3 (Rx et Tx
+::X|FR|net.nic.flowcontrol.profile.035|                    actives) sur les cartes Intel. La vraie valeur de
+::X|FR|net.nic.flowcontrol.profile.036|                    votre carte est dans Ndi\Params\*FlowControl\default.
+::X|FR|net.nic.flowcontrol.profile.037|
+::X|FR|net.nic.flowcontrol.profile.038|  Valeurs possibles :
+::X|FR|net.nic.flowcontrol.profile.039|    0                    : Desactive. La carte n envoie ni n honore les
+::X|FR|net.nic.flowcontrol.profile.040|                           trames PAUSE 802.3x. Un switch dont la memoire
+::X|FR|net.nic.flowcontrol.profile.041|                           tampon se remplit jette vos paquets au lieu de
+::X|FR|net.nic.flowcontrol.profile.042|                           vous bloquer, et TCP les retransmet.
+::X|FR|net.nic.flowcontrol.profile.043|    1                    : Tx Enabled. La carte envoie des trames PAUSE
+::X|FR|net.nic.flowcontrol.profile.044|                           quand son propre anneau de reception se
+::X|FR|net.nic.flowcontrol.profile.045|                           remplit, mais ignore celles qu elle recoit.
+::X|FR|net.nic.flowcontrol.profile.046|                           C est l option chirurgicale si ce que vous
+::X|FR|net.nic.flowcontrol.profile.047|                           voulez est que votre envoi ne soit jamais
+::X|FR|net.nic.flowcontrol.profile.048|                           bloque - OPTY ne la propose pas, mais c est une
+::X|FR|net.nic.flowcontrol.profile.049|                           valeur valide du mot-cle.
+::X|FR|net.nic.flowcontrol.profile.050|    2                    : Rx Enabled. La carte honore les trames PAUSE
+::X|FR|net.nic.flowcontrol.profile.051|                           recues mais n en envoie jamais.
+::X|FR|net.nic.flowcontrol.profile.052|    3                    : Rx et Tx Enabled, la valeur livree habituelle
+::X|FR|net.nic.flowcontrol.profile.053|                           sur les cartes Intel. Une trame PAUSE recue
+::X|FR|net.nic.flowcontrol.profile.054|                           peut bloquer votre emission jusqu a environ
+::X|FR|net.nic.flowcontrol.profile.055|                           33,6 ms en gigabit.
+::X|FR|net.nic.flowcontrol.profile.056|    SKIP                 : Le mot-cle n est pas ecrit ; il garde sa valeur
+::X|FR|net.nic.flowcontrol.profile.057|                           actuelle, c est-a-dire
+::X|FR|net.nic.flowcontrol.profile.058|                           Ndi\Params\*FlowControl\default si rien ne l a
+::X|FR|net.nic.flowcontrol.profile.059|                           modifiee.
+::X|FR|net.nic.flowcontrol.profile.060|
+::X|FR|net.nic.flowcontrol.profile.061|  Pourquoi ces profils : Quatre colonnes identiques a 3, gaming compris,
+::X|FR|net.nic.flowcontrol.profile.062|                         parce que le desactiver n a aucun mecanisme pour
+::X|FR|net.nic.flowcontrol.profile.063|                         aider tant qu un switch de votre reseau n envoie
+::X|FR|net.nic.flowcontrol.profile.064|                         pas reellement des trames PAUSE - et si aucun ne
+::X|FR|net.nic.flowcontrol.profile.065|                         le fait, ecrire 0 n apporte rien et transforme
+::X|FR|net.nic.flowcontrol.profile.066|                         chaque pause en perte de paquets. La colonne
+::X|FR|net.nic.flowcontrol.profile.067|                         serveur est la moins ambigue des quatre : elle
+::X|FR|net.nic.flowcontrol.profile.068|                         fait de gros envois, ou une breve pause coute
+::X|FR|net.nic.flowcontrol.profile.069|                         moins cher qu une retransmission. Windows est
+::X|FR|net.nic.flowcontrol.profile.070|                         SKIP parce que 3 est une valeur du pilote et non
+::X|FR|net.nic.flowcontrol.profile.071|                         de Windows. Ne mettez 0 vous-meme, dans le
+::X|FR|net.nic.flowcontrol.profile.072|                         Gestionnaire de peripheriques, que si vous
+::X|FR|net.nic.flowcontrol.profile.073|                         administrez un switch manageable et que vous le
+::X|FR|net.nic.flowcontrol.profile.074|                         voyez envoyer des trames de pause - aucun profil
+::X|FR|net.nic.flowcontrol.profile.075|                         OPTY ne l ecrit.
 ::X|FR|net.nic.flowcontrol.profile.076|
-::X|FR|net.nic.flowcontrol.profile.077|  Cible           : call :nicset "%NICKEY%" "*FlowControl" - 3 in the
-::X|FR|net.nic.flowcontrol.profile.078|                    Balanced branch and in :net_prof_thr, 0 in
-::X|FR|net.nic.flowcontrol.profile.079|                    :net_prof_lat (OPTY.bat ~2898, ~2903, ~2916). Excluded
-::X|FR|net.nic.flowcontrol.profile.080|                    from the :net_restore keyword filter.
+::X|FR|net.nic.flowcontrol.profile.077|  Non verifie (en)  : Whether your LAN sends PAUSE frames at all cannot be
+::X|FR|net.nic.flowcontrol.profile.078|                      determined from a batch script. The only honest
+::X|FR|net.nic.flowcontrol.profile.079|                      signal is the adapter s own Pause Frames Received
+::X|FR|net.nic.flowcontrol.profile.080|                      counter, which the driver does not expose through
+::X|FR|net.nic.flowcontrol.profile.081|                      any scriptable interface - so OPTY deliberately
+::X|FR|net.nic.flowcontrol.profile.082|                      makes no claim about whether the change helped.
+::X|FR|net.nic.flowcontrol.profile.083|
+::X|FR|net.nic.flowcontrol.profile.084|  Cible           : call :asknic "net.nic.flowcontrol.profile" 1
+::X|FR|net.nic.flowcontrol.profile.085|                    "*FlowControl" dans :se_flow de :setup_ethernet, qui
+::X|FR|net.nic.flowcontrol.profile.086|                    ecrit la valeur du profil (3) par :nicset en REG_SZ.
+::X|FR|net.nic.flowcontrol.profile.087|                    *FlowControl fait partie du filtre de mots-cles de
+::X|FR|net.nic.flowcontrol.profile.088|                    :net_restore : la restauration reseau remet donc la
+::X|FR|net.nic.flowcontrol.profile.089|                    valeur par defaut du pilote via :nicdefault.
 ::
 :: ---- net.nti.profile.choice (preference) ----------------------------
 ::P|net.nti.profile.choice|10|0xffffffff|10|10|10|
@@ -20465,165 +20539,181 @@ goto :eof
 ::
 :: ---- net.tcp.globals.assert.profile (repair) --------------------
 ::P|net.tcp.globals.assert.profile|APPLY|APPLY|APPLY|APPLY|APPLY|
-::T|EN|net.tcp.globals.assert.profile.001|TCP SETTINGS RE-CONFIRMED AFTER A NETWORK PROFILE
-::T|EN|net.tcp.globals.assert.profile.002|Re-writes three standard Windows TCP settings after applying a network profile; no effect on an untouched PC, but a real throughput fix if an old tweak script had disabled receive-window autotuning.
-::T|FR|net.tcp.globals.assert.profile.001|REGLAGES TCP REAFFIRMES APRES UN PROFIL RESEAU
-::T|FR|net.tcp.globals.assert.profile.002|Reecrit trois reglages TCP standards de Windows apres l application d un profil reseau ; aucun effet sur un PC intact, mais une vraie amelioration de debit si un ancien script avait desactive l ajustement automatique de la fenetre de reception.
+::T|EN|net.tcp.globals.assert.profile.001|TCP SETTINGS RE-CONFIRMED BEFORE THE ETHERNET QUESTIONS
+::T|EN|net.tcp.globals.assert.profile.002|Re-writes three standard Windows TCP settings once a wired adapter is picked in the Ethernet setup, before its questions; no effect on an untouched PC, but a real throughput fix if an old tweak script had disabled receive-window autotuning.
+::T|FR|net.tcp.globals.assert.profile.001|REGLAGES TCP REAFFIRMES AVANT LES QUESTIONS ETHERNET
+::T|FR|net.tcp.globals.assert.profile.002|Reecrit trois reglages TCP standards de Windows des qu une carte filaire est choisie dans la configuration Ethernet, avant ses questions ; aucun effet sur un PC intact, mais une vraie amelioration de debit si un ancien script avait desactive l ajustement automatique de la fenetre de reception.
 ::X|EN|net.tcp.globals.assert.profile.001|  What it is      : The same three machine-wide TCP settings, written
-::X|EN|net.tcp.globals.assert.profile.002|                    again at the end of applying a network profile so the
-::X|EN|net.tcp.globals.assert.profile.003|                    profile and the stack agree: receive-window
-::X|EN|net.tcp.globals.assert.profile.004|                    autotuning, Window Scaling Heuristics, and RSS at the
-::X|EN|net.tcp.globals.assert.profile.005|                    TCP layer.
-::X|EN|net.tcp.globals.assert.profile.006|
-::X|EN|net.tcp.globals.assert.profile.007|  Actual effect   : Three netsh calls, machine-wide and immediate, no
-::X|EN|net.tcp.globals.assert.profile.008|                    reboot. On a stock machine all three are no-ops - the
-::X|EN|net.tcp.globals.assert.profile.009|                    step's real value is undoing a previous tweak, most
-::X|EN|net.tcp.globals.assert.profile.010|                    often autotuninglevel=disabled.
-::X|EN|net.tcp.globals.assert.profile.011|
-::X|EN|net.tcp.globals.assert.profile.012|  Gain            : On a machine a previous tweak script mangled, putting
-::X|EN|net.tcp.globals.assert.profile.013|                    autotuning back to normal is a large and easily
-::X|EN|net.tcp.globals.assert.profile.014|                    measurable throughput fix on high-latency or high-
-::X|EN|net.tcp.globals.assert.profile.015|                    bandwidth paths. On an untouched machine all three
-::X|EN|net.tcp.globals.assert.profile.016|                    writes change nothing, and the honest answer is that
-::X|EN|net.tcp.globals.assert.profile.017|                    you will measure no difference.
-::X|EN|net.tcp.globals.assert.profile.018|
-::X|EN|net.tcp.globals.assert.profile.019|  Cost            : Practically none, because none of the three departs
-::X|EN|net.tcp.globals.assert.profile.020|                    from what Windows ships. If a specific site or VPN
-::X|EN|net.tcp.globals.assert.profile.021|                    turns flaky afterwards, netsh int tcp set heuristics
-::X|EN|net.tcp.globals.assert.profile.022|                    default is the single line to put back.
-::X|EN|net.tcp.globals.assert.profile.023|
-::X|EN|net.tcp.globals.assert.profile.024|  Windows default : autotuninglevel=normal, rss=enabled and Window Scaling
-::X|EN|net.tcp.globals.assert.profile.025|                    Heuristics disabled are all Windows defaults - WSH has
-::X|EN|net.tcp.globals.assert.profile.026|                    shipped disabled since Windows 8.1. netsh int tcp set
-::X|EN|net.tcp.globals.assert.profile.027|                    heuristics default hands the decision back to Windows.
-::X|EN|net.tcp.globals.assert.profile.028|
-::X|EN|net.tcp.globals.assert.profile.029|  Possible values:
-::X|EN|net.tcp.globals.assert.profile.030|    autotuninglevel=normal :
-::X|EN|net.tcp.globals.assert.profile.031|        The receive window scales up to what the path needs. Shipped
-::X|EN|net.tcp.globals.assert.profile.032|        value, and the one optimizer guides most often replace.
-::X|EN|net.tcp.globals.assert.profile.033|    autotuninglevel=disabled, highlyrestricted, restricted :
-::X|EN|net.tcp.globals.assert.profile.034|        Progressively smaller ceilings on the receive window. On a long or
-::X|EN|net.tcp.globals.assert.profile.035|        fast path each one is a throughput cut, invisible locally and
-::X|EN|net.tcp.globals.assert.profile.036|        severe over distance.
-::X|EN|net.tcp.globals.assert.profile.037|    autotuninglevel=experimental :
-::X|EN|net.tcp.globals.assert.profile.038|        An extreme ceiling. Wastes non-paged pool with no benefit on any
-::X|EN|net.tcp.globals.assert.profile.039|        home path.
-::X|EN|net.tcp.globals.assert.profile.040|    heuristics=disabled  : Windows stops second-guessing your autotuning
-::X|EN|net.tcp.globals.assert.profile.041|                           level from stored per-path history.
-::X|EN|net.tcp.globals.assert.profile.042|    heuristics=enabled   : Windows may silently reduce the window scale
-::X|EN|net.tcp.globals.assert.profile.043|                           factor on paths it decides are problematic.
-::X|EN|net.tcp.globals.assert.profile.044|    heuristics=default   : Hands the decision back to Windows built-in
-::X|EN|net.tcp.globals.assert.profile.045|                           policy - which is disabled, so the behaviour is
-::X|EN|net.tcp.globals.assert.profile.046|                           the same.
-::X|EN|net.tcp.globals.assert.profile.047|    rss=enabled / disabled / default :
-::X|EN|net.tcp.globals.assert.profile.048|        Enabled spreads TCP receive processing over several cores,
-::X|EN|net.tcp.globals.assert.profile.049|        disabled pins it to one, default hands the choice to Windows,
-::X|EN|net.tcp.globals.assert.profile.050|        whose policy is enabled.
-::X|EN|net.tcp.globals.assert.profile.051|
-::X|EN|net.tcp.globals.assert.profile.052|  Why these profiles : Five identical columns. These are the shipped
-::X|EN|net.tcp.globals.assert.profile.053|                       values, so no usage profile has a reason to want
-::X|EN|net.tcp.globals.assert.profile.054|                       anything else, and the Windows column wants them
-::X|EN|net.tcp.globals.assert.profile.055|                       too because writing them is how a mangled machine
-::X|EN|net.tcp.globals.assert.profile.056|                       gets back to shipped. Earlier drafts of this card
-::X|EN|net.tcp.globals.assert.profile.057|                       claimed heuristics=disabled was a departure from
-::X|EN|net.tcp.globals.assert.profile.058|                       stock and built a gain and cost argument on it -
-::X|EN|net.tcp.globals.assert.profile.059|                       that was wrong, and nothing here rests on it any
-::X|EN|net.tcp.globals.assert.profile.060|                       more.
-::X|EN|net.tcp.globals.assert.profile.061|
-::X|EN|net.tcp.globals.assert.profile.062|  Unverified      : That Window Scaling Heuristics ships disabled rests on
-::X|EN|net.tcp.globals.assert.profile.063|                    documented Windows 8.1-and-later behaviour plus a live
-::X|EN|net.tcp.globals.assert.profile.064|                    Windows 11 25H2 reading, not on a Microsoft statement
-::X|EN|net.tcp.globals.assert.profile.065|                    for 25H2. netsh reports it separately from the global
-::X|EN|net.tcp.globals.assert.profile.066|                    parameters, which is why earlier versions of this card
-::X|EN|net.tcp.globals.assert.profile.067|                    guessed the opposite.
-::X|EN|net.tcp.globals.assert.profile.068|
-::X|EN|net.tcp.globals.assert.profile.069|  Target          : netsh int tcp set global autotuninglevel=normal ;
-::X|EN|net.tcp.globals.assert.profile.070|                    netsh int tcp set heuristics disabled ; netsh int tcp
-::X|EN|net.tcp.globals.assert.profile.071|                    set global rss=enabled - run at :net_prof_done, after
-::X|EN|net.tcp.globals.assert.profile.072|                    a network profile has been applied (OPTY.bat
-::X|EN|net.tcp.globals.assert.profile.073|                    ~2923-2925)
+::X|EN|net.tcp.globals.assert.profile.002|                    again in the Ethernet setup once a wired adapter has
+::X|EN|net.tcp.globals.assert.profile.003|                    been picked and before its per-adapter questions, so
+::X|EN|net.tcp.globals.assert.profile.004|                    the adapter settings and the stack agree: receive-
+::X|EN|net.tcp.globals.assert.profile.005|                    window autotuning, Window Scaling Heuristics, and RSS
+::X|EN|net.tcp.globals.assert.profile.006|                    at the TCP layer.
+::X|EN|net.tcp.globals.assert.profile.007|
+::X|EN|net.tcp.globals.assert.profile.008|  Actual effect   : Three netsh calls, machine-wide and immediate, no
+::X|EN|net.tcp.globals.assert.profile.009|                    reboot, run without a question of their own. They are
+::X|EN|net.tcp.globals.assert.profile.010|                    not run for a Wi-Fi adapter, nor when the setup walk
+::X|EN|net.tcp.globals.assert.profile.011|                    skips the section because several adapters qualify.
+::X|EN|net.tcp.globals.assert.profile.012|                    On a stock machine all three are no-ops - the
+::X|EN|net.tcp.globals.assert.profile.013|                    step's real value is undoing a previous tweak, most
+::X|EN|net.tcp.globals.assert.profile.014|                    often autotuninglevel=disabled.
+::X|EN|net.tcp.globals.assert.profile.015|
+::X|EN|net.tcp.globals.assert.profile.016|  Gain            : On a machine a previous tweak script mangled, putting
+::X|EN|net.tcp.globals.assert.profile.017|                    autotuning back to normal is a large and easily
+::X|EN|net.tcp.globals.assert.profile.018|                    measurable throughput fix on high-latency or high-
+::X|EN|net.tcp.globals.assert.profile.019|                    bandwidth paths. On an untouched machine all three
+::X|EN|net.tcp.globals.assert.profile.020|                    writes change nothing, and the honest answer is that
+::X|EN|net.tcp.globals.assert.profile.021|                    you will measure no difference.
+::X|EN|net.tcp.globals.assert.profile.022|
+::X|EN|net.tcp.globals.assert.profile.023|  Cost            : Practically none, because none of the three departs
+::X|EN|net.tcp.globals.assert.profile.024|                    from what Windows ships. If a specific site or VPN
+::X|EN|net.tcp.globals.assert.profile.025|                    turns flaky afterwards, netsh int tcp set heuristics
+::X|EN|net.tcp.globals.assert.profile.026|                    default is the single line to put back.
+::X|EN|net.tcp.globals.assert.profile.027|
+::X|EN|net.tcp.globals.assert.profile.028|  Windows default : autotuninglevel=normal, rss=enabled and Window Scaling
+::X|EN|net.tcp.globals.assert.profile.029|                    Heuristics disabled are all Windows defaults - WSH has
+::X|EN|net.tcp.globals.assert.profile.030|                    shipped disabled since Windows 8.1. netsh int tcp set
+::X|EN|net.tcp.globals.assert.profile.031|                    heuristics default hands the decision back to Windows.
+::X|EN|net.tcp.globals.assert.profile.032|
+::X|EN|net.tcp.globals.assert.profile.033|  Possible values:
+::X|EN|net.tcp.globals.assert.profile.034|    autotuninglevel=normal :
+::X|EN|net.tcp.globals.assert.profile.035|        The receive window scales up to what the path needs. Shipped
+::X|EN|net.tcp.globals.assert.profile.036|        value, and the one optimizer guides most often replace.
+::X|EN|net.tcp.globals.assert.profile.037|    autotuninglevel=disabled, highlyrestricted, restricted :
+::X|EN|net.tcp.globals.assert.profile.038|        Progressively smaller ceilings on the receive window. On a long or
+::X|EN|net.tcp.globals.assert.profile.039|        fast path each one is a throughput cut, invisible locally and
+::X|EN|net.tcp.globals.assert.profile.040|        severe over distance.
+::X|EN|net.tcp.globals.assert.profile.041|    autotuninglevel=experimental :
+::X|EN|net.tcp.globals.assert.profile.042|        An extreme ceiling. Wastes non-paged pool with no benefit on any
+::X|EN|net.tcp.globals.assert.profile.043|        home path.
+::X|EN|net.tcp.globals.assert.profile.044|    heuristics=disabled  : Windows stops second-guessing your autotuning
+::X|EN|net.tcp.globals.assert.profile.045|                           level from stored per-path history.
+::X|EN|net.tcp.globals.assert.profile.046|    heuristics=enabled   : Windows may silently reduce the window scale
+::X|EN|net.tcp.globals.assert.profile.047|                           factor on paths it decides are problematic.
+::X|EN|net.tcp.globals.assert.profile.048|    heuristics=default   : Hands the decision back to Windows built-in
+::X|EN|net.tcp.globals.assert.profile.049|                           policy - which is disabled, so the behaviour is
+::X|EN|net.tcp.globals.assert.profile.050|                           the same.
+::X|EN|net.tcp.globals.assert.profile.051|    rss=enabled / disabled / default :
+::X|EN|net.tcp.globals.assert.profile.052|        Enabled spreads TCP receive processing over several cores,
+::X|EN|net.tcp.globals.assert.profile.053|        disabled pins it to one, default hands the choice to Windows,
+::X|EN|net.tcp.globals.assert.profile.054|        whose policy is enabled.
+::X|EN|net.tcp.globals.assert.profile.055|
+::X|EN|net.tcp.globals.assert.profile.056|  Why these profiles : Five identical columns. These are the shipped
+::X|EN|net.tcp.globals.assert.profile.057|                       values, so no usage profile has a reason to want
+::X|EN|net.tcp.globals.assert.profile.058|                       anything else, and the Windows column wants them
+::X|EN|net.tcp.globals.assert.profile.059|                       too because writing them is how a mangled machine
+::X|EN|net.tcp.globals.assert.profile.060|                       gets back to shipped. Earlier drafts of this card
+::X|EN|net.tcp.globals.assert.profile.061|                       claimed heuristics=disabled was a departure from
+::X|EN|net.tcp.globals.assert.profile.062|                       stock and built a gain and cost argument on it -
+::X|EN|net.tcp.globals.assert.profile.063|                       that was wrong, and nothing here rests on it any
+::X|EN|net.tcp.globals.assert.profile.064|                       more.
+::X|EN|net.tcp.globals.assert.profile.065|
+::X|EN|net.tcp.globals.assert.profile.066|  Unverified      : That Window Scaling Heuristics ships disabled rests on
+::X|EN|net.tcp.globals.assert.profile.067|                    documented Windows 8.1-and-later behaviour plus a live
+::X|EN|net.tcp.globals.assert.profile.068|                    Windows 11 25H2 reading, not on a Microsoft statement
+::X|EN|net.tcp.globals.assert.profile.069|                    for 25H2. netsh reports it separately from the global
+::X|EN|net.tcp.globals.assert.profile.070|                    parameters, which is why earlier versions of this card
+::X|EN|net.tcp.globals.assert.profile.071|                    guessed the opposite.
+::X|EN|net.tcp.globals.assert.profile.072|
+::X|EN|net.tcp.globals.assert.profile.073|  Target          : netsh int tcp set global autotuninglevel=normal ;
+::X|EN|net.tcp.globals.assert.profile.074|                    netsh int tcp set heuristics disabled ; netsh int tcp
+::X|EN|net.tcp.globals.assert.profile.075|                    set global rss=enabled - run in :se_picked of
+::X|EN|net.tcp.globals.assert.profile.076|                    :setup_ethernet, under "Re-asserting what all five
+::X|EN|net.tcp.globals.assert.profile.077|                    profiles agree on", before the per-adapter questions.
+::X|EN|net.tcp.globals.assert.profile.078|                    The same three lines also run in :netdns_tcp and after
+::X|EN|net.tcp.globals.assert.profile.079|                    the reset in :netreset; :nr_tcp (network Restore)
+::X|EN|net.tcp.globals.assert.profile.080|                    writes heuristics default and rss=default instead.
 ::X|FR|net.tcp.globals.assert.profile.001|  Ce que c est    : Les memes trois reglages TCP valables pour toute la
-::X|FR|net.tcp.globals.assert.profile.002|                    machine, reecrits a la fin de l application d un
-::X|FR|net.tcp.globals.assert.profile.003|                    profil reseau pour que le profil et la pile soient
-::X|FR|net.tcp.globals.assert.profile.004|                    d accord : ajustement automatique de la fenetre de
-::X|FR|net.tcp.globals.assert.profile.005|                    reception, heuristiques de mise a l echelle, et RSS au
-::X|FR|net.tcp.globals.assert.profile.006|                    niveau TCP.
-::X|FR|net.tcp.globals.assert.profile.007|
-::X|FR|net.tcp.globals.assert.profile.008|  Effet reel      : Trois commandes netsh, valables pour toute la machine,
-::X|FR|net.tcp.globals.assert.profile.009|                    effet immediat, sans redemarrage. Sur une machine
-::X|FR|net.tcp.globals.assert.profile.010|                    d origine, les trois ne changent rien : la vraie
-::X|FR|net.tcp.globals.assert.profile.011|                    valeur de l etape est d annuler un tweak precedent, le
-::X|FR|net.tcp.globals.assert.profile.012|                    plus souvent autotuninglevel=disabled.
-::X|FR|net.tcp.globals.assert.profile.013|
-::X|FR|net.tcp.globals.assert.profile.014|  Gain            : Sur une machine massacree par un ancien script de
-::X|FR|net.tcp.globals.assert.profile.015|                    tweak, remettre l autotuning sur normal est un gain de
-::X|FR|net.tcp.globals.assert.profile.016|                    debit important et facilement mesurable sur les
-::X|FR|net.tcp.globals.assert.profile.017|                    chemins a forte latence ou a haut debit. Sur une
-::X|FR|net.tcp.globals.assert.profile.018|                    machine intacte, les trois ecritures ne changent rien,
-::X|FR|net.tcp.globals.assert.profile.019|                    et il faut le dire franchement : vous ne mesurerez
-::X|FR|net.tcp.globals.assert.profile.020|                    aucune difference.
-::X|FR|net.tcp.globals.assert.profile.021|
-::X|FR|net.tcp.globals.assert.profile.022|  Cout            : Quasiment aucun, puisque aucune des trois valeurs ne
-::X|FR|net.tcp.globals.assert.profile.023|                    s ecarte de ce que Windows livre. Si un site precis ou
-::X|FR|net.tcp.globals.assert.profile.024|                    un VPN devient capricieux ensuite, netsh int tcp set
-::X|FR|net.tcp.globals.assert.profile.025|                    heuristics default est la seule ligne a remettre.
+::X|FR|net.tcp.globals.assert.profile.002|                    machine, reecrits dans la configuration Ethernet des
+::X|FR|net.tcp.globals.assert.profile.003|                    qu une carte filaire est choisie et avant ses
+::X|FR|net.tcp.globals.assert.profile.004|                    questions par carte, pour que les reglages de la carte
+::X|FR|net.tcp.globals.assert.profile.005|                    et la pile soient d accord : ajustement automatique de
+::X|FR|net.tcp.globals.assert.profile.006|                    la fenetre de reception, heuristiques de mise a
+::X|FR|net.tcp.globals.assert.profile.007|                    l echelle, et RSS au niveau TCP.
+::X|FR|net.tcp.globals.assert.profile.008|
+::X|FR|net.tcp.globals.assert.profile.009|  Effet reel      : Trois commandes netsh, valables pour toute la machine,
+::X|FR|net.tcp.globals.assert.profile.010|                    effet immediat, sans redemarrage, executees sans
+::X|FR|net.tcp.globals.assert.profile.011|                    question dediee. Elles ne tournent pas pour une carte
+::X|FR|net.tcp.globals.assert.profile.012|                    Wi-Fi, ni quand la passe par profil saute la section
+::X|FR|net.tcp.globals.assert.profile.013|                    parce que plusieurs cartes sont eligibles. Sur une
+::X|FR|net.tcp.globals.assert.profile.014|                    machine
+::X|FR|net.tcp.globals.assert.profile.015|                    d origine, les trois ne changent rien : la vraie
+::X|FR|net.tcp.globals.assert.profile.016|                    valeur de l etape est d annuler un tweak precedent, le
+::X|FR|net.tcp.globals.assert.profile.017|                    plus souvent autotuninglevel=disabled.
+::X|FR|net.tcp.globals.assert.profile.018|
+::X|FR|net.tcp.globals.assert.profile.019|  Gain            : Sur une machine massacree par un ancien script de
+::X|FR|net.tcp.globals.assert.profile.020|                    tweak, remettre l autotuning sur normal est un gain de
+::X|FR|net.tcp.globals.assert.profile.021|                    debit important et facilement mesurable sur les
+::X|FR|net.tcp.globals.assert.profile.022|                    chemins a forte latence ou a haut debit. Sur une
+::X|FR|net.tcp.globals.assert.profile.023|                    machine intacte, les trois ecritures ne changent rien,
+::X|FR|net.tcp.globals.assert.profile.024|                    et il faut le dire franchement : vous ne mesurerez
+::X|FR|net.tcp.globals.assert.profile.025|                    aucune difference.
 ::X|FR|net.tcp.globals.assert.profile.026|
-::X|FR|net.tcp.globals.assert.profile.027|  Defaut Windows  : autotuninglevel=normal, rss=enabled et les
-::X|FR|net.tcp.globals.assert.profile.028|                    heuristiques de mise a l echelle desactivees sont
-::X|FR|net.tcp.globals.assert.profile.029|                    toutes des valeurs Windows d origine - les
-::X|FR|net.tcp.globals.assert.profile.030|                    heuristiques sont livrees desactivees depuis Windows
-::X|FR|net.tcp.globals.assert.profile.031|                    8.1. netsh int tcp set heuristics default rend la
-::X|FR|net.tcp.globals.assert.profile.032|                    decision a Windows.
-::X|FR|net.tcp.globals.assert.profile.033|
-::X|FR|net.tcp.globals.assert.profile.034|  Valeurs possibles :
-::X|FR|net.tcp.globals.assert.profile.035|    autotuninglevel=normal :
-::X|FR|net.tcp.globals.assert.profile.036|        La fenetre de reception grandit jusqu a ce que le chemin exige.
-::X|FR|net.tcp.globals.assert.profile.037|        Valeur d origine, et celle que les guides d optimisation
-::X|FR|net.tcp.globals.assert.profile.038|        remplacent le plus souvent.
-::X|FR|net.tcp.globals.assert.profile.039|    autotuninglevel=disabled, highlyrestricted, restricted :
-::X|FR|net.tcp.globals.assert.profile.040|        Des plafonds de plus en plus bas sur la fenetre de reception. Sur
-::X|FR|net.tcp.globals.assert.profile.041|        un chemin long ou rapide, chacun est une coupe de debit, invisible
-::X|FR|net.tcp.globals.assert.profile.042|        en local et severe a distance.
-::X|FR|net.tcp.globals.assert.profile.043|    autotuninglevel=experimental :
-::X|FR|net.tcp.globals.assert.profile.044|        Un plafond extreme. Gaspille du pool non pagine sans aucun
-::X|FR|net.tcp.globals.assert.profile.045|        benefice sur un chemin domestique.
-::X|FR|net.tcp.globals.assert.profile.046|    heuristics=disabled  : Windows cesse de remettre en cause votre niveau
-::X|FR|net.tcp.globals.assert.profile.047|                           d autotuning a partir de son historique par
-::X|FR|net.tcp.globals.assert.profile.048|                           chemin.
-::X|FR|net.tcp.globals.assert.profile.049|    heuristics=enabled   : Windows peut reduire en silence le facteur
-::X|FR|net.tcp.globals.assert.profile.050|                           d echelle sur les chemins qu il juge
-::X|FR|net.tcp.globals.assert.profile.051|                           problematiques.
-::X|FR|net.tcp.globals.assert.profile.052|    heuristics=default   : Rend la decision a la politique interne de
-::X|FR|net.tcp.globals.assert.profile.053|                           Windows, qui est disabled : le comportement est
-::X|FR|net.tcp.globals.assert.profile.054|                           donc identique.
-::X|FR|net.tcp.globals.assert.profile.055|    rss=enabled / disabled / default :
-::X|FR|net.tcp.globals.assert.profile.056|        Enabled repartit le traitement TCP en reception sur plusieurs
-::X|FR|net.tcp.globals.assert.profile.057|        coeurs, disabled le fixe sur un seul, default laisse le choix a
-::X|FR|net.tcp.globals.assert.profile.058|        Windows, dont la politique est enabled.
-::X|FR|net.tcp.globals.assert.profile.059|
-::X|FR|net.tcp.globals.assert.profile.060|  Pourquoi ces profils : Cinq colonnes identiques. Ce sont les valeurs
-::X|FR|net.tcp.globals.assert.profile.061|                         livrees : aucun profil d usage n a de raison d en
-::X|FR|net.tcp.globals.assert.profile.062|                         vouloir d autres, et la colonne Windows les veut
-::X|FR|net.tcp.globals.assert.profile.063|                         aussi puisque les ecrire est precisement la
-::X|FR|net.tcp.globals.assert.profile.064|                         maniere de ramener une machine trafiquee a l etat
-::X|FR|net.tcp.globals.assert.profile.065|                         d origine. Des versions anterieures de cette
-::X|FR|net.tcp.globals.assert.profile.066|                         fiche affirmaient que heuristics=disabled etait
-::X|FR|net.tcp.globals.assert.profile.067|                         un ecart par rapport au standard et
-::X|FR|net.tcp.globals.assert.profile.068|                         construisaient tout un raisonnement dessus :
-::X|FR|net.tcp.globals.assert.profile.069|                         c etait faux, et plus rien ici n en depend.
-::X|FR|net.tcp.globals.assert.profile.070|
-::X|FR|net.tcp.globals.assert.profile.071|  Non verifie (en)  : That Window Scaling Heuristics ships disabled rests
-::X|FR|net.tcp.globals.assert.profile.072|                      on documented Windows 8.1-and-later behaviour plus a
-::X|FR|net.tcp.globals.assert.profile.073|                      live Windows 11 25H2 reading, not on a Microsoft
-::X|FR|net.tcp.globals.assert.profile.074|                      statement for 25H2. netsh reports it separately from
-::X|FR|net.tcp.globals.assert.profile.075|                      the global parameters, which is why earlier versions
-::X|FR|net.tcp.globals.assert.profile.076|                      of this card guessed the opposite.
-::X|FR|net.tcp.globals.assert.profile.077|
-::X|FR|net.tcp.globals.assert.profile.078|  Cible           : netsh int tcp set global autotuninglevel=normal ;
-::X|FR|net.tcp.globals.assert.profile.079|                    netsh int tcp set heuristics disabled ; netsh int tcp
-::X|FR|net.tcp.globals.assert.profile.080|                    set global rss=enabled - run at :net_prof_done, after
-::X|FR|net.tcp.globals.assert.profile.081|                    a network profile has been applied (OPTY.bat
-::X|FR|net.tcp.globals.assert.profile.082|                    ~2923-2925)
+::X|FR|net.tcp.globals.assert.profile.027|  Cout            : Quasiment aucun, puisque aucune des trois valeurs ne
+::X|FR|net.tcp.globals.assert.profile.028|                    s ecarte de ce que Windows livre. Si un site precis ou
+::X|FR|net.tcp.globals.assert.profile.029|                    un VPN devient capricieux ensuite, netsh int tcp set
+::X|FR|net.tcp.globals.assert.profile.030|                    heuristics default est la seule ligne a remettre.
+::X|FR|net.tcp.globals.assert.profile.031|
+::X|FR|net.tcp.globals.assert.profile.032|  Defaut Windows  : autotuninglevel=normal, rss=enabled et les
+::X|FR|net.tcp.globals.assert.profile.033|                    heuristiques de mise a l echelle desactivees sont
+::X|FR|net.tcp.globals.assert.profile.034|                    toutes des valeurs Windows d origine - les
+::X|FR|net.tcp.globals.assert.profile.035|                    heuristiques sont livrees desactivees depuis Windows
+::X|FR|net.tcp.globals.assert.profile.036|                    8.1. netsh int tcp set heuristics default rend la
+::X|FR|net.tcp.globals.assert.profile.037|                    decision a Windows.
+::X|FR|net.tcp.globals.assert.profile.038|
+::X|FR|net.tcp.globals.assert.profile.039|  Valeurs possibles :
+::X|FR|net.tcp.globals.assert.profile.040|    autotuninglevel=normal :
+::X|FR|net.tcp.globals.assert.profile.041|        La fenetre de reception grandit jusqu a ce que le chemin exige.
+::X|FR|net.tcp.globals.assert.profile.042|        Valeur d origine, et celle que les guides d optimisation
+::X|FR|net.tcp.globals.assert.profile.043|        remplacent le plus souvent.
+::X|FR|net.tcp.globals.assert.profile.044|    autotuninglevel=disabled, highlyrestricted, restricted :
+::X|FR|net.tcp.globals.assert.profile.045|        Des plafonds de plus en plus bas sur la fenetre de reception. Sur
+::X|FR|net.tcp.globals.assert.profile.046|        un chemin long ou rapide, chacun est une coupe de debit, invisible
+::X|FR|net.tcp.globals.assert.profile.047|        en local et severe a distance.
+::X|FR|net.tcp.globals.assert.profile.048|    autotuninglevel=experimental :
+::X|FR|net.tcp.globals.assert.profile.049|        Un plafond extreme. Gaspille du pool non pagine sans aucun
+::X|FR|net.tcp.globals.assert.profile.050|        benefice sur un chemin domestique.
+::X|FR|net.tcp.globals.assert.profile.051|    heuristics=disabled  : Windows cesse de remettre en cause votre niveau
+::X|FR|net.tcp.globals.assert.profile.052|                           d autotuning a partir de son historique par
+::X|FR|net.tcp.globals.assert.profile.053|                           chemin.
+::X|FR|net.tcp.globals.assert.profile.054|    heuristics=enabled   : Windows peut reduire en silence le facteur
+::X|FR|net.tcp.globals.assert.profile.055|                           d echelle sur les chemins qu il juge
+::X|FR|net.tcp.globals.assert.profile.056|                           problematiques.
+::X|FR|net.tcp.globals.assert.profile.057|    heuristics=default   : Rend la decision a la politique interne de
+::X|FR|net.tcp.globals.assert.profile.058|                           Windows, qui est disabled : le comportement est
+::X|FR|net.tcp.globals.assert.profile.059|                           donc identique.
+::X|FR|net.tcp.globals.assert.profile.060|    rss=enabled / disabled / default :
+::X|FR|net.tcp.globals.assert.profile.061|        Enabled repartit le traitement TCP en reception sur plusieurs
+::X|FR|net.tcp.globals.assert.profile.062|        coeurs, disabled le fixe sur un seul, default laisse le choix a
+::X|FR|net.tcp.globals.assert.profile.063|        Windows, dont la politique est enabled.
+::X|FR|net.tcp.globals.assert.profile.064|
+::X|FR|net.tcp.globals.assert.profile.065|  Pourquoi ces profils : Cinq colonnes identiques. Ce sont les valeurs
+::X|FR|net.tcp.globals.assert.profile.066|                         livrees : aucun profil d usage n a de raison d en
+::X|FR|net.tcp.globals.assert.profile.067|                         vouloir d autres, et la colonne Windows les veut
+::X|FR|net.tcp.globals.assert.profile.068|                         aussi puisque les ecrire est precisement la
+::X|FR|net.tcp.globals.assert.profile.069|                         maniere de ramener une machine trafiquee a l etat
+::X|FR|net.tcp.globals.assert.profile.070|                         d origine. Des versions anterieures de cette
+::X|FR|net.tcp.globals.assert.profile.071|                         fiche affirmaient que heuristics=disabled etait
+::X|FR|net.tcp.globals.assert.profile.072|                         un ecart par rapport au standard et
+::X|FR|net.tcp.globals.assert.profile.073|                         construisaient tout un raisonnement dessus :
+::X|FR|net.tcp.globals.assert.profile.074|                         c etait faux, et plus rien ici n en depend.
+::X|FR|net.tcp.globals.assert.profile.075|
+::X|FR|net.tcp.globals.assert.profile.076|  Non verifie (en)  : That Window Scaling Heuristics ships disabled rests
+::X|FR|net.tcp.globals.assert.profile.077|                      on documented Windows 8.1-and-later behaviour plus a
+::X|FR|net.tcp.globals.assert.profile.078|                      live Windows 11 25H2 reading, not on a Microsoft
+::X|FR|net.tcp.globals.assert.profile.079|                      statement for 25H2. netsh reports it separately from
+::X|FR|net.tcp.globals.assert.profile.080|                      the global parameters, which is why earlier versions
+::X|FR|net.tcp.globals.assert.profile.081|                      of this card guessed the opposite.
+::X|FR|net.tcp.globals.assert.profile.082|
+::X|FR|net.tcp.globals.assert.profile.083|  Cible           : netsh int tcp set global autotuninglevel=normal ;
+::X|FR|net.tcp.globals.assert.profile.084|                    netsh int tcp set heuristics disabled ; netsh int tcp
+::X|FR|net.tcp.globals.assert.profile.085|                    set global rss=enabled - executees dans :se_picked de
+::X|FR|net.tcp.globals.assert.profile.086|                    :setup_ethernet, sous "Re-asserting what all five
+::X|FR|net.tcp.globals.assert.profile.087|                    profiles agree on", avant les questions par carte. Les
+::X|FR|net.tcp.globals.assert.profile.088|                    memes trois lignes tournent aussi dans :netdns_tcp et
+::X|FR|net.tcp.globals.assert.profile.089|                    apres la reinitialisation dans :netreset ; :nr_tcp
+::X|FR|net.tcp.globals.assert.profile.090|                    (restauration reseau) ecrit heuristics default et
+::X|FR|net.tcp.globals.assert.profile.091|                    rss=default a la place.
 ::
 :: ---- net.nic.restart.profile (preference) ---------------------------
 ::P|net.nic.restart.profile|RESTART|SKIP|RESTART|RESTART|SKIP|
