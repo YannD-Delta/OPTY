@@ -1,7 +1,7 @@
 :::: OPTY by @YannD-Deltagon ::::
 
 @echo off
-set current_version=05.0
+set current_version=05.1
 
 :: ============================ CRLF SELF-HEAL ================================
 :: This MUST stay the first thing that runs, and it must use no `call` and no
@@ -9752,7 +9752,7 @@ goto :eof
 ::T|EN|file.self.update.002|OPTY can download and replace itself with the latest version from GitHub so you get bug fixes, but that means running unreviewed code fetched over the network with no signature check.
 ::T|FR|file.self.update.001|OPTY SE MET A JOUR DEPUIS GITHUB
 ::T|FR|file.self.update.002|OPTY peut se telecharger et se remplacer par la derniere version depuis GitHub pour recuperer les corrections, mais cela veut dire executer du code non relu, telecharge sans signature ni verification.
-::X|EN|file.self.update.001|  What it is      : OPTY compares its own 'set current_version=05.0'
+::X|EN|file.self.update.001|  What it is      : OPTY compares its own 'set current_version=05.1'
 ::X|EN|file.self.update.002|                    against the tag_name of the latest GitHub release and,
 ::X|EN|file.self.update.003|                    if they differ, offers to download and replace itself.
 ::X|EN|file.self.update.004|                    The API call is unauthenticated, so it is rate limited
@@ -9848,7 +9848,7 @@ goto :eof
 ::X|EN|file.self.update.094|                    current_version=", CRLF-normalise via type / find /v
 ::X|EN|file.self.update.095|                    "", copy /y OPTY.bat OPTY_rollback.bat, move /y
 ::X|EN|file.self.update.096|                    new_OPTY.bat OPTY.bat, start "" OPTY.bat
-::X|FR|file.self.update.001|  Ce que c est    : OPTY compare son propre « set current_version=05.0 »
+::X|FR|file.self.update.001|  Ce que c est    : OPTY compare son propre « set current_version=05.1 »
 ::X|FR|file.self.update.002|                    au tag_name de la derniere release GitHub et, s ils
 ::X|FR|file.self.update.003|                    different, propose de se telecharger et de se
 ::X|FR|file.self.update.004|                    remplacer. L appel a l API se fait sans
