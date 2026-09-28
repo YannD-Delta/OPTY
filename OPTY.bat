@@ -1003,8 +1003,8 @@ call :isrunning "EADesktop.exe"
 if defined RUNNING set "RUNEA=1"
 call :isrunning "EpicGamesLauncher.exe"
 if defined RUNNING set "RUNEPIC=1"
-:: Discord too: :userclean empties every profile's Discord caches under the
-:: browser card, which runs BEFORE :dl_discord and its own running check.
+:: Discord too: its per-profile part (:uc_discord) reads this flag, and the
+:: current account's copy in :dl_discord_go has its own check.
 for %%P in (Discord.exe DiscordPTB.exe DiscordCanary.exe) do call :isrunning "%%P" & if defined RUNNING set "RUNDISC=1"
 if defined RUNUBI  call :L "%cWarn%" "  Ubisoft Connect is running - its caches will be skipped"
 if defined RUNEA   call :L "%cWarn%" "  EA App is running - its caches will be skipped"
@@ -1088,9 +1088,9 @@ if not defined STEPYES goto dl_dumps
 :: --- GPU / shader caches ---
 :: Kept on purpose. These rot: a corrupted shader cache is a classic cause of
 :: artifacts, stutter and launch failures, and clearing it is the standard fix.
-:: Rebuild cost is seconds to a couple of minutes of first-run compilation, so
-:: it is well worth doing periodically.
-call :L "%cInfo%" "Clearing GPU shader caches (rebuild in seconds, prevents corruption bugs)"
+:: Rebuild cost is every game recompiling its shaders - with stutter - so it is
+:: a repair, not maintenance: only Manual mode asks (see :dl_shader).
+call :L "%cInfo%" "Clearing GPU shader caches (games recompile them on the next launch)"
 :: Contents only - never rd these folders. If DxCache/OglCache/VkCache are
 :: absent, some AMD driver builds fail to recreate them and you get permanent
 :: stutter instead of a one-off recompile.
@@ -1140,7 +1140,7 @@ reg query "HKLM\SYSTEM\CurrentControlSet\Services\kbdhid\crashdump" /v Dump2Key 
 call :L "%cInfo%" "Deleting crash dumps"
 del /F /S /Q "%SystemRoot%\Minidump\*" >nul 2>&1
 echo %date% %time% : Deleting Memory Dump file                           >> %logs%
-del /F /S /Q "%SystemRoot%\MEMORY.DMP"
+del /F /S /Q "%SystemRoot%\MEMORY.DMP" >nul 2>&1
 goto dl_bin
 :dl_dumps_kept
 call :L "%cWarn%" "Crash dumps KEPT - freeze capture is on (Reports -> Crashes / freezes -> 2 turns it off)"
@@ -1244,7 +1244,7 @@ if not defined STEPYES goto dl_unpack
 echo %date% %time% : Deleting CBS and Panther logs                  >> %logs%
 del /F /Q "%WINDIR%\Logs\CBS\CbsPersist_*.log" >nul 2>&1
 del /F /Q "%WINDIR%\Logs\CBS\CbsPersist_*.cab" >nul 2>&1
-del /F /S /Q "%WINDIR%\Panther\*" 2>nul
+del /F /S /Q "%WINDIR%\Panther\*" >nul 2>&1
 
 :: --- Legacy IE/Edge system web cache (INetCache) ---
 :: INetCache left alone: shared WinINET cache used by Office, the Store and
@@ -2424,8 +2424,8 @@ if not "%ANSWER%"=="SKIP" (
 call :askreg "rad.gpu.preemption.killkey" 5 "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers\Scheduler" "EnablePreemption" REG_DWORD "GPU preemption override"
 
 :: --- ULPS. The one card in this section written from our own measurements
-:: rather than from documentation, and the only one that recommends against
-:: itself for four profiles out of five.
+:: rather than from documentation. Every profile writes the native 1, on the
+:: owner's instruction: 0 was measured not to fix the cursor lag it was for.
 :: Written with goto rather than a parenthesised block, and that is not style.
 :: Inside "if defined X ( ... )" the WHOLE block is parsed before any of it runs,
 :: so ANSWER would be expanded before :ask had a chance to set it - the test
@@ -5159,13 +5159,17 @@ goto :eof
 ::X|EN|gpu.ulps.023|  working.
 ::X|EN|gpu.ulps.024|
 ::X|EN|gpu.ulps.025|  BUT: setting EnableUlps to 0 on that machine changed nothing about the
-::X|EN|gpu.ulps.026|  problem, and produced a ghost cursor on the second monitor. That is exactly
-::X|EN|gpu.ulps.027|  why this card only suggests it for profile 1, and even then as a test you
-::X|EN|gpu.ulps.028|  should validate yourself.
-::X|EN|gpu.ulps.029|
-::X|EN|gpu.ulps.030|  Type trap: EnableUlps is a REG_DWORD, EnableUlps_NA is a REG_SZ. Writing the
-::X|EN|gpu.ulps.031|  wrong type is silently ignored by the driver, exactly like the NDIS keywords
-::X|EN|gpu.ulps.032|  on network adapters.
+::X|EN|gpu.ulps.026|  problem, and produced a ghost cursor on the second monitor. Why these
+::X|EN|gpu.ulps.027|  profiles: every profile now writes 1, the Windows / driver native value, on
+::X|EN|gpu.ulps.028|  the owner's instruction to leave Windows native with no forced change. With
+::X|EN|gpu.ulps.029|  0 measured as no fix and a new glitch, no profile has a reason to force it.
+::X|EN|gpu.ulps.030|  The question is not asked on a machine without an AMD GPU, and skipping it
+::X|EN|gpu.ulps.031|  leaves the current value; since no profile writes 0 any more, testing 0
+::X|EN|gpu.ulps.032|  means editing the registry yourself, and only as a test you can measure.
+::X|EN|gpu.ulps.033|
+::X|EN|gpu.ulps.034|  Type trap: EnableUlps is a REG_DWORD, EnableUlps_NA is a REG_SZ. Writing the
+::X|EN|gpu.ulps.035|  wrong type is silently ignored by the driver, exactly like the NDIS keywords
+::X|EN|gpu.ulps.036|  on network adapters.
 ::X|FR|gpu.ulps.001|  Ce que c est : EnableUlps laisse la carte AMD descendre dans un etat de tres
 ::X|FR|gpu.ulps.002|                 basse consommation quand le bureau est immobile.
 ::X|FR|gpu.ulps.003|                 PP_ULPSDelayIntervalInMilliSeconds fixe le delai, souvent
@@ -5192,13 +5196,18 @@ goto :eof
 ::X|FR|gpu.ulps.024|  attendait, il ne travaillait pas.
 ::X|FR|gpu.ulps.025|
 ::X|FR|gpu.ulps.026|  MAIS : mettre EnableUlps a 0 sur cette machine n a rien change au probleme,
-::X|FR|gpu.ulps.027|  et a fait apparaitre un curseur fantome sur le second ecran. C est
-::X|FR|gpu.ulps.028|  exactement pour ca que cette fiche ne le recommande qu au profil 1, et
-::X|FR|gpu.ulps.029|  encore, comme un test a valider soi-meme.
-::X|FR|gpu.ulps.030|
-::X|FR|gpu.ulps.031|  Piege de type : EnableUlps est un REG_DWORD, EnableUlps_NA est une REG_SZ.
-::X|FR|gpu.ulps.032|  Ecrire le mauvais type est ignore en silence par le pilote, exactement comme
-::X|FR|gpu.ulps.033|  les mots-cles NDIS des cartes reseau.
+::X|FR|gpu.ulps.027|  et a fait apparaitre un curseur fantome sur le second ecran. Pourquoi ces
+::X|FR|gpu.ulps.028|  profils : chaque profil ecrit desormais 1, la valeur native de Windows et du
+::X|FR|gpu.ulps.029|  pilote, sur instruction du proprietaire de laisser Windows natif sans
+::X|FR|gpu.ulps.030|  forcage. Le 0 ayant ete mesure sans effet sur le probleme et avec un nouveau
+::X|FR|gpu.ulps.031|  bug, aucun profil n a de raison de le forcer. La question n est pas posee
+::X|FR|gpu.ulps.032|  sur une machine sans GPU AMD, et la passer laisse la valeur actuelle ; comme
+::X|FR|gpu.ulps.033|  plus aucun profil n ecrit 0, tester 0 veut dire modifier le registre
+::X|FR|gpu.ulps.034|  vous-meme, et seulement comme un test que vous pouvez mesurer.
+::X|FR|gpu.ulps.035|
+::X|FR|gpu.ulps.036|  Piege de type : EnableUlps est un REG_DWORD, EnableUlps_NA est une REG_SZ.
+::X|FR|gpu.ulps.037|  Ecrire le mauvais type est ignore en silence par le pilote, exactement comme
+::X|FR|gpu.ulps.038|  les mots-cles NDIS des cartes reseau.
 :: ============================================================
 :: ==============  SETUP CARDS - DATA, NOT CODE  ==============
 :: ============================================================
@@ -18019,10 +18028,10 @@ goto :eof
 ::
 :: ---- rad.hvci.killkey (risky) ----------------------------------
 ::P|rad.hvci.killkey|0|DELETE|DELETE|DELETE|DELETE|
-::T|EN|rad.hvci.killkey.001|SET THE MEMORY INTEGRITY (CORE ISOLATION) OVERRIDE
-::T|EN|rad.hvci.killkey.002|Clears a leftover registry override for Memory Integrity (Core Isolation) - a hypervisor-based defense against a common kernel-malware trick, worth a real but modest FPS cost in some games and possible conflicts with older VM software.
-::T|FR|rad.hvci.killkey.001|DEFINIR LE FORCAGE DE L INTEGRITE DE LA MEMOIRE (ISOLATION DU NOYAU)
-::T|FR|rad.hvci.killkey.002|Supprime un forcage de registre residuel pour l integrite de la memoire (isolation du noyau) : une defense basee sur l hyperviseur contre une technique courante des malwares noyau, au prix d un cout de FPS reel mais modeste dans certains jeux et de conflits possibles avec d anciens logiciels de VM.
+::T|EN|rad.hvci.killkey.001|MEMORY INTEGRITY (CORE ISOLATION) OVERRIDE - REPORT ONLY
+::T|EN|rad.hvci.killkey.002|Display-only card: the restore paths no longer delete the Memory Integrity or VBS override, they only report whether Memory Integrity is explicitly off - turning it off is now the hvci.off question in SETUP -> System.
+::T|FR|rad.hvci.killkey.001|FORCAGE DE L INTEGRITE DE LA MEMOIRE (ISOLATION DU NOYAU) - CONSTAT SEUL
+::T|FR|rad.hvci.killkey.002|Fiche d affichage seulement : les chemins de restauration ne suppriment plus le forcage de l integrite de la memoire ni celui de VBS, ils indiquent seulement si l integrite de la memoire est explicitement coupee - la couper releve desormais de la question hvci.off dans SETUP -> Systeme.
 ::X|EN|rad.hvci.killkey.001|  What it is      : Two REG_DWORDs that pin the hypervisor security stack
 ::X|EN|rad.hvci.killkey.002|                    off: DeviceGuard\Scenarios\HypervisorEnforcedCodeInteg
 ::X|EN|rad.hvci.killkey.003|                    rity\Enabled, which is what Windows Security calls
@@ -18030,171 +18039,171 @@ goto :eof
 ::X|EN|rad.hvci.killkey.005|                    DeviceGuard\EnableVirtualizationBasedSecurity, which
 ::X|EN|rad.hvci.killkey.006|                    is the VBS layer Memory Integrity runs on top of.
 ::X|EN|rad.hvci.killkey.007|
-::X|EN|rad.hvci.killkey.008|  Actual effect   : Both values are deleted, so the machine goes back to
-::X|EN|rad.hvci.killkey.009|                    what its hardware, firmware and image actually decide
-::X|EN|rad.hvci.killkey.010|                    and the Core Isolation toggle governs again. No code
-::X|EN|rad.hvci.killkey.011|                    asks this card and nothing in OPTY writes 0 any more:
-::X|EN|rad.hvci.killkey.012|                    the only code is the deletion in the two restore paths,
-::X|EN|rad.hvci.killkey.013|                    which runs for every profile. Nothing changes until
-::X|EN|rad.hvci.killkey.014|                    you reboot.
-::X|EN|rad.hvci.killkey.015|
-::X|EN|rad.hvci.killkey.016|  Gain            : Deleting: Memory Integrity becomes switchable again,
-::X|EN|rad.hvci.killkey.017|                    and what it buys is specific - the hypervisor
-::X|EN|rad.hvci.killkey.018|                    validates kernel-mode code pages before they can
-::X|EN|rad.hvci.killkey.019|                    execute, so a signed but vulnerable driver cannot be
-::X|EN|rad.hvci.killkey.020|                    used as a doorway to load unsigned kernel code. That
-::X|EN|rad.hvci.killkey.021|                    is the bring-your-own-vulnerable-driver technique
-::X|EN|rad.hvci.killkey.022|                    behind most kernel-level malware and most kernel cheat
-::X|EN|rad.hvci.killkey.023|                    loaders. Forcing 0 (no OPTY code writes it today): a
-::X|EN|rad.hvci.killkey.024|                    frame rate gain that is real but smaller and narrower
-::X|EN|rad.hvci.killkey.025|                    than the forums claim. The mechanism is genuine (with
-::X|EN|rad.hvci.killkey.026|                    VBS active the OS runs under a hypervisor, so memory
-::X|EN|rad.hvci.killkey.027|                    access goes through second-level address translation,
-::X|EN|rad.hvci.killkey.028|                    and HVCI adds verification work on kernel code pages),
-::X|EN|rad.hvci.killkey.029|                    but published measurements range from nothing to about
-::X|EN|rad.hvci.killkey.030|                    ten percent, and it is close to nothing whenever you
-::X|EN|rad.hvci.killkey.031|                    are GPU-bound. Two examples: ComputerBase measured
-::X|EN|rad.hvci.killkey.032|                    about 8 percent in games on a Ryzen 7 5800X3D under
-::X|EN|rad.hvci.killkey.033|                    24H2 (Source: ComputerBase, as reported by Neowin);
-::X|EN|rad.hvci.killkey.034|                    XDA measured 1.6 to 2.5 percent on a Ryzen 5 7600X
-::X|EN|rad.hvci.killkey.035|                    (Source: XDA Developers). Measure your own game before you
-::X|EN|rad.hvci.killkey.036|                    assume. And if WSL2, Docker, Hyper-V or Windows
-::X|EN|rad.hvci.killkey.037|                    Sandbox is installed, the hypervisor runs anyway and
-::X|EN|rad.hvci.killkey.038|                    you recover very little.
-::X|EN|rad.hvci.killkey.039|
-::X|EN|rad.hvci.killkey.040|  Cost            : Letting VBS come back starts the hypervisor. Older
-::X|EN|rad.hvci.killkey.041|                    VMware Workstation and VirtualBox versions, some
-::X|EN|rad.hvci.killkey.042|                    Android emulators and other nested-virtualisation
-::X|EN|rad.hvci.killkey.043|                    setups run badly or refuse to start with it active -
-::X|EN|rad.hvci.killkey.044|                    which is very often exactly why someone disabled it in
-::X|EN|rad.hvci.killkey.045|                    the first place. And because the change only takes
-::X|EN|rad.hvci.killkey.046|                    effect at the next reboot, you discover the conflict
-::X|EN|rad.hvci.killkey.047|                    then, not now. Separately, an unsigned or old kernel
-::X|EN|rad.hvci.killkey.048|                    driver may fail to load once Memory Integrity is on;
-::X|EN|rad.hvci.killkey.049|                    Windows Security names the driver when it blocks the
-::X|EN|rad.hvci.killkey.050|                    toggle. If a VM tool stops working afterwards, update
-::X|EN|rad.hvci.killkey.051|                    it - current VMware Workstation and VirtualBox 7 use
-::X|EN|rad.hvci.killkey.052|                    the Windows Hypervisor Platform and coexist with VBS -
-::X|EN|rad.hvci.killkey.053|                    or turn Memory Integrity back off in Windows Security.
-::X|EN|rad.hvci.killkey.054|
-::X|EN|rad.hvci.killkey.055|  Windows default : Both values absent. What that produces is not fixed: a
-::X|EN|rad.hvci.killkey.056|                    clean install on qualifying hardware usually comes up
-::X|EN|rad.hvci.killkey.057|                    with VBS and Memory Integrity on, a machine upgraded
-::X|EN|rad.hvci.killkey.058|                    from Windows 10 usually comes up with them off. Absent
-::X|EN|rad.hvci.killkey.059|                    is still the default; the state that follows is a
-::X|EN|rad.hvci.killkey.060|                    hardware and image question, not a registry one.
-::X|EN|rad.hvci.killkey.061|
-::X|EN|rad.hvci.killkey.062|  Possible values:
-::X|EN|rad.hvci.killkey.063|    0                    : Written to both values, this is an explicit
-::X|EN|rad.hvci.killkey.064|                           "stay off".
-::X|EN|rad.hvci.killkey.065|                           HypervisorEnforcedCodeIntegrity\Enabled=0 stops
-::X|EN|rad.hvci.killkey.066|                           the hypervisor validating kernel-mode code
-::X|EN|rad.hvci.killkey.067|                           pages; EnableVirtualizationBasedSecurity=0
-::X|EN|rad.hvci.killkey.068|                           tears down the VBS layer itself, which also
-::X|EN|rad.hvci.killkey.069|                           takes Credential Guard and the rest of Core
-::X|EN|rad.hvci.killkey.070|                           Isolation with it. Takes effect at the next
-::X|EN|rad.hvci.killkey.071|                           boot. Important caveat: if Hyper-V, WSL2,
-::X|EN|rad.hvci.killkey.072|                           Docker Desktop, Windows Sandbox or Virtual
-::X|EN|rad.hvci.killkey.073|                           Machine Platform is installed, the hypervisor
-::X|EN|rad.hvci.killkey.074|                           still launches for those, and the CPU overhead
-::X|EN|rad.hvci.killkey.075|                           you were trying to remove largely stays.
-::X|EN|rad.hvci.killkey.076|    1                    : An explicit "force on", and the script
-::X|EN|rad.hvci.killkey.077|                           deliberately never writes it. The Windows
-::X|EN|rad.hvci.killkey.078|                           Security toggle checks driver compatibility
-::X|EN|rad.hvci.killkey.079|                           before enabling Memory Integrity; a registry
-::X|EN|rad.hvci.killkey.080|                           write does not. Forcing 1 on a machine with an
-::X|EN|rad.hvci.killkey.081|                           incompatible kernel driver means that driver
-::X|EN|rad.hvci.killkey.082|                           fails to load at boot - and if it is a storage
-::X|EN|rad.hvci.killkey.083|                           or network driver, you find out the hard way.
-::X|EN|rad.hvci.killkey.084|                           Use the Core Isolation page in Windows Security
-::X|EN|rad.hvci.killkey.085|                           to turn it on, not this key.
-::X|EN|rad.hvci.killkey.086|    DELETE               : Both values absent - the real Windows default.
-::X|EN|rad.hvci.killkey.087|                           The effective state then comes from the image,
-::X|EN|rad.hvci.killkey.088|                           the firmware (VT-x/AMD-V plus SLAT and, for the
-::X|EN|rad.hvci.killkey.089|                           full feature set, Secure Boot) and the driver
-::X|EN|rad.hvci.killkey.090|                           set, and the Core Isolation toggle in Windows
-::X|EN|rad.hvci.killkey.091|                           Security governs it again. Note that a sibling
-::X|EN|rad.hvci.killkey.092|                           value, Locked=1 under the same Scenarios key,
-::X|EN|rad.hvci.killkey.093|                           pins Memory Integrity so the UI cannot change
-::X|EN|rad.hvci.killkey.094|                           it; the script does not write or remove it, so
-::X|EN|rad.hvci.killkey.095|                           if the toggle is still greyed out after this,
-::X|EN|rad.hvci.killkey.096|                           that is what to look at.
-::X|EN|rad.hvci.killkey.097|
-::X|EN|rad.hvci.killkey.098|  Why these profiles : Only gaming differs, and it differs for something
-::X|EN|rad.hvci.killkey.099|                       measurable rather than asserted. 1 lists 0/0
-::X|EN|rad.hvci.killkey.100|                       because the VBS overhead is real in CPU-bound
-::X|EN|rad.hvci.killkey.101|                       titles and a gaming desktop is where you might
-::X|EN|rad.hvci.killkey.102|                       reasonably trade it - be clear that this is a
-::X|EN|rad.hvci.killkey.103|                       security downgrade you are choosing, not a free
-::X|EN|rad.hvci.killkey.104|                       win. 2, 3, 4 and 5 all delete. Server: the box
-::X|EN|rad.hvci.killkey.105|                       takes untrusted content in from the internet all
-::X|EN|rad.hvci.killkey.106|                       day and uptime is the point, so it keeps the
-::X|EN|rad.hvci.killkey.107|                       protection; if it hosts VMs under VMware or
-::X|EN|rad.hvci.killkey.108|                       VirtualBox, answer 1 instead - that conflict is the
-::X|EN|rad.hvci.killkey.109|                       one thing that actually justifies switching VBS off
-::X|EN|rad.hvci.killkey.110|                       on a server. Office: nothing to trade, the CPU cost
-::X|EN|rad.hvci.killkey.111|                       is invisible outside games. Laptop: I found no
-::X|EN|rad.hvci.killkey.112|                       measurable battery gain from switching VBS off, and
-::X|EN|rad.hvci.killkey.113|                       a laptop is the machine most likely to be stolen,
-::X|EN|rad.hvci.killkey.114|                       so it keeps it - claiming a battery win here would
-::X|EN|rad.hvci.killkey.115|                       be exactly the kind of unsupported line this
-::X|EN|rad.hvci.killkey.116|                       rewrite exists to remove. 5 deletes because absent
-::X|EN|rad.hvci.killkey.117|                       is the shipped state. Be aware that no code applies
-::X|EN|rad.hvci.killkey.118|                       this row today: the card is never asked, and the
-::X|EN|rad.hvci.killkey.119|                       only code deletes both values whatever the profile.
-::X|EN|rad.hvci.killkey.120|
-::X|EN|rad.hvci.killkey.121|  Known problems  : Concrete and both directions. Memory Integrity
-::X|EN|rad.hvci.killkey.122|                    refusing to switch on and naming an incompatible
-::X|EN|rad.hvci.killkey.123|                    driver is common with older motherboard-vendor
-::X|EN|rad.hvci.killkey.124|                    overclocking and monitoring drivers (ASUS, Gigabyte,
-::X|EN|rad.hvci.killkey.125|                    MSI utilities) and old RGB control drivers. In the
-::X|EN|rad.hvci.killkey.126|                    other direction, VirtualBox 6.0/6.1 and VMware
-::X|EN|rad.hvci.killkey.127|                    Workstation before 16.x drop to a very slow emulation
-::X|EN|rad.hvci.killkey.128|                    path or fail to start a VM once the hypervisor is up.
-::X|EN|rad.hvci.killkey.129|                    Automatic enablement: Microsoft announced that quality
-::X|EN|rad.hvci.killkey.130|                    updates will gradually turn Memory Integrity on for
-::X|EN|rad.hvci.killkey.131|                    eligible devices, and that devices where it was
-::X|EN|rad.hvci.killkey.132|                    explicitly disabled are not changed (Source: Windows
-::X|EN|rad.hvci.killkey.133|                    IT Pro Blog, 2026-09-01; message center MC1465669;
-::X|EN|rad.hvci.killkey.134|                    release start 2026-10-01). Deleting the Enabled value,
-::X|EN|rad.hvci.killkey.135|                    which both restore paths do, returns the machine to
-::X|EN|rad.hvci.killkey.136|                    the default, so it becomes eligible for that automatic
-::X|EN|rad.hvci.killkey.137|                    enablement. If you want Memory Integrity to stay off,
-::X|EN|rad.hvci.killkey.138|                    turn it off yourself in Windows Security after the
-::X|EN|rad.hvci.killkey.139|                    restore rather than relying on the old value.
-::X|EN|rad.hvci.killkey.140|
-::X|EN|rad.hvci.killkey.141|  Unverified      : Two things I cannot substantiate. First, whether these
-::X|EN|rad.hvci.killkey.142|                    values ship absent or present depends on the image: a
-::X|EN|rad.hvci.killkey.143|                    clean Windows 11 install on qualifying hardware
-::X|EN|rad.hvci.killkey.144|                    normally comes up with VBS and Memory Integrity on and
-::X|EN|rad.hvci.killkey.145|                    no override written, while a machine upgraded from
-::X|EN|rad.hvci.killkey.146|                    Windows 10 normally comes up with them off - so
-::X|EN|rad.hvci.killkey.147|                    deleting the overrides may well leave Memory Integrity
-::X|EN|rad.hvci.killkey.148|                    off, and the card should not promise it comes back.
-::X|EN|rad.hvci.killkey.149|                    Second, an older version of the script carried a
-::X|EN|rad.hvci.killkey.150|                    comment claiming some anti-cheats (Vanguard, FACEIT)
-::X|EN|rad.hvci.killkey.151|                    require Memory Integrity ON; that comment is gone and
-::X|EN|rad.hvci.killkey.152|                    I could not substantiate the claim. What those
-::X|EN|rad.hvci.killkey.153|                    anti-cheats actually require on Windows 11 is Secure
-::X|EN|rad.hvci.killkey.154|                    Boot and TPM 2.0, which are firmware settings and have
-::X|EN|rad.hvci.killkey.155|                    nothing to do with this key. Treat "anticheat needs
-::X|EN|rad.hvci.killkey.156|                    HVCI" as unverified folklore until someone tests it.
-::X|EN|rad.hvci.killkey.157|                    Third, Microsoft does not document how Windows decides
-::X|EN|rad.hvci.killkey.158|                    that Memory Integrity was "explicitly disabled" for the
-::X|EN|rad.hvci.killkey.159|                    automatic rollout, so whether switching it off in
-::X|EN|rad.hvci.killkey.160|                    Windows Security after the restore is enough to be
-::X|EN|rad.hvci.killkey.161|                    left alone is UNVERIFIED.
-::X|EN|rad.hvci.killkey.162|
-::X|EN|rad.hvci.killkey.163|  Target          : HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scen
-::X|EN|rad.hvci.killkey.164|                    arios\HypervisorEnforcedCodeIntegrity /v Enabled
-::X|EN|rad.hvci.killkey.165|                    (REG_DWORD) and
-::X|EN|rad.hvci.killkey.166|                    HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard /v
-::X|EN|rad.hvci.killkey.167|                    EnableVirtualizationBasedSecurity (REG_DWORD). Deleted
-::X|EN|rad.hvci.killkey.168|                    through :killkey, without a question, in
-::X|EN|rad.hvci.killkey.169|                    :reassert_defaults and in :gaming_restore. No code
-::X|EN|rad.hvci.killkey.170|                    asks this card and no code writes 0 to either value
-::X|EN|rad.hvci.killkey.171|                    any more. Sibling value Locked under the same
-::X|EN|rad.hvci.killkey.172|                    Scenarios key is NOT touched.
+::X|EN|rad.hvci.killkey.008|  Actual effect   : Nothing is deleted or written by this card any more. Both
+::X|EN|rad.hvci.killkey.009|                    restore paths (:reassert_defaults and :gaming_restore)
+::X|EN|rad.hvci.killkey.010|                    used to delete both values; on the owner's explicit
+::X|EN|rad.hvci.killkey.011|                    instruction they now call :hvcistate instead, which only
+::X|EN|rad.hvci.killkey.012|                    reads HypervisorEnforcedCodeIntegrity\Enabled and logs
+::X|EN|rad.hvci.killkey.013|                    "kept" when it is 0 (explicitly off) or "left" otherwise.
+::X|EN|rad.hvci.killkey.014|                    EnableVirtualizationBasedSecurity is not read or touched
+::X|EN|rad.hvci.killkey.015|                    anywhere. The reason: deleting Enabled=0 is exactly what
+::X|EN|rad.hvci.killkey.016|                    makes a PC eligible again for the automatic enablement
+::X|EN|rad.hvci.killkey.017|                    Microsoft rolls out from October 2026. Writing the
+::X|EN|rad.hvci.killkey.018|                    explicit 0 now belongs to the card hvci.off (SETUP ->
+::X|EN|rad.hvci.killkey.019|                    System), which writes Enabled only. No code asks this
+::X|EN|rad.hvci.killkey.020|                    card.
+::X|EN|rad.hvci.killkey.021|
+::X|EN|rad.hvci.killkey.022|  Gain            : Keeping the values: an explicit Enabled=0 survives every
+::X|EN|rad.hvci.killkey.023|                    restore, so the October 2026 rollout leaves the machine
+::X|EN|rad.hvci.killkey.024|                    alone, and a frame rate gain that is real but smaller and
+::X|EN|rad.hvci.killkey.025|                    narrower than the forums claim. The mechanism is genuine
+::X|EN|rad.hvci.killkey.026|                    (with VBS active the OS runs under a hypervisor, so memory
+::X|EN|rad.hvci.killkey.027|                    access goes through second-level address translation, and
+::X|EN|rad.hvci.killkey.028|                    HVCI adds verification work on kernel code pages), but
+::X|EN|rad.hvci.killkey.029|                    published measurements range from nothing to about ten
+::X|EN|rad.hvci.killkey.030|                    percent, and it is close to nothing whenever you are
+::X|EN|rad.hvci.killkey.031|                    GPU-bound. Two examples: ComputerBase measured about 8
+::X|EN|rad.hvci.killkey.032|                    percent in games on a Ryzen 7 5800X3D under 24H2 (Source:
+::X|EN|rad.hvci.killkey.033|                    ComputerBase, as reported by Neowin); XDA measured 1.6 to
+::X|EN|rad.hvci.killkey.034|                    2.5 percent on a Ryzen 5 7600X (Source: XDA Developers).
+::X|EN|rad.hvci.killkey.035|                    Measure your own game before you assume. And if WSL2,
+::X|EN|rad.hvci.killkey.036|                    Docker, Hyper-V or Windows Sandbox is installed, the
+::X|EN|rad.hvci.killkey.037|                    hypervisor runs anyway and you recover very little. What
+::X|EN|rad.hvci.killkey.038|                    Memory Integrity on buys instead is specific - the
+::X|EN|rad.hvci.killkey.039|                    hypervisor validates kernel-mode code pages before they
+::X|EN|rad.hvci.killkey.040|                    can execute, so a signed but vulnerable driver cannot be
+::X|EN|rad.hvci.killkey.041|                    used as a doorway to load unsigned kernel code, the
+::X|EN|rad.hvci.killkey.042|                    bring-your-own-vulnerable-driver technique behind most
+::X|EN|rad.hvci.killkey.043|                    kernel-level malware and most kernel cheat loaders.
+::X|EN|rad.hvci.killkey.044|
+::X|EN|rad.hvci.killkey.045|  Cost            : Keeping Memory Integrity off keeps that kernel protection
+::X|EN|rad.hvci.killkey.046|                    off. If you want it back, switch it on in Windows Security
+::X|EN|rad.hvci.killkey.047|                    > Device security > Core isolation, or answer SKIP to
+::X|EN|rad.hvci.killkey.048|                    hvci.off and let Windows decide; OPTY no longer does it
+::X|EN|rad.hvci.killkey.049|                    for you. Letting VBS come back starts the hypervisor.
+::X|EN|rad.hvci.killkey.050|                    Older VMware Workstation and VirtualBox versions, some
+::X|EN|rad.hvci.killkey.051|                    Android emulators and other nested-virtualisation setups
+::X|EN|rad.hvci.killkey.052|                    run badly or refuse to start with it active - which is
+::X|EN|rad.hvci.killkey.053|                    very often exactly why someone disabled it in the first
+::X|EN|rad.hvci.killkey.054|                    place. Because the change only takes effect at the next
+::X|EN|rad.hvci.killkey.055|                    reboot, you discover the conflict then, not now.
+::X|EN|rad.hvci.killkey.056|                    Separately, an unsigned or old kernel driver may fail to
+::X|EN|rad.hvci.killkey.057|                    load once Memory Integrity is on; Windows Security names
+::X|EN|rad.hvci.killkey.058|                    the driver when it blocks the toggle. If a VM tool stops
+::X|EN|rad.hvci.killkey.059|                    working afterwards, update it - current VMware Workstation
+::X|EN|rad.hvci.killkey.060|                    and VirtualBox 7 use the Windows Hypervisor Platform and
+::X|EN|rad.hvci.killkey.061|                    coexist with VBS - or turn Memory Integrity back off in
+::X|EN|rad.hvci.killkey.062|                    Windows Security.
+::X|EN|rad.hvci.killkey.063|
+::X|EN|rad.hvci.killkey.064|  Windows default : Both values absent. What that produces is not fixed: a
+::X|EN|rad.hvci.killkey.065|                    clean install on qualifying hardware usually comes up
+::X|EN|rad.hvci.killkey.066|                    with VBS and Memory Integrity on, a machine upgraded
+::X|EN|rad.hvci.killkey.067|                    from Windows 10 usually comes up with them off. Absent
+::X|EN|rad.hvci.killkey.068|                    is still the default; the state that follows is a
+::X|EN|rad.hvci.killkey.069|                    hardware and image question, not a registry one.
+::X|EN|rad.hvci.killkey.070|
+::X|EN|rad.hvci.killkey.071|  Possible values:
+::X|EN|rad.hvci.killkey.072|    0                    : Enabled=0 is the explicit "stay off" that hvci.off
+::X|EN|rad.hvci.killkey.073|                           writes and that the restore paths now keep.
+::X|EN|rad.hvci.killkey.074|                           HypervisorEnforcedCodeIntegrity\Enabled=0 stops the
+::X|EN|rad.hvci.killkey.075|                           hypervisor validating kernel-mode code pages;
+::X|EN|rad.hvci.killkey.076|                           EnableVirtualizationBasedSecurity=0 (not written by
+::X|EN|rad.hvci.killkey.077|                           OPTY) would tear down the VBS layer itself, which
+::X|EN|rad.hvci.killkey.078|                           also takes Credential Guard and the rest of Core
+::X|EN|rad.hvci.killkey.079|                           Isolation with it. Takes effect at the next boot.
+::X|EN|rad.hvci.killkey.080|                           Important caveat: if Hyper-V, WSL2, Docker Desktop,
+::X|EN|rad.hvci.killkey.081|                           Windows Sandbox or Virtual Machine Platform is
+::X|EN|rad.hvci.killkey.082|                           installed, the hypervisor still launches for those,
+::X|EN|rad.hvci.killkey.083|                           and the CPU overhead you were trying to remove
+::X|EN|rad.hvci.killkey.084|                           largely stays.
+::X|EN|rad.hvci.killkey.085|    1                    : An explicit "force on", and the script
+::X|EN|rad.hvci.killkey.086|                           deliberately never writes it. The Windows
+::X|EN|rad.hvci.killkey.087|                           Security toggle checks driver compatibility
+::X|EN|rad.hvci.killkey.088|                           before enabling Memory Integrity; a registry
+::X|EN|rad.hvci.killkey.089|                           write does not. Forcing 1 on a machine with an
+::X|EN|rad.hvci.killkey.090|                           incompatible kernel driver means that driver
+::X|EN|rad.hvci.killkey.091|                           fails to load at boot - and if it is a storage
+::X|EN|rad.hvci.killkey.092|                           or network driver, you find out the hard way.
+::X|EN|rad.hvci.killkey.093|                           Use the Core Isolation page in Windows Security
+::X|EN|rad.hvci.killkey.094|                           to turn it on, not this key.
+::X|EN|rad.hvci.killkey.095|    DELETE               : Both values absent - the real Windows default. OPTY
+::X|EN|rad.hvci.killkey.096|                           no longer produces this state: neither restore path
+::X|EN|rad.hvci.killkey.097|                           deletes the values now. The effective state then
+::X|EN|rad.hvci.killkey.098|                           comes from the image, the firmware (VT-x/AMD-V plus
+::X|EN|rad.hvci.killkey.099|                           SLAT and, for the full feature set, Secure Boot)
+::X|EN|rad.hvci.killkey.100|                           and the driver set, and the Core Isolation toggle
+::X|EN|rad.hvci.killkey.101|                           in Windows Security governs it - and from October
+::X|EN|rad.hvci.killkey.102|                           2026 an absent Enabled is what the automatic
+::X|EN|rad.hvci.killkey.103|                           rollout switches on. Note that a sibling value,
+::X|EN|rad.hvci.killkey.104|                           Locked=1 under the same Scenarios key, pins Memory
+::X|EN|rad.hvci.killkey.105|                           Integrity so the UI cannot change it; the script
+::X|EN|rad.hvci.killkey.106|                           does not write or remove it, so if the toggle is
+::X|EN|rad.hvci.killkey.107|                           greyed out, that is what to look at.
+::X|EN|rad.hvci.killkey.108|
+::X|EN|rad.hvci.killkey.109|  Why these profiles : The row is display-only now and was left as it is: no
+::X|EN|rad.hvci.killkey.110|                       code asks this card or applies it, and both restore
+::X|EN|rad.hvci.killkey.111|                       paths only report the state, whatever the profile. What
+::X|EN|rad.hvci.killkey.112|                       each profile actually gets comes from hvci.off. The
+::X|EN|rad.hvci.killkey.113|                       reasoning behind the old row: only gaming differed, for
+::X|EN|rad.hvci.killkey.114|                       something measurable rather than asserted - 1 lists 0
+::X|EN|rad.hvci.killkey.115|                       because the VBS overhead is real in CPU-bound titles
+::X|EN|rad.hvci.killkey.116|                       and a gaming desktop is where you might reasonably
+::X|EN|rad.hvci.killkey.117|                       trade it, a security downgrade you choose, not a free
+::X|EN|rad.hvci.killkey.118|                       win. Server: untrusted content all day and uptime is
+::X|EN|rad.hvci.killkey.119|                       the point, so it kept the protection, unless it hosts
+::X|EN|rad.hvci.killkey.120|                       VMs under VMware or VirtualBox. Office: nothing to
+::X|EN|rad.hvci.killkey.121|                       trade, the CPU cost is invisible outside games. Laptop:
+::X|EN|rad.hvci.killkey.122|                       I found no measurable battery gain from switching VBS
+::X|EN|rad.hvci.killkey.123|                       off, and a laptop is the machine most likely to be
+::X|EN|rad.hvci.killkey.124|                       stolen. 5 deletes because absent is the shipped state.
+::X|EN|rad.hvci.killkey.125|
+::X|EN|rad.hvci.killkey.126|  Known problems  : Concrete and both directions. Memory Integrity refusing to
+::X|EN|rad.hvci.killkey.127|                    switch on and naming an incompatible driver is common with
+::X|EN|rad.hvci.killkey.128|                    older motherboard-vendor overclocking and monitoring
+::X|EN|rad.hvci.killkey.129|                    drivers (ASUS, Gigabyte, MSI utilities) and old RGB
+::X|EN|rad.hvci.killkey.130|                    control drivers. In the other direction, VirtualBox
+::X|EN|rad.hvci.killkey.131|                    6.0/6.1 and VMware Workstation before 16.x drop to a very
+::X|EN|rad.hvci.killkey.132|                    slow emulation path or fail to start a VM once the
+::X|EN|rad.hvci.killkey.133|                    hypervisor is up. Automatic enablement: Microsoft
+::X|EN|rad.hvci.killkey.134|                    announced that quality updates will gradually turn Memory
+::X|EN|rad.hvci.killkey.135|                    Integrity on for eligible devices, and that devices where
+::X|EN|rad.hvci.killkey.136|                    it was explicitly disabled are not changed (Source:
+::X|EN|rad.hvci.killkey.137|                    Windows IT Pro Blog, 2026-09-01; message center MC1465669;
+::X|EN|rad.hvci.killkey.138|                    release start 2026-10-01). That is why the restore paths
+::X|EN|rad.hvci.killkey.139|                    stopped deleting the Enabled value: deleting it would
+::X|EN|rad.hvci.killkey.140|                    return the machine to the default and make it eligible for
+::X|EN|rad.hvci.killkey.141|                    that automatic enablement.
+::X|EN|rad.hvci.killkey.142|
+::X|EN|rad.hvci.killkey.143|  Unverified      : Three things I cannot substantiate. First, whether these
+::X|EN|rad.hvci.killkey.144|                    values ship absent or present depends on the image: a
+::X|EN|rad.hvci.killkey.145|                    clean Windows 11 install on qualifying hardware normally
+::X|EN|rad.hvci.killkey.146|                    comes up with VBS and Memory Integrity on and no override
+::X|EN|rad.hvci.killkey.147|                    written, while a machine upgraded from Windows 10 normally
+::X|EN|rad.hvci.killkey.148|                    comes up with them off. Second, an older version of the
+::X|EN|rad.hvci.killkey.149|                    script carried a comment claiming some anti-cheats
+::X|EN|rad.hvci.killkey.150|                    (Vanguard, FACEIT) require Memory Integrity ON; that
+::X|EN|rad.hvci.killkey.151|                    comment is gone and I could not substantiate the claim.
+::X|EN|rad.hvci.killkey.152|                    What those anti-cheats actually require on Windows 11 is
+::X|EN|rad.hvci.killkey.153|                    Secure Boot and TPM 2.0, which are firmware settings and
+::X|EN|rad.hvci.killkey.154|                    have nothing to do with this key. Treat "anticheat needs
+::X|EN|rad.hvci.killkey.155|                    HVCI" as unverified folklore until someone tests it.
+::X|EN|rad.hvci.killkey.156|                    Third, Microsoft does not document how Windows decides
+::X|EN|rad.hvci.killkey.157|                    that Memory Integrity was "explicitly disabled" for the
+::X|EN|rad.hvci.killkey.158|                    automatic rollout, so whether Enabled=0 alone is enough to
+::X|EN|rad.hvci.killkey.159|                    be left alone is UNVERIFIED.
+::X|EN|rad.hvci.killkey.160|
+::X|EN|rad.hvci.killkey.161|  Target          : HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenario
+::X|EN|rad.hvci.killkey.162|                    s\HypervisorEnforcedCodeIntegrity /v Enabled (REG_DWORD)
+::X|EN|rad.hvci.killkey.163|                    and HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard /v
+::X|EN|rad.hvci.killkey.164|                    EnableVirtualizationBasedSecurity (REG_DWORD). Neither is
+::X|EN|rad.hvci.killkey.165|                    deleted any more: :reassert_defaults and :gaming_restore
+::X|EN|rad.hvci.killkey.166|                    both call :hvcistate, which only queries Enabled and logs
+::X|EN|rad.hvci.killkey.167|                    its state. The explicit Enabled=0 is written by :askreg
+::X|EN|rad.hvci.killkey.168|                    "hvci.off" in SETUP -> System (:setup_system, in its
+::X|EN|rad.hvci.killkey.169|                    :ss_usb part). No code asks this card, and
+::X|EN|rad.hvci.killkey.170|                    EnableVirtualizationBasedSecurity is not touched anywhere.
+::X|EN|rad.hvci.killkey.171|                    Sibling value Locked under the same Scenarios key is NOT
+::X|EN|rad.hvci.killkey.172|                    touched.
 ::X|FR|rad.hvci.killkey.001|  Ce que c est    : Deux REG_DWORD qui epinglent la pile de securite par
 ::X|FR|rad.hvci.killkey.002|                    hyperviseur en position eteinte : DeviceGuard\Scenario
 ::X|FR|rad.hvci.killkey.003|                    s\HypervisorEnforcedCodeIntegrity\Enabled, ce que
@@ -18203,195 +18212,194 @@ goto :eof
 ::X|FR|rad.hvci.killkey.006|                    couche VBS sur laquelle l integrite de la memoire
 ::X|FR|rad.hvci.killkey.007|                    repose.
 ::X|FR|rad.hvci.killkey.008|
-::X|FR|rad.hvci.killkey.009|  Effet reel      : Les deux valeurs sont supprimees : la machine revient
-::X|FR|rad.hvci.killkey.010|                    a ce que son materiel, son firmware et son image
-::X|FR|rad.hvci.killkey.011|                    decident reellement, et le bouton Isolation du noyau
-::X|FR|rad.hvci.killkey.012|                    reprend la main. Aucun code ne pose cette fiche et
-::X|FR|rad.hvci.killkey.013|                    OPTY n ecrit plus jamais 0 : le seul code est la
-::X|FR|rad.hvci.killkey.014|                    suppression dans les deux chemins de restauration,
-::X|FR|rad.hvci.killkey.015|                    qui s applique a tous les profils. Rien ne bouge avant
-::X|FR|rad.hvci.killkey.016|                    le redemarrage.
-::X|FR|rad.hvci.killkey.017|
-::X|FR|rad.hvci.killkey.018|  Gain            : En supprimant : l integrite de la memoire redevient
-::X|FR|rad.hvci.killkey.019|                    activable, et ce qu elle apporte est precis -
-::X|FR|rad.hvci.killkey.020|                    l hyperviseur valide les pages de code noyau avant
-::X|FR|rad.hvci.killkey.021|                    qu elles puissent s executer, si bien qu un pilote
-::X|FR|rad.hvci.killkey.022|                    signe mais vulnerable ne peut plus servir de porte
-::X|FR|rad.hvci.killkey.023|                    d entree pour charger du code noyau non signe. C est
-::X|FR|rad.hvci.killkey.024|                    la technique BYOVD, celle qu utilisent la plupart des
-::X|FR|rad.hvci.killkey.025|                    malwares noyau et la plupart des chargeurs de triche.
-::X|FR|rad.hvci.killkey.026|                    En forcant 0 (aucun code d OPTY ne l ecrit
-::X|FR|rad.hvci.killkey.027|                    aujourd hui) : un gain d images reel, mais plus petit
-::X|FR|rad.hvci.killkey.028|                    et plus etroit que ce que racontent les forums. Le
-::X|FR|rad.hvci.killkey.029|                    mecanisme existe (avec VBS actif, le systeme tourne
-::X|FR|rad.hvci.killkey.030|                    sous un hyperviseur, les acces memoire passent par une
-::X|FR|rad.hvci.killkey.031|                    traduction d adresse a deux niveaux, et HVCI ajoute un
-::X|FR|rad.hvci.killkey.032|                    travail de verification sur les pages de code noyau),
-::X|FR|rad.hvci.killkey.033|                    mais les mesures publiees vont de rien du tout a une
-::X|FR|rad.hvci.killkey.034|                    dizaine de pour cent, et c est quasi nul des que vous
-::X|FR|rad.hvci.killkey.035|                    etes limite par le GPU. Deux exemples : ComputerBase a
-::X|FR|rad.hvci.killkey.036|                    mesure environ 8 pour cent en jeu sur un Ryzen 7
-::X|FR|rad.hvci.killkey.037|                    5800X3D sous 24H2 (Source : ComputerBase, repris par
-::X|FR|rad.hvci.killkey.038|                    Neowin) ; XDA a mesure 1,6 a 2,5 pour cent sur un Ryzen
-::X|FR|rad.hvci.killkey.039|                    5 7600X (Source : XDA Developers). Mesurez votre jeu
-::X|FR|rad.hvci.killkey.040|                    avant de supposer. Et si WSL2, Docker, Hyper-V ou le bac a
-::X|FR|rad.hvci.killkey.041|                    sable Windows sont installes, l hyperviseur tourne de
-::X|FR|rad.hvci.killkey.042|                    toute facon et vous ne recuperez presque rien.
-::X|FR|rad.hvci.killkey.043|
-::X|FR|rad.hvci.killkey.044|  Cout            : Laisser VBS revenir demarre l hyperviseur. Les
-::X|FR|rad.hvci.killkey.045|                    anciennes versions de VMware Workstation et
-::X|FR|rad.hvci.killkey.046|                    VirtualBox, certains emulateurs Android et d autres
-::X|FR|rad.hvci.killkey.047|                    montages de virtualisation imbriquee tournent tres mal
-::X|FR|rad.hvci.killkey.048|                    ou refusent de demarrer quand il est actif - et c est
-::X|FR|rad.hvci.killkey.049|                    tres souvent exactement la raison pour laquelle
-::X|FR|rad.hvci.killkey.050|                    quelqu un l avait desactive. Comme le changement ne
-::X|FR|rad.hvci.killkey.051|                    prend effet qu au prochain redemarrage, vous
-::X|FR|rad.hvci.killkey.052|                    decouvrirez le conflit a ce moment-la, pas maintenant.
-::X|FR|rad.hvci.killkey.053|                    Par ailleurs, un pilote noyau ancien ou non signe peut
-::X|FR|rad.hvci.killkey.054|                    refuser de se charger une fois l integrite de la
-::X|FR|rad.hvci.killkey.055|                    memoire active ; Securite Windows nomme le pilote
-::X|FR|rad.hvci.killkey.056|                    fautif quand il bloque l activation. Si un outil de VM
-::X|FR|rad.hvci.killkey.057|                    cesse de fonctionner apres coup : mettez-le a jour -
-::X|FR|rad.hvci.killkey.058|                    VMware Workstation actuel et VirtualBox 7 passent par
-::X|FR|rad.hvci.killkey.059|                    la plateforme d hyperviseur Windows et cohabitent avec
-::X|FR|rad.hvci.killkey.060|                    VBS - ou recoupez l integrite de la memoire dans
-::X|FR|rad.hvci.killkey.061|                    Securite Windows.
-::X|FR|rad.hvci.killkey.062|
-::X|FR|rad.hvci.killkey.063|  Defaut Windows  : Les deux valeurs absentes. Ce que cela produit n est
-::X|FR|rad.hvci.killkey.064|                    pas fixe : une installation propre sur du materiel
-::X|FR|rad.hvci.killkey.065|                    eligible demarre generalement avec VBS et l integrite
-::X|FR|rad.hvci.killkey.066|                    de la memoire actives, une machine mise a niveau
-::X|FR|rad.hvci.killkey.067|                    depuis Windows 10 demarre generalement avec les deux
-::X|FR|rad.hvci.killkey.068|                    eteints. L absence reste le defaut ; l etat qui en
-::X|FR|rad.hvci.killkey.069|                    decoule est une question de materiel et d image, pas
-::X|FR|rad.hvci.killkey.070|                    de registre.
+::X|FR|rad.hvci.killkey.009|  Effet reel      : Cette fiche ne supprime et n ecrit plus rien. Les deux
+::X|FR|rad.hvci.killkey.010|                    chemins de restauration (:reassert_defaults et
+::X|FR|rad.hvci.killkey.011|                    :gaming_restore) supprimaient les deux valeurs ; sur
+::X|FR|rad.hvci.killkey.012|                    instruction explicite du proprietaire, ils appellent
+::X|FR|rad.hvci.killkey.013|                    desormais :hvcistate, qui se contente de lire
+::X|FR|rad.hvci.killkey.014|                    HypervisorEnforcedCodeIntegrity\Enabled et journalise «
+::X|FR|rad.hvci.killkey.015|                    kept » quand elle vaut 0 (coupee explicitement) ou « left
+::X|FR|rad.hvci.killkey.016|                    » sinon. EnableVirtualizationBasedSecurity n est ni lue ni
+::X|FR|rad.hvci.killkey.017|                    touchee nulle part. La raison : supprimer Enabled=0 est
+::X|FR|rad.hvci.killkey.018|                    exactement ce qui rend un PC de nouveau eligible a l
+::X|FR|rad.hvci.killkey.019|                    activation automatique que Microsoft deploie a partir d
+::X|FR|rad.hvci.killkey.020|                    octobre 2026. Ecrire le 0 explicite revient maintenant a
+::X|FR|rad.hvci.killkey.021|                    la fiche hvci.off (SETUP -> Systeme), qui n ecrit que
+::X|FR|rad.hvci.killkey.022|                    Enabled. Aucun code ne pose cette fiche.
+::X|FR|rad.hvci.killkey.023|
+::X|FR|rad.hvci.killkey.024|  Gain            : En gardant les valeurs : un Enabled=0 explicite survit a
+::X|FR|rad.hvci.killkey.025|                    chaque restauration, donc le deploiement d octobre 2026
+::X|FR|rad.hvci.killkey.026|                    laisse la machine tranquille, et un gain d images reel,
+::X|FR|rad.hvci.killkey.027|                    mais plus petit et plus etroit que ce que racontent les
+::X|FR|rad.hvci.killkey.028|                    forums. Le mecanisme existe (avec VBS actif, le systeme
+::X|FR|rad.hvci.killkey.029|                    tourne sous un hyperviseur, les acces memoire passent par
+::X|FR|rad.hvci.killkey.030|                    une traduction d adresse a deux niveaux, et HVCI ajoute un
+::X|FR|rad.hvci.killkey.031|                    travail de verification sur les pages de code noyau), mais
+::X|FR|rad.hvci.killkey.032|                    les mesures publiees vont de rien du tout a une dizaine de
+::X|FR|rad.hvci.killkey.033|                    pour cent, et c est quasi nul des que vous etes limite par
+::X|FR|rad.hvci.killkey.034|                    le GPU. Deux exemples : ComputerBase a mesure environ 8
+::X|FR|rad.hvci.killkey.035|                    pour cent en jeu sur un Ryzen 7 5800X3D sous 24H2 (Source
+::X|FR|rad.hvci.killkey.036|                    : ComputerBase, repris par Neowin) ; XDA a mesure 1,6 a
+::X|FR|rad.hvci.killkey.037|                    2,5 pour cent sur un Ryzen 5 7600X (Source : XDA
+::X|FR|rad.hvci.killkey.038|                    Developers). Mesurez votre jeu avant de supposer. Et si
+::X|FR|rad.hvci.killkey.039|                    WSL2, Docker, Hyper-V ou le bac a sable Windows sont
+::X|FR|rad.hvci.killkey.040|                    installes, l hyperviseur tourne de toute facon et vous ne
+::X|FR|rad.hvci.killkey.041|                    recuperez presque rien. Ce que l integrite de la memoire
+::X|FR|rad.hvci.killkey.042|                    active apporte en echange est precis - l hyperviseur
+::X|FR|rad.hvci.killkey.043|                    valide les pages de code noyau avant qu elles puissent s
+::X|FR|rad.hvci.killkey.044|                    executer, si bien qu un pilote signe mais vulnerable ne
+::X|FR|rad.hvci.killkey.045|                    peut plus servir de porte d entree pour charger du code
+::X|FR|rad.hvci.killkey.046|                    noyau non signe, la technique BYOVD qu utilisent la
+::X|FR|rad.hvci.killkey.047|                    plupart des malwares noyau et la plupart des chargeurs de
+::X|FR|rad.hvci.killkey.048|                    triche.
+::X|FR|rad.hvci.killkey.049|
+::X|FR|rad.hvci.killkey.050|  Cout            : Garder l integrite de la memoire coupee garde cette
+::X|FR|rad.hvci.killkey.051|                    protection du noyau coupee. Pour la retrouver, activez-la
+::X|FR|rad.hvci.killkey.052|                    dans Securite Windows > Securite de l appareil > Isolation
+::X|FR|rad.hvci.killkey.053|                    du noyau, ou repondez SKIP a hvci.off et laissez Windows
+::X|FR|rad.hvci.killkey.054|                    decider ; OPTY ne le fait plus a votre place. Laisser VBS
+::X|FR|rad.hvci.killkey.055|                    revenir demarre l hyperviseur. Les anciennes versions de
+::X|FR|rad.hvci.killkey.056|                    VMware Workstation et VirtualBox, certains emulateurs
+::X|FR|rad.hvci.killkey.057|                    Android et d autres montages de virtualisation imbriquee
+::X|FR|rad.hvci.killkey.058|                    tournent tres mal ou refusent de demarrer quand il est
+::X|FR|rad.hvci.killkey.059|                    actif - et c est tres souvent exactement la raison pour
+::X|FR|rad.hvci.killkey.060|                    laquelle quelqu un l avait desactive. Comme le changement
+::X|FR|rad.hvci.killkey.061|                    ne prend effet qu au prochain redemarrage, vous
+::X|FR|rad.hvci.killkey.062|                    decouvrirez le conflit a ce moment-la, pas maintenant. Par
+::X|FR|rad.hvci.killkey.063|                    ailleurs, un pilote noyau ancien ou non signe peut refuser
+::X|FR|rad.hvci.killkey.064|                    de se charger une fois l integrite de la memoire active ;
+::X|FR|rad.hvci.killkey.065|                    Securite Windows nomme le pilote fautif quand il bloque l
+::X|FR|rad.hvci.killkey.066|                    activation. Si un outil de VM cesse de fonctionner apres
+::X|FR|rad.hvci.killkey.067|                    coup : mettez-le a jour - VMware Workstation actuel et
+::X|FR|rad.hvci.killkey.068|                    VirtualBox 7 passent par la plateforme d hyperviseur
+::X|FR|rad.hvci.killkey.069|                    Windows et cohabitent avec VBS - ou recoupez l integrite
+::X|FR|rad.hvci.killkey.070|                    de la memoire dans Securite Windows.
 ::X|FR|rad.hvci.killkey.071|
-::X|FR|rad.hvci.killkey.072|  Valeurs possibles :
-::X|FR|rad.hvci.killkey.073|    0                    : Ecrit sur les deux valeurs, c est un « reste
-::X|FR|rad.hvci.killkey.074|                           eteint » explicite.
-::X|FR|rad.hvci.killkey.075|                           HypervisorEnforcedCodeIntegrity\Enabled=0
-::X|FR|rad.hvci.killkey.076|                           empeche l hyperviseur de valider les pages de
-::X|FR|rad.hvci.killkey.077|                           code noyau ;
-::X|FR|rad.hvci.killkey.078|                           EnableVirtualizationBasedSecurity=0 demonte la
-::X|FR|rad.hvci.killkey.079|                           couche VBS elle-meme, et emporte au passage
-::X|FR|rad.hvci.killkey.080|                           Credential Guard et le reste de l isolation du
-::X|FR|rad.hvci.killkey.081|                           noyau. Effet au prochain demarrage. Reserve
-::X|FR|rad.hvci.killkey.082|                           importante : si Hyper-V, WSL2, Docker Desktop,
-::X|FR|rad.hvci.killkey.083|                           le bac a sable Windows ou la plateforme de
-::X|FR|rad.hvci.killkey.084|                           machine virtuelle sont installes, l hyperviseur
-::X|FR|rad.hvci.killkey.085|                           demarre quand meme pour eux et le surcout CPU
-::X|FR|rad.hvci.killkey.086|                           que vous vouliez supprimer reste en grande
-::X|FR|rad.hvci.killkey.087|                           partie la.
-::X|FR|rad.hvci.killkey.088|    1                    : Un « force a l allumage » explicite, et le
-::X|FR|rad.hvci.killkey.089|                           script ne l ecrit jamais volontairement. Le
-::X|FR|rad.hvci.killkey.090|                           bouton de Securite Windows verifie la
-::X|FR|rad.hvci.killkey.091|                           compatibilite des pilotes avant d activer
-::X|FR|rad.hvci.killkey.092|                           l integrite de la memoire ; une ecriture
-::X|FR|rad.hvci.killkey.093|                           registre, non. Forcer 1 sur une machine dont un
-::X|FR|rad.hvci.killkey.094|                           pilote noyau est incompatible signifie que ce
-::X|FR|rad.hvci.killkey.095|                           pilote ne se charge pas au demarrage - et si
-::X|FR|rad.hvci.killkey.096|                           c est un pilote de stockage ou de reseau, vous
-::X|FR|rad.hvci.killkey.097|                           l apprenez de la pire facon. Passez par la page
-::X|FR|rad.hvci.killkey.098|                           Isolation du noyau de Securite Windows, pas par
-::X|FR|rad.hvci.killkey.099|                           cette cle.
-::X|FR|rad.hvci.killkey.100|    DELETE               : Les deux valeurs absentes : le vrai defaut
-::X|FR|rad.hvci.killkey.101|                           Windows. L etat reel decoule alors de l image,
-::X|FR|rad.hvci.killkey.102|                           du firmware (VT-x/AMD-V avec SLAT, et le
-::X|FR|rad.hvci.killkey.103|                           demarrage securise pour l ensemble des
-::X|FR|rad.hvci.killkey.104|                           fonctions) et des pilotes presents, et le
-::X|FR|rad.hvci.killkey.105|                           bouton Isolation du noyau de Securite Windows
-::X|FR|rad.hvci.killkey.106|                           reprend la main. A savoir : une valeur voisine,
-::X|FR|rad.hvci.killkey.107|                           Locked=1 dans la meme cle Scenarios, epingle
-::X|FR|rad.hvci.killkey.108|                           l integrite de la memoire pour que l interface
-::X|FR|rad.hvci.killkey.109|                           ne puisse plus la changer ; le script ne
-::X|FR|rad.hvci.killkey.110|                           l ecrit ni ne la supprime, donc si le bouton
-::X|FR|rad.hvci.killkey.111|                           reste grise apres coup, c est la qu il faut
-::X|FR|rad.hvci.killkey.112|                           regarder.
-::X|FR|rad.hvci.killkey.113|
-::X|FR|rad.hvci.killkey.114|  Pourquoi ces profils : Seul le profil gaming differe, et il differe pour
-::X|FR|rad.hvci.killkey.115|                         quelque chose de mesurable, pas d affirme. 1
-::X|FR|rad.hvci.killkey.116|                         prevoit 0/0 parce que le surcout VBS est reel dans
-::X|FR|rad.hvci.killkey.117|                         les jeux limites par le CPU et qu un PC de jeu
-::X|FR|rad.hvci.killkey.118|                         est l endroit ou l echange se defend - en sachant
-::X|FR|rad.hvci.killkey.119|                         que c est une baisse de securite que vous
-::X|FR|rad.hvci.killkey.120|                         choisissez, pas un gain gratuit. 2, 3, 4 et 5
-::X|FR|rad.hvci.killkey.121|                         suppriment. Serveur : la machine ingere du
-::X|FR|rad.hvci.killkey.122|                         contenu non fiable venu d Internet toute la
-::X|FR|rad.hvci.killkey.123|                         journee et la disponibilite est le sujet, donc
-::X|FR|rad.hvci.killkey.124|                         elle garde la protection ; si elle heberge des VM
-::X|FR|rad.hvci.killkey.125|                         sous VMware ou VirtualBox, repondez 1 - ce
-::X|FR|rad.hvci.killkey.126|                         conflit est la seule chose qui justifie vraiment
-::X|FR|rad.hvci.killkey.127|                         de couper VBS sur un serveur. Bureautique : rien
-::X|FR|rad.hvci.killkey.128|                         a echanger, le cout CPU est invisible hors des
-::X|FR|rad.hvci.killkey.129|                         jeux. Portable : je n ai trouve aucun gain
-::X|FR|rad.hvci.killkey.130|                         d autonomie mesurable a couper VBS, et un
-::X|FR|rad.hvci.killkey.131|                         portable est la machine la plus susceptible
-::X|FR|rad.hvci.killkey.132|                         d etre volee, donc il garde - pretendre un gain
-::X|FR|rad.hvci.killkey.133|                         de batterie ici serait exactement le genre de
-::X|FR|rad.hvci.killkey.134|                         phrase invérifiable que cette reecriture cherche
-::X|FR|rad.hvci.killkey.135|                         a supprimer. 5 supprime parce que l absence est
-::X|FR|rad.hvci.killkey.136|                         l etat livre. Sachez qu aucun code n applique
-::X|FR|rad.hvci.killkey.137|                         cette ligne aujourd hui : la fiche n est jamais
-::X|FR|rad.hvci.killkey.138|                         posee, et le seul code supprime les deux valeurs
-::X|FR|rad.hvci.killkey.139|                         quel que soit le profil.
-::X|FR|rad.hvci.killkey.140|
-::X|FR|rad.hvci.killkey.141|  Problemes connus : Concret, et dans les deux sens. L integrite de la
-::X|FR|rad.hvci.killkey.142|                     memoire qui refuse de s activer en nommant un pilote
-::X|FR|rad.hvci.killkey.143|                     incompatible : classique avec les vieux pilotes
-::X|FR|rad.hvci.killkey.144|                     d overclocking et de monitoring des fabricants de
-::X|FR|rad.hvci.killkey.145|                     cartes meres (utilitaires ASUS, Gigabyte, MSI) et les
-::X|FR|rad.hvci.killkey.146|                     anciens pilotes de controle RGB. Dans l autre sens,
-::X|FR|rad.hvci.killkey.147|                     VirtualBox 6.0/6.1 et VMware Workstation anterieur a
-::X|FR|rad.hvci.killkey.148|                     16.x retombent sur un mode d emulation tres lent ou
-::X|FR|rad.hvci.killkey.149|                     n arrivent plus a demarrer une VM une fois
-::X|FR|rad.hvci.killkey.150|                     l hyperviseur en place. Activation automatique :
-::X|FR|rad.hvci.killkey.151|                     Microsoft a annonce que les mises a jour qualite
-::X|FR|rad.hvci.killkey.152|                     activeront progressivement l integrite de la memoire
-::X|FR|rad.hvci.killkey.153|                     sur les appareils eligibles, et que les appareils ou
-::X|FR|rad.hvci.killkey.154|                     elle a ete EXPLICITEMENT desactivee ne sont pas
-::X|FR|rad.hvci.killkey.155|                     modifies (Source : Windows IT Pro Blog, 2026-09-01 ;
-::X|FR|rad.hvci.killkey.156|                     centre de messages MC1465669 ; debut du deploiement
-::X|FR|rad.hvci.killkey.157|                     2026-10-01). Supprimer la valeur Enabled, ce que font
-::X|FR|rad.hvci.killkey.158|                     les deux chemins de restauration, ramene la machine
-::X|FR|rad.hvci.killkey.159|                     au defaut : elle devient donc eligible a cette
-::X|FR|rad.hvci.killkey.160|                     activation automatique. Si vous voulez que
-::X|FR|rad.hvci.killkey.161|                     l integrite de la memoire reste coupee, coupez-la
-::X|FR|rad.hvci.killkey.162|                     vous-meme dans Securite Windows apres la restauration
-::X|FR|rad.hvci.killkey.163|                     plutot que de compter sur l ancienne valeur.
-::X|FR|rad.hvci.killkey.164|
-::X|FR|rad.hvci.killkey.165|  Non verifie (en)  : Two things I cannot substantiate. First, whether
-::X|FR|rad.hvci.killkey.166|                      these values ship absent or present depends on the
-::X|FR|rad.hvci.killkey.167|                      image: a clean Windows 11 install on qualifying
-::X|FR|rad.hvci.killkey.168|                      hardware normally comes up with VBS and Memory
-::X|FR|rad.hvci.killkey.169|                      Integrity on and no override written, while a
-::X|FR|rad.hvci.killkey.170|                      machine upgraded from Windows 10 normally comes up
-::X|FR|rad.hvci.killkey.171|                      with them off - so deleting the overrides may well
-::X|FR|rad.hvci.killkey.172|                      leave Memory Integrity off, and the card should not
-::X|FR|rad.hvci.killkey.173|                      promise it comes back. Second, an older version of
-::X|FR|rad.hvci.killkey.174|                      the script carried a comment claiming some
-::X|FR|rad.hvci.killkey.175|                      anti-cheats (Vanguard, FACEIT) require Memory
-::X|FR|rad.hvci.killkey.176|                      Integrity ON; that comment is gone and I could not
-::X|FR|rad.hvci.killkey.177|                      substantiate the claim. What those anti-cheats
-::X|FR|rad.hvci.killkey.178|                      actually require on Windows 11 is Secure Boot and
-::X|FR|rad.hvci.killkey.179|                      TPM 2.0, which are firmware settings and have
-::X|FR|rad.hvci.killkey.180|                      nothing to do with this key. Treat "anticheat needs
-::X|FR|rad.hvci.killkey.181|                      HVCI" as unverified folklore until someone tests it.
-::X|FR|rad.hvci.killkey.182|                      Third, Microsoft does not document how Windows
-::X|FR|rad.hvci.killkey.183|                      decides that Memory Integrity was "explicitly
-::X|FR|rad.hvci.killkey.184|                      disabled" for the automatic rollout, so whether
-::X|FR|rad.hvci.killkey.185|                      switching it off in Windows Security after the
-::X|FR|rad.hvci.killkey.186|                      restore is enough to be left alone is UNVERIFIED.
-::X|FR|rad.hvci.killkey.187|
-::X|FR|rad.hvci.killkey.188|  Cible           : HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scen
-::X|FR|rad.hvci.killkey.189|                    arios\HypervisorEnforcedCodeIntegrity /v Enabled
-::X|FR|rad.hvci.killkey.190|                    (REG_DWORD) et
-::X|FR|rad.hvci.killkey.191|                    HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard /v
-::X|FR|rad.hvci.killkey.192|                    EnableVirtualizationBasedSecurity (REG_DWORD).
-::X|FR|rad.hvci.killkey.193|                    Supprimees via :killkey, sans question, dans
-::X|FR|rad.hvci.killkey.194|                    :reassert_defaults et dans :gaming_restore. Aucun code
-::X|FR|rad.hvci.killkey.195|                    ne pose cette fiche et plus aucun code n ecrit 0 sur
-::X|FR|rad.hvci.killkey.196|                    l une ou l autre valeur. La valeur voisine Locked sous
-::X|FR|rad.hvci.killkey.197|                    la meme cle Scenarios n est PAS touchee.
+::X|FR|rad.hvci.killkey.072|  Defaut Windows  : Les deux valeurs absentes. Ce que cela produit n est
+::X|FR|rad.hvci.killkey.073|                    pas fixe : une installation propre sur du materiel
+::X|FR|rad.hvci.killkey.074|                    eligible demarre generalement avec VBS et l integrite
+::X|FR|rad.hvci.killkey.075|                    de la memoire actives, une machine mise a niveau
+::X|FR|rad.hvci.killkey.076|                    depuis Windows 10 demarre generalement avec les deux
+::X|FR|rad.hvci.killkey.077|                    eteints. L absence reste le defaut ; l etat qui en
+::X|FR|rad.hvci.killkey.078|                    decoule est une question de materiel et d image, pas
+::X|FR|rad.hvci.killkey.079|                    de registre.
+::X|FR|rad.hvci.killkey.080|
+::X|FR|rad.hvci.killkey.081|  Valeurs possibles :
+::X|FR|rad.hvci.killkey.082|    0                    : Enabled=0 est le « reste eteint » explicite qu
+::X|FR|rad.hvci.killkey.083|                           ecrit hvci.off et que les chemins de restauration
+::X|FR|rad.hvci.killkey.084|                           conservent maintenant.
+::X|FR|rad.hvci.killkey.085|                           HypervisorEnforcedCodeIntegrity\Enabled=0 empeche l
+::X|FR|rad.hvci.killkey.086|                           hyperviseur de valider les pages de code noyau ;
+::X|FR|rad.hvci.killkey.087|                           EnableVirtualizationBasedSecurity=0 (qu OPTY n
+::X|FR|rad.hvci.killkey.088|                           ecrit pas) demonterait la couche VBS elle-meme, et
+::X|FR|rad.hvci.killkey.089|                           emporterait au passage Credential Guard et le reste
+::X|FR|rad.hvci.killkey.090|                           de l isolation du noyau. Effet au prochain
+::X|FR|rad.hvci.killkey.091|                           demarrage. Reserve importante : si Hyper-V, WSL2,
+::X|FR|rad.hvci.killkey.092|                           Docker Desktop, le bac a sable Windows ou la
+::X|FR|rad.hvci.killkey.093|                           plateforme de machine virtuelle sont installes, l
+::X|FR|rad.hvci.killkey.094|                           hyperviseur demarre quand meme pour eux et le
+::X|FR|rad.hvci.killkey.095|                           surcout CPU que vous vouliez supprimer reste en
+::X|FR|rad.hvci.killkey.096|                           grande partie la.
+::X|FR|rad.hvci.killkey.097|    1                    : Un « force a l allumage » explicite, et le
+::X|FR|rad.hvci.killkey.098|                           script ne l ecrit jamais volontairement. Le
+::X|FR|rad.hvci.killkey.099|                           bouton de Securite Windows verifie la
+::X|FR|rad.hvci.killkey.100|                           compatibilite des pilotes avant d activer
+::X|FR|rad.hvci.killkey.101|                           l integrite de la memoire ; une ecriture
+::X|FR|rad.hvci.killkey.102|                           registre, non. Forcer 1 sur une machine dont un
+::X|FR|rad.hvci.killkey.103|                           pilote noyau est incompatible signifie que ce
+::X|FR|rad.hvci.killkey.104|                           pilote ne se charge pas au demarrage - et si
+::X|FR|rad.hvci.killkey.105|                           c est un pilote de stockage ou de reseau, vous
+::X|FR|rad.hvci.killkey.106|                           l apprenez de la pire facon. Passez par la page
+::X|FR|rad.hvci.killkey.107|                           Isolation du noyau de Securite Windows, pas par
+::X|FR|rad.hvci.killkey.108|                           cette cle.
+::X|FR|rad.hvci.killkey.109|    DELETE               : Les deux valeurs absentes : le vrai defaut Windows.
+::X|FR|rad.hvci.killkey.110|                           OPTY ne produit plus cet etat : aucun des deux
+::X|FR|rad.hvci.killkey.111|                           chemins de restauration ne supprime plus les
+::X|FR|rad.hvci.killkey.112|                           valeurs. L etat reel decoule alors de l image, du
+::X|FR|rad.hvci.killkey.113|                           firmware (VT-x/AMD-V avec SLAT, et le demarrage
+::X|FR|rad.hvci.killkey.114|                           securise pour l ensemble des fonctions) et des
+::X|FR|rad.hvci.killkey.115|                           pilotes presents, et le bouton Isolation du noyau
+::X|FR|rad.hvci.killkey.116|                           de Securite Windows decide - et a partir d octobre
+::X|FR|rad.hvci.killkey.117|                           2026, un Enabled absent est ce que le deploiement
+::X|FR|rad.hvci.killkey.118|                           automatique active. A savoir : une valeur voisine,
+::X|FR|rad.hvci.killkey.119|                           Locked=1 dans la meme cle Scenarios, epingle l
+::X|FR|rad.hvci.killkey.120|                           integrite de la memoire pour que l interface ne
+::X|FR|rad.hvci.killkey.121|                           puisse plus la changer ; le script ne l ecrit ni ne
+::X|FR|rad.hvci.killkey.122|                           la supprime, donc si le bouton reste grise, c est
+::X|FR|rad.hvci.killkey.123|                           la qu il faut regarder.
+::X|FR|rad.hvci.killkey.124|
+::X|FR|rad.hvci.killkey.125|  Pourquoi ces profils : La ligne ne sert plus qu a l affichage et a ete
+::X|FR|rad.hvci.killkey.126|                         laissee telle quelle : aucun code ne pose cette fiche
+::X|FR|rad.hvci.killkey.127|                         ni ne l applique, et les deux chemins de restauration
+::X|FR|rad.hvci.killkey.128|                         ne font que constater l etat, quel que soit le
+::X|FR|rad.hvci.killkey.129|                         profil. Ce que chaque profil obtient vraiment vient
+::X|FR|rad.hvci.killkey.130|                         de hvci.off. Le raisonnement de l ancienne ligne :
+::X|FR|rad.hvci.killkey.131|                         seul le profil gaming differait, pour quelque chose
+::X|FR|rad.hvci.killkey.132|                         de mesurable et non d affirme - 1 prevoit 0 parce que
+::X|FR|rad.hvci.killkey.133|                         le surcout VBS est reel dans les jeux limites par le
+::X|FR|rad.hvci.killkey.134|                         CPU et qu un PC de jeu est l endroit ou l echange se
+::X|FR|rad.hvci.killkey.135|                         defend, une baisse de securite que vous choisissez,
+::X|FR|rad.hvci.killkey.136|                         pas un gain gratuit. Serveur : du contenu non fiable
+::X|FR|rad.hvci.killkey.137|                         toute la journee et la disponibilite est le sujet,
+::X|FR|rad.hvci.killkey.138|                         donc il gardait la protection, sauf s il heberge des
+::X|FR|rad.hvci.killkey.139|                         VM sous VMware ou VirtualBox. Bureautique : rien a
+::X|FR|rad.hvci.killkey.140|                         echanger, le cout CPU est invisible hors des jeux.
+::X|FR|rad.hvci.killkey.141|                         Portable : je n ai trouve aucun gain d autonomie
+::X|FR|rad.hvci.killkey.142|                         mesurable a couper VBS, et un portable est la machine
+::X|FR|rad.hvci.killkey.143|                         la plus susceptible d etre volee. 5 supprime parce
+::X|FR|rad.hvci.killkey.144|                         que l absence est l etat livre.
+::X|FR|rad.hvci.killkey.145|
+::X|FR|rad.hvci.killkey.146|  Problemes connus : Concret, et dans les deux sens. L integrite de la memoire
+::X|FR|rad.hvci.killkey.147|                     qui refuse de s activer en nommant un pilote incompatible
+::X|FR|rad.hvci.killkey.148|                     : classique avec les vieux pilotes d overclocking et de
+::X|FR|rad.hvci.killkey.149|                     monitoring des fabricants de cartes meres (utilitaires
+::X|FR|rad.hvci.killkey.150|                     ASUS, Gigabyte, MSI) et les anciens pilotes de controle
+::X|FR|rad.hvci.killkey.151|                     RGB. Dans l autre sens, VirtualBox 6.0/6.1 et VMware
+::X|FR|rad.hvci.killkey.152|                     Workstation anterieur a 16.x retombent sur un mode d
+::X|FR|rad.hvci.killkey.153|                     emulation tres lent ou n arrivent plus a demarrer une VM
+::X|FR|rad.hvci.killkey.154|                     une fois l hyperviseur en place. Activation automatique :
+::X|FR|rad.hvci.killkey.155|                     Microsoft a annonce que les mises a jour qualite
+::X|FR|rad.hvci.killkey.156|                     activeront progressivement l integrite de la memoire sur
+::X|FR|rad.hvci.killkey.157|                     les appareils eligibles, et que les appareils ou elle a
+::X|FR|rad.hvci.killkey.158|                     ete EXPLICITEMENT desactivee ne sont pas modifies (Source
+::X|FR|rad.hvci.killkey.159|                     : Windows IT Pro Blog, 2026-09-01 ; centre de messages
+::X|FR|rad.hvci.killkey.160|                     MC1465669 ; debut du deploiement 2026-10-01). C est pour
+::X|FR|rad.hvci.killkey.161|                     cela que les chemins de restauration ont cesse de
+::X|FR|rad.hvci.killkey.162|                     supprimer la valeur Enabled : la supprimer ramenerait la
+::X|FR|rad.hvci.killkey.163|                     machine au defaut et la rendrait eligible a cette
+::X|FR|rad.hvci.killkey.164|                     activation automatique.
+::X|FR|rad.hvci.killkey.165|
+::X|FR|rad.hvci.killkey.166|  Non verifie (en)  : Three things I cannot substantiate. First, whether these
+::X|FR|rad.hvci.killkey.167|                      values ship absent or present depends on the image: a
+::X|FR|rad.hvci.killkey.168|                      clean Windows 11 install on qualifying hardware normally
+::X|FR|rad.hvci.killkey.169|                      comes up with VBS and Memory Integrity on and no
+::X|FR|rad.hvci.killkey.170|                      override written, while a machine upgraded from Windows
+::X|FR|rad.hvci.killkey.171|                      10 normally comes up with them off. Second, an older
+::X|FR|rad.hvci.killkey.172|                      version of the script carried a comment claiming some
+::X|FR|rad.hvci.killkey.173|                      anti-cheats (Vanguard, FACEIT) require Memory Integrity
+::X|FR|rad.hvci.killkey.174|                      ON; that comment is gone and I could not substantiate
+::X|FR|rad.hvci.killkey.175|                      the claim. What those anti-cheats actually require on
+::X|FR|rad.hvci.killkey.176|                      Windows 11 is Secure Boot and TPM 2.0, which are
+::X|FR|rad.hvci.killkey.177|                      firmware settings and have nothing to do with this key.
+::X|FR|rad.hvci.killkey.178|                      Treat "anticheat needs HVCI" as unverified folklore
+::X|FR|rad.hvci.killkey.179|                      until someone tests it. Third, Microsoft does not
+::X|FR|rad.hvci.killkey.180|                      document how Windows decides that Memory Integrity was
+::X|FR|rad.hvci.killkey.181|                      "explicitly disabled" for the automatic rollout, so
+::X|FR|rad.hvci.killkey.182|                      whether Enabled=0 alone is enough to be left alone is
+::X|FR|rad.hvci.killkey.183|                      UNVERIFIED.
+::X|FR|rad.hvci.killkey.184|
+::X|FR|rad.hvci.killkey.185|  Cible           : HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenario
+::X|FR|rad.hvci.killkey.186|                    s\HypervisorEnforcedCodeIntegrity /v Enabled (REG_DWORD)
+::X|FR|rad.hvci.killkey.187|                    et HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard /v
+::X|FR|rad.hvci.killkey.188|                    EnableVirtualizationBasedSecurity (REG_DWORD). Aucune n
+::X|FR|rad.hvci.killkey.189|                    est plus supprimee : :reassert_defaults et :gaming_restore
+::X|FR|rad.hvci.killkey.190|                    appellent tous deux :hvcistate, qui interroge seulement
+::X|FR|rad.hvci.killkey.191|                    Enabled et journalise son etat. Le Enabled=0 explicite est
+::X|FR|rad.hvci.killkey.192|                    ecrit par :askreg "hvci.off" dans SETUP -> Systeme
+::X|FR|rad.hvci.killkey.193|                    (:setup_system, dans sa partie :ss_usb). Aucun code ne
+::X|FR|rad.hvci.killkey.194|                    pose cette fiche, et EnableVirtualizationBasedSecurity n
+::X|FR|rad.hvci.killkey.195|                    est touchee nulle part. La valeur voisine Locked sous la
+::X|FR|rad.hvci.killkey.196|                    meme cle Scenarios n est PAS touchee.
 ::
 :: ---- rad.bcd.residue (risky) -----------------------------------
 ::P|rad.bcd.residue|DELETE|DELETE|DELETE|DELETE|DELETE|
@@ -29855,156 +29863,202 @@ goto :eof
 ::
 :: ---- gr.hvci.vbs.killkey (risky) -------------------------------
 ::P|gr.hvci.vbs.killkey|DELETE|DELETE|DELETE|DELETE|DELETE|
-::T|EN|gr.hvci.vbs.killkey.001|Undo a gaming tweak: remove the Memory Integrity / VBS block
-::T|EN|gr.hvci.vbs.killkey.002|This removes the registry override that force-disables Memory Integrity and VBS, handing the decision back to Windows, which restores a real security layer at the cost of a small, variable chance of lower performance in some games.
-::T|FR|gr.hvci.vbs.killkey.001|Annuler un réglage jeu : retirer le blocage Intégrité mémoire / VBS
-::T|FR|gr.hvci.vbs.killkey.002|Cela supprime le forçage registre qui désactive de force l intégrité de la mémoire et la VBS, rendant la décision à Windows, ce qui rétablit une vraie protection au prix d une petite perte de performance possible, variable, dans certains jeux.
-::X|EN|gr.hvci.vbs.killkey.001|  What it is      : Two registry values that force HVCI and VBS off
-::X|EN|gr.hvci.vbs.killkey.002|                    regardless of what the hardware could do. Deleting
-::X|EN|gr.hvci.vbs.killkey.003|                    them hands the decision back to Windows.
-::X|EN|gr.hvci.vbs.killkey.004|
-::X|EN|gr.hvci.vbs.killkey.005|  Actual effect   : Deletes rather than writing 1, because the Windows
-::X|EN|gr.hvci.vbs.killkey.006|                    default is the value being absent and writing 1 would
-::X|EN|gr.hvci.vbs.killkey.007|                    be a third state. Needs a reboot to take effect.
-::X|EN|gr.hvci.vbs.killkey.008|
-::X|EN|gr.hvci.vbs.killkey.009|  Gain            : Restores a real kernel exploit mitigation on hardware
-::X|EN|gr.hvci.vbs.killkey.010|                    that supports it, and with it the VBS layer that
-::X|EN|gr.hvci.vbs.killkey.011|                    Credential Guard and hardware-backed LSA protection
-::X|EN|gr.hvci.vbs.killkey.012|                    sit on.
-::X|EN|gr.hvci.vbs.killkey.013|
-::X|EN|gr.hvci.vbs.killkey.014|  Cost            : An old unsigned driver may refuse to load once HVCI is
-::X|EN|gr.hvci.vbs.killkey.015|                    active again - Windows Security will name it. Some
-::X|EN|gr.hvci.vbs.killkey.016|                    CPU-bound games lose a small and variable amount of
-::X|EN|gr.hvci.vbs.killkey.017|                    performance: ComputerBase measured about 8 percent in
-::X|EN|gr.hvci.vbs.killkey.018|                    games on a Ryzen 7 5800X3D under 24H2 (Source:
-::X|EN|gr.hvci.vbs.killkey.019|                    ComputerBase, as reported by Neowin), XDA 1.6 to 2.5
-::X|EN|gr.hvci.vbs.killkey.020|                    percent on a Ryzen 5 7600X (Source: XDA Developers).
-::X|EN|gr.hvci.vbs.killkey.021|                    Automatic enablement: Microsoft announced that quality
-::X|EN|gr.hvci.vbs.killkey.022|                    updates will gradually turn Memory Integrity on for
-::X|EN|gr.hvci.vbs.killkey.023|                    eligible devices, leaving alone devices where it was
-::X|EN|gr.hvci.vbs.killkey.024|                    explicitly disabled (Source: Windows IT Pro Blog,
-::X|EN|gr.hvci.vbs.killkey.025|                    2026-09-01; message center MC1465669; release start
-::X|EN|gr.hvci.vbs.killkey.026|                    2026-10-01). Deleting the Enabled value returns the
-::X|EN|gr.hvci.vbs.killkey.027|                    machine to the default, so it becomes eligible for
-::X|EN|gr.hvci.vbs.killkey.028|                    that automatic enablement. To keep it off, switch it
-::X|EN|gr.hvci.vbs.killkey.029|                    off yourself in Windows Security after the restore.
-::X|EN|gr.hvci.vbs.killkey.030|
-::X|EN|gr.hvci.vbs.killkey.031|  Windows default : Depends on the image, but forcing 0 is never it, and
-::X|EN|gr.hvci.vbs.killkey.032|                    forcing 1 is never correct either.
-::X|EN|gr.hvci.vbs.killkey.033|
-::X|EN|gr.hvci.vbs.killkey.034|  Possible values:
-::X|EN|gr.hvci.vbs.killkey.035|    DELETE               : Both values are removed, so nothing in the
-::X|EN|gr.hvci.vbs.killkey.036|                           registry forces an answer. Windows decides from
-::X|EN|gr.hvci.vbs.killkey.037|                           firmware capability, driver compatibility and
-::X|EN|gr.hvci.vbs.killkey.038|                           policy - which on a compatible Windows 11
-::X|EN|gr.hvci.vbs.killkey.039|                           machine means Memory Integrity comes back on at
-::X|EN|gr.hvci.vbs.killkey.040|                           the next reboot.
-::X|EN|gr.hvci.vbs.killkey.041|    0                    : Keeps the override that forces HVCI and VBS
-::X|EN|gr.hvci.vbs.killkey.042|                           off. This is the state a tweak script or the
-::X|EN|gr.hvci.vbs.killkey.043|                           gaming profile left behind.
-::X|EN|gr.hvci.vbs.killkey.044|    1                    : Forces both on. This is NOT the default and is
-::X|EN|gr.hvci.vbs.killkey.045|                           a third state: on hardware or drivers that
-::X|EN|gr.hvci.vbs.killkey.046|                           cannot support HVCI it produces driver-load
-::X|EN|gr.hvci.vbs.killkey.047|                           failures, which is precisely why the repair
-::X|EN|gr.hvci.vbs.killkey.048|                           deletes instead of writing 1.
-::X|EN|gr.hvci.vbs.killkey.049|
-::X|EN|gr.hvci.vbs.killkey.050|  Why these profiles : Five identical DELETE columns because the correct
-::X|EN|gr.hvci.vbs.killkey.051|                       state is 'let Windows decide' on every machine,
-::X|EN|gr.hvci.vbs.killkey.052|                       including the WINDOWS profile where absence IS the
-::X|EN|gr.hvci.vbs.killkey.053|                       shipped state. If a driver you need genuinely
-::X|EN|gr.hvci.vbs.killkey.054|                       blocks HVCI, Windows will refuse to enable it by
-::X|EN|gr.hvci.vbs.killkey.055|                       itself and no override is required.
-::X|EN|gr.hvci.vbs.killkey.056|
-::X|EN|gr.hvci.vbs.killkey.057|  Unverified      : Whether these values ship absent or present as 1
-::X|EN|gr.hvci.vbs.killkey.058|                    depends on the image: machines that ship with Memory
-::X|EN|gr.hvci.vbs.killkey.059|                    Integrity enabled can carry Enabled=1 placed there by
-::X|EN|gr.hvci.vbs.killkey.060|                    the OEM or by policy. How Windows detects "explicitly
-::X|EN|gr.hvci.vbs.killkey.061|                    disabled" for the automatic rollout is not documented,
-::X|EN|gr.hvci.vbs.killkey.062|                    so whether the Windows Security toggle alone counts is
-::X|EN|gr.hvci.vbs.killkey.063|                    UNVERIFIED.
-::X|EN|gr.hvci.vbs.killkey.064|
-::X|EN|gr.hvci.vbs.killkey.065|  Target          : call :killkey "HKLM\SYSTEM\CurrentControlSet\Control\D
-::X|EN|gr.hvci.vbs.killkey.066|                    eviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity"
-::X|EN|gr.hvci.vbs.killkey.067|                    "Enabled" and call :killkey
-::X|EN|gr.hvci.vbs.killkey.068|                    "HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard"
-::X|EN|gr.hvci.vbs.killkey.069|                    "EnableVirtualizationBasedSecurity" (in :gaming_restore,
-::X|EN|gr.hvci.vbs.killkey.070|                    and the same pair again in :reassert_defaults)
-::X|FR|gr.hvci.vbs.killkey.001|  Ce que c est    : Deux valeurs de registre qui desactivent HVCI et la
-::X|FR|gr.hvci.vbs.killkey.002|                    VBS de force, quel que soit le materiel. Les supprimer
-::X|FR|gr.hvci.vbs.killkey.003|                    rend la decision a Windows.
-::X|FR|gr.hvci.vbs.killkey.004|
-::X|FR|gr.hvci.vbs.killkey.005|  Effet reel      : Supprime au lieu d ecrire 1, parce que le defaut
-::X|FR|gr.hvci.vbs.killkey.006|                    Windows est l absence de la valeur et qu ecrire 1
-::X|FR|gr.hvci.vbs.killkey.007|                    serait un troisieme etat. Redemarrage requis.
-::X|FR|gr.hvci.vbs.killkey.008|
-::X|FR|gr.hvci.vbs.killkey.009|  Gain            : Retablit une vraie attenuation d exploitation du noyau
-::X|FR|gr.hvci.vbs.killkey.010|                    sur le materiel qui la supporte, et avec elle la
-::X|FR|gr.hvci.vbs.killkey.011|                    couche VBS sur laquelle reposent Credential Guard et
-::X|FR|gr.hvci.vbs.killkey.012|                    la protection LSA materielle.
-::X|FR|gr.hvci.vbs.killkey.013|
-::X|FR|gr.hvci.vbs.killkey.014|  Cout            : Un vieux pilote non signe peut refuser de se charger
-::X|FR|gr.hvci.vbs.killkey.015|                    une fois HVCI actif - Securite Windows vous le
-::X|FR|gr.hvci.vbs.killkey.016|                    nommera. Quelques jeux limites par le CPU perdent un
-::X|FR|gr.hvci.vbs.killkey.017|                    peu de performance, de facon variable : ComputerBase a
-::X|FR|gr.hvci.vbs.killkey.018|                    mesure environ 8 pour cent en jeu sur un Ryzen 7
-::X|FR|gr.hvci.vbs.killkey.019|                    5800X3D sous 24H2 (Source : ComputerBase, repris par
-::X|FR|gr.hvci.vbs.killkey.020|                    Neowin), XDA 1,6 a 2,5 pour cent sur un Ryzen 5 7600X
-::X|FR|gr.hvci.vbs.killkey.021|                    (Source : XDA Developers). Activation automatique :
-::X|FR|gr.hvci.vbs.killkey.022|                    Microsoft a annonce que les mises a jour qualite
-::X|FR|gr.hvci.vbs.killkey.023|                    activeront progressivement l integrite de la memoire
-::X|FR|gr.hvci.vbs.killkey.024|                    sur les appareils eligibles, sans toucher ceux ou elle
-::X|FR|gr.hvci.vbs.killkey.025|                    a ete explicitement desactivee (Source : Windows IT Pro
-::X|FR|gr.hvci.vbs.killkey.026|                    Blog, 2026-09-01 ; centre de messages MC1465669 ;
-::X|FR|gr.hvci.vbs.killkey.027|                    debut du deploiement 2026-10-01). Supprimer la valeur
-::X|FR|gr.hvci.vbs.killkey.028|                    Enabled ramene la machine au defaut : elle devient
-::X|FR|gr.hvci.vbs.killkey.029|                    donc eligible a cette activation automatique. Pour la
-::X|FR|gr.hvci.vbs.killkey.030|                    garder coupee, coupez-la vous-meme dans Securite
-::X|FR|gr.hvci.vbs.killkey.031|                    Windows apres la restauration.
-::X|FR|gr.hvci.vbs.killkey.032|
-::X|FR|gr.hvci.vbs.killkey.033|  Defaut Windows  : Depend de l image, mais ce n est jamais un forcage a
-::X|FR|gr.hvci.vbs.killkey.034|                    0, et forcer 1 n est pas correct non plus.
-::X|FR|gr.hvci.vbs.killkey.035|
-::X|FR|gr.hvci.vbs.killkey.036|  Valeurs possibles :
-::X|FR|gr.hvci.vbs.killkey.037|    DELETE               : Les deux valeurs sont supprimees : plus rien
-::X|FR|gr.hvci.vbs.killkey.038|                           dans le registre n impose de reponse. Windows
-::X|FR|gr.hvci.vbs.killkey.039|                           decide selon les capacites du firmware, la
-::X|FR|gr.hvci.vbs.killkey.040|                           compatibilite des pilotes et les strategies -
-::X|FR|gr.hvci.vbs.killkey.041|                           donc, sur une machine Windows 11 compatible,
-::X|FR|gr.hvci.vbs.killkey.042|                           l integrite de la memoire revient au prochain
-::X|FR|gr.hvci.vbs.killkey.043|                           redemarrage.
-::X|FR|gr.hvci.vbs.killkey.044|    0                    : Conserve le forcage qui desactive HVCI et la
-::X|FR|gr.hvci.vbs.killkey.045|                           VBS. C est l etat laisse par un script de
-::X|FR|gr.hvci.vbs.killkey.046|                           bidouille ou par le profil jeu.
-::X|FR|gr.hvci.vbs.killkey.047|    1                    : Force les deux. Ce n est PAS le defaut mais un
-::X|FR|gr.hvci.vbs.killkey.048|                           troisieme etat : sur du materiel ou des pilotes
-::X|FR|gr.hvci.vbs.killkey.049|                           incapables de supporter HVCI, cela provoque des
-::X|FR|gr.hvci.vbs.killkey.050|                           echecs de chargement de pilotes, raison pour
-::X|FR|gr.hvci.vbs.killkey.051|                           laquelle la reparation supprime au lieu
-::X|FR|gr.hvci.vbs.killkey.052|                           d ecrire 1.
-::X|FR|gr.hvci.vbs.killkey.053|
-::X|FR|gr.hvci.vbs.killkey.054|  Pourquoi ces profils : Cinq colonnes identiques a DELETE parce que le
-::X|FR|gr.hvci.vbs.killkey.055|                         bon etat est « laisser Windows decider » sur
-::X|FR|gr.hvci.vbs.killkey.056|                         toutes les machines, profil WINDOWS compris, ou
-::X|FR|gr.hvci.vbs.killkey.057|                         l absence EST l etat d origine. Si un pilote dont
-::X|FR|gr.hvci.vbs.killkey.058|                         vous avez besoin bloque reellement HVCI, Windows
-::X|FR|gr.hvci.vbs.killkey.059|                         refusera de l activer tout seul et aucun forcage
-::X|FR|gr.hvci.vbs.killkey.060|                         n est necessaire.
-::X|FR|gr.hvci.vbs.killkey.061|
-::X|FR|gr.hvci.vbs.killkey.062|  Non verifie (en)  : Whether these values ship absent or present as 1
-::X|FR|gr.hvci.vbs.killkey.063|                      depends on the image: machines that ship with Memory
-::X|FR|gr.hvci.vbs.killkey.064|                      Integrity enabled can carry Enabled=1 placed there
-::X|FR|gr.hvci.vbs.killkey.065|                      by the OEM or by policy. How Windows detects
-::X|FR|gr.hvci.vbs.killkey.066|                      "explicitly disabled" for the automatic rollout is
-::X|FR|gr.hvci.vbs.killkey.067|                      not documented, so whether the Windows Security
-::X|FR|gr.hvci.vbs.killkey.068|                      toggle alone counts is UNVERIFIED.
-::X|FR|gr.hvci.vbs.killkey.069|
-::X|FR|gr.hvci.vbs.killkey.070|  Cible           : call :killkey "HKLM\SYSTEM\CurrentControlSet\Control\D
-::X|FR|gr.hvci.vbs.killkey.071|                    eviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity"
-::X|FR|gr.hvci.vbs.killkey.072|                    "Enabled" et call :killkey
-::X|FR|gr.hvci.vbs.killkey.073|                    "HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard"
-::X|FR|gr.hvci.vbs.killkey.074|                    "EnableVirtualizationBasedSecurity" (dans
-::X|FR|gr.hvci.vbs.killkey.075|                    :gaming_restore, et la meme paire dans
-::X|FR|gr.hvci.vbs.killkey.076|                    :reassert_defaults)
+::T|EN|gr.hvci.vbs.killkey.001|Undo a gaming tweak: Memory Integrity / VBS block (now kept, report only)
+::T|EN|gr.hvci.vbs.killkey.002|The gaming restore no longer removes the Memory Integrity / VBS override; it only reports whether Memory Integrity is explicitly off, so that explicit off survives Microsoft's October 2026 automatic enablement - SETUP -> System (hvci.off) owns the setting.
+::T|FR|gr.hvci.vbs.killkey.001|Annuler un réglage jeu : blocage Intégrité mémoire / VBS (conservé, constat seul)
+::T|FR|gr.hvci.vbs.killkey.002|La restauration jeu ne supprime plus le forçage de l intégrité de la mémoire et de la VBS ; elle indique seulement si l intégrité de la mémoire est explicitement coupée, pour que ce choix survive à l activation automatique de Microsoft d octobre 2026 - le réglage relève de SETUP -> Système (hvci.off).
+::X|EN|gr.hvci.vbs.killkey.001|  What it is      : Two registry values that force HVCI and VBS off regardless
+::X|EN|gr.hvci.vbs.killkey.002|                    of what the hardware could do. :gaming_restore used to
+::X|EN|gr.hvci.vbs.killkey.003|                    delete them to hand the decision back to Windows; it no
+::X|EN|gr.hvci.vbs.killkey.004|                    longer does.
+::X|EN|gr.hvci.vbs.killkey.005|
+::X|EN|gr.hvci.vbs.killkey.006|  Actual effect   : Nothing is deleted. On the owner's explicit instruction
+::X|EN|gr.hvci.vbs.killkey.007|                    :gaming_restore now calls :hvcistate, which only reads
+::X|EN|gr.hvci.vbs.killkey.008|                    HypervisorEnforcedCodeIntegrity\Enabled and logs "kept"
+::X|EN|gr.hvci.vbs.killkey.009|                    when it is 0 (explicitly off, SETUP -> System, card
+::X|EN|gr.hvci.vbs.killkey.010|                    hvci.off) or "left" otherwise.
+::X|EN|gr.hvci.vbs.killkey.011|                    EnableVirtualizationBasedSecurity is not read or changed.
+::X|EN|gr.hvci.vbs.killkey.012|                    Deleting Enabled=0 is exactly what makes a PC eligible
+::X|EN|gr.hvci.vbs.killkey.013|                    again for the automatic enablement Microsoft rolls out
+::X|EN|gr.hvci.vbs.killkey.014|                    from October 2026, so the restore keeps it. To get Memory
+::X|EN|gr.hvci.vbs.killkey.015|                    Integrity back, switch it on in Windows Security; a reboot
+::X|EN|gr.hvci.vbs.killkey.016|                    is needed.
+::X|EN|gr.hvci.vbs.killkey.017|
+::X|EN|gr.hvci.vbs.killkey.018|  Gain            : An explicit Memory Integrity off, if you chose one,
+::X|EN|gr.hvci.vbs.killkey.019|                    survives the gaming restore and keeps the machine out of
+::X|EN|gr.hvci.vbs.killkey.020|                    the automatic rollout. Turning Memory Integrity back on
+::X|EN|gr.hvci.vbs.killkey.021|                    yourself restores a real kernel exploit mitigation on
+::X|EN|gr.hvci.vbs.killkey.022|                    hardware that supports it, and with it the VBS layer that
+::X|EN|gr.hvci.vbs.killkey.023|                    Credential Guard and hardware-backed LSA protection sit
+::X|EN|gr.hvci.vbs.killkey.024|                    on.
+::X|EN|gr.hvci.vbs.killkey.025|
+::X|EN|gr.hvci.vbs.killkey.026|  Cost            : Kept off, that kernel protection stays off. Turned back
+::X|EN|gr.hvci.vbs.killkey.027|                    on, an old unsigned driver may refuse to load once HVCI is
+::X|EN|gr.hvci.vbs.killkey.028|                    active again - Windows Security will name it - and some
+::X|EN|gr.hvci.vbs.killkey.029|                    CPU-bound games lose a small and variable amount of
+::X|EN|gr.hvci.vbs.killkey.030|                    performance: ComputerBase measured about 8 percent in
+::X|EN|gr.hvci.vbs.killkey.031|                    games on a Ryzen 7 5800X3D under 24H2 (Source:
+::X|EN|gr.hvci.vbs.killkey.032|                    ComputerBase, as reported by Neowin), XDA 1.6 to 2.5
+::X|EN|gr.hvci.vbs.killkey.033|                    percent on a Ryzen 5 7600X (Source: XDA Developers).
+::X|EN|gr.hvci.vbs.killkey.034|                    Automatic enablement: Microsoft announced that quality
+::X|EN|gr.hvci.vbs.killkey.035|                    updates will gradually turn Memory Integrity on for
+::X|EN|gr.hvci.vbs.killkey.036|                    eligible devices, leaving alone devices where it was
+::X|EN|gr.hvci.vbs.killkey.037|                    explicitly disabled (Source: Windows IT Pro Blog,
+::X|EN|gr.hvci.vbs.killkey.038|                    2026-09-01; message center MC1465669; release start
+::X|EN|gr.hvci.vbs.killkey.039|                    2026-10-01). Deleting the Enabled value would return the
+::X|EN|gr.hvci.vbs.killkey.040|                    machine to the default and make it eligible for that
+::X|EN|gr.hvci.vbs.killkey.041|                    automatic enablement, which is why the restore no longer
+::X|EN|gr.hvci.vbs.killkey.042|                    does it.
+::X|EN|gr.hvci.vbs.killkey.043|
+::X|EN|gr.hvci.vbs.killkey.044|  Windows default : Depends on the image, but forcing 0 is never it, and
+::X|EN|gr.hvci.vbs.killkey.045|                    forcing 1 is never correct either.
+::X|EN|gr.hvci.vbs.killkey.046|
+::X|EN|gr.hvci.vbs.killkey.047|  Possible values:
+::X|EN|gr.hvci.vbs.killkey.048|    DELETE               : Both values removed, so nothing in the registry
+::X|EN|gr.hvci.vbs.killkey.049|                           forces an answer and Windows decides from firmware
+::X|EN|gr.hvci.vbs.killkey.050|                           capability, driver compatibility and policy - which
+::X|EN|gr.hvci.vbs.killkey.051|                           on a compatible Windows 11 machine means Memory
+::X|EN|gr.hvci.vbs.killkey.052|                           Integrity comes back on at the next reboot, and
+::X|EN|gr.hvci.vbs.killkey.053|                           from October 2026 makes the machine eligible for
+::X|EN|gr.hvci.vbs.killkey.054|                           the automatic rollout. :gaming_restore no longer
+::X|EN|gr.hvci.vbs.killkey.055|                           does this.
+::X|EN|gr.hvci.vbs.killkey.056|    0                    : Keeps the override that forces HVCI and VBS off.
+::X|EN|gr.hvci.vbs.killkey.057|                           This is the state a tweak script or the gaming
+::X|EN|gr.hvci.vbs.killkey.058|                           profile left behind, and for Enabled it is also
+::X|EN|gr.hvci.vbs.killkey.059|                           what hvci.off writes. The restore now keeps it and
+::X|EN|gr.hvci.vbs.killkey.060|                           logs "kept".
+::X|EN|gr.hvci.vbs.killkey.061|    1                    : Forces both on. This is NOT the default and is a
+::X|EN|gr.hvci.vbs.killkey.062|                           third state: on hardware or drivers that cannot
+::X|EN|gr.hvci.vbs.killkey.063|                           support HVCI it produces driver-load failures,
+::X|EN|gr.hvci.vbs.killkey.064|                           which is why OPTY never writes 1; use the Windows
+::X|EN|gr.hvci.vbs.killkey.065|                           Security toggle instead.
+::X|EN|gr.hvci.vbs.killkey.066|
+::X|EN|gr.hvci.vbs.killkey.067|  Why these profiles : The row is display-only now and was left as it is:
+::X|EN|gr.hvci.vbs.killkey.068|                       :gaming_restore does not apply it and deletes nothing,
+::X|EN|gr.hvci.vbs.killkey.069|                       whatever the profile. Five identical DELETE columns
+::X|EN|gr.hvci.vbs.killkey.070|                       because the old reasoning was "let Windows decide" on
+::X|EN|gr.hvci.vbs.killkey.071|                       every machine, including the WINDOWS profile where
+::X|EN|gr.hvci.vbs.killkey.072|                       absence IS the shipped state. What each profile
+::X|EN|gr.hvci.vbs.killkey.073|                       actually gets is decided by hvci.off. If a driver you
+::X|EN|gr.hvci.vbs.killkey.074|                       need genuinely blocks HVCI, Windows will refuse to
+::X|EN|gr.hvci.vbs.killkey.075|                       enable it by itself and no override is required.
+::X|EN|gr.hvci.vbs.killkey.076|
+::X|EN|gr.hvci.vbs.killkey.077|  Unverified      : Whether these values ship absent or present as 1
+::X|EN|gr.hvci.vbs.killkey.078|                    depends on the image: machines that ship with Memory
+::X|EN|gr.hvci.vbs.killkey.079|                    Integrity enabled can carry Enabled=1 placed there by
+::X|EN|gr.hvci.vbs.killkey.080|                    the OEM or by policy. How Windows detects "explicitly
+::X|EN|gr.hvci.vbs.killkey.081|                    disabled" for the automatic rollout is not documented,
+::X|EN|gr.hvci.vbs.killkey.082|                    so whether the Windows Security toggle alone counts is
+::X|EN|gr.hvci.vbs.killkey.083|                    UNVERIFIED.
+::X|EN|gr.hvci.vbs.killkey.084|
+::X|EN|gr.hvci.vbs.killkey.085|  Target          : :gaming_restore calls :hvcistate, which runs reg query on 
+::X|EN|gr.hvci.vbs.killkey.086|                    "HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenari
+::X|EN|gr.hvci.vbs.killkey.087|                    os\HypervisorEnforcedCodeIntegrity" /v Enabled and only
+::X|EN|gr.hvci.vbs.killkey.088|                    logs the result; no :killkey on Enabled or on
+::X|EN|gr.hvci.vbs.killkey.089|                    DeviceGuard\EnableVirtualizationBasedSecurity remains.
+::X|EN|gr.hvci.vbs.killkey.090|                    :reassert_defaults calls :hvcistate the same way. The
+::X|EN|gr.hvci.vbs.killkey.091|                    explicit 0 is written by :askreg "hvci.off" in SETUP ->
+::X|EN|gr.hvci.vbs.killkey.092|                    System.
+::X|FR|gr.hvci.vbs.killkey.001|  Ce que c est    : Deux valeurs de registre qui desactivent HVCI et la VBS de
+::X|FR|gr.hvci.vbs.killkey.002|                    force, quel que soit le materiel. :gaming_restore les
+::X|FR|gr.hvci.vbs.killkey.003|                    supprimait pour rendre la decision a Windows ; il ne le
+::X|FR|gr.hvci.vbs.killkey.004|                    fait plus.
+::X|FR|gr.hvci.vbs.killkey.005|
+::X|FR|gr.hvci.vbs.killkey.006|  Effet reel      : Rien n est supprime. Sur instruction explicite du
+::X|FR|gr.hvci.vbs.killkey.007|                    proprietaire, :gaming_restore appelle desormais
+::X|FR|gr.hvci.vbs.killkey.008|                    :hvcistate, qui se contente de lire
+::X|FR|gr.hvci.vbs.killkey.009|                    HypervisorEnforcedCodeIntegrity\Enabled et journalise «
+::X|FR|gr.hvci.vbs.killkey.010|                    kept » quand elle vaut 0 (coupee explicitement, SETUP ->
+::X|FR|gr.hvci.vbs.killkey.011|                    Systeme, fiche hvci.off) ou « left » sinon.
+::X|FR|gr.hvci.vbs.killkey.012|                    EnableVirtualizationBasedSecurity n est ni lue ni
+::X|FR|gr.hvci.vbs.killkey.013|                    modifiee. Supprimer Enabled=0 est exactement ce qui rend
+::X|FR|gr.hvci.vbs.killkey.014|                    un PC de nouveau eligible a l activation automatique que
+::X|FR|gr.hvci.vbs.killkey.015|                    Microsoft deploie a partir d octobre 2026, donc la
+::X|FR|gr.hvci.vbs.killkey.016|                    restauration la conserve. Pour retrouver l integrite de la
+::X|FR|gr.hvci.vbs.killkey.017|                    memoire, activez-la dans Securite Windows ; redemarrage
+::X|FR|gr.hvci.vbs.killkey.018|                    requis.
+::X|FR|gr.hvci.vbs.killkey.019|
+::X|FR|gr.hvci.vbs.killkey.020|  Gain            : Une coupure explicite de l integrite de la memoire, si
+::X|FR|gr.hvci.vbs.killkey.021|                    vous l avez choisie, survit a la restauration jeu et tient
+::X|FR|gr.hvci.vbs.killkey.022|                    la machine a l ecart du deploiement automatique. Reactiver
+::X|FR|gr.hvci.vbs.killkey.023|                    vous-meme l integrite de la memoire retablit une vraie
+::X|FR|gr.hvci.vbs.killkey.024|                    attenuation d exploitation du noyau sur le materiel qui la
+::X|FR|gr.hvci.vbs.killkey.025|                    supporte, et avec elle la couche VBS sur laquelle reposent
+::X|FR|gr.hvci.vbs.killkey.026|                    Credential Guard et la protection LSA materielle.
+::X|FR|gr.hvci.vbs.killkey.027|
+::X|FR|gr.hvci.vbs.killkey.028|  Cout            : Coupee, cette protection du noyau reste coupee. Reactivee,
+::X|FR|gr.hvci.vbs.killkey.029|                    un vieux pilote non signe peut refuser de se charger une
+::X|FR|gr.hvci.vbs.killkey.030|                    fois HVCI actif - Securite Windows vous le nommera - et
+::X|FR|gr.hvci.vbs.killkey.031|                    quelques jeux limites par le CPU perdent un peu de
+::X|FR|gr.hvci.vbs.killkey.032|                    performance, de facon variable : ComputerBase a mesure
+::X|FR|gr.hvci.vbs.killkey.033|                    environ 8 pour cent en jeu sur un Ryzen 7 5800X3D sous
+::X|FR|gr.hvci.vbs.killkey.034|                    24H2 (Source : ComputerBase, repris par Neowin), XDA 1,6 a
+::X|FR|gr.hvci.vbs.killkey.035|                    2,5 pour cent sur un Ryzen 5 7600X (Source : XDA
+::X|FR|gr.hvci.vbs.killkey.036|                    Developers). Activation automatique : Microsoft a annonce
+::X|FR|gr.hvci.vbs.killkey.037|                    que les mises a jour qualite activeront progressivement l
+::X|FR|gr.hvci.vbs.killkey.038|                    integrite de la memoire sur les appareils eligibles, sans
+::X|FR|gr.hvci.vbs.killkey.039|                    toucher ceux ou elle a ete explicitement desactivee
+::X|FR|gr.hvci.vbs.killkey.040|                    (Source : Windows IT Pro Blog, 2026-09-01 ; centre de
+::X|FR|gr.hvci.vbs.killkey.041|                    messages MC1465669 ; debut du deploiement 2026-10-01).
+::X|FR|gr.hvci.vbs.killkey.042|                    Supprimer la valeur Enabled ramenerait la machine au
+::X|FR|gr.hvci.vbs.killkey.043|                    defaut et la rendrait eligible a cette activation
+::X|FR|gr.hvci.vbs.killkey.044|                    automatique, c est pourquoi la restauration ne le fait
+::X|FR|gr.hvci.vbs.killkey.045|                    plus.
+::X|FR|gr.hvci.vbs.killkey.046|
+::X|FR|gr.hvci.vbs.killkey.047|  Defaut Windows  : Depend de l image, mais ce n est jamais un forcage a
+::X|FR|gr.hvci.vbs.killkey.048|                    0, et forcer 1 n est pas correct non plus.
+::X|FR|gr.hvci.vbs.killkey.049|
+::X|FR|gr.hvci.vbs.killkey.050|  Valeurs possibles :
+::X|FR|gr.hvci.vbs.killkey.051|    DELETE               : Les deux valeurs supprimees : plus rien dans le
+::X|FR|gr.hvci.vbs.killkey.052|                           registre n impose de reponse et Windows decide
+::X|FR|gr.hvci.vbs.killkey.053|                           selon les capacites du firmware, la compatibilite
+::X|FR|gr.hvci.vbs.killkey.054|                           des pilotes et les strategies - donc, sur une
+::X|FR|gr.hvci.vbs.killkey.055|                           machine Windows 11 compatible, l integrite de la
+::X|FR|gr.hvci.vbs.killkey.056|                           memoire revient au prochain redemarrage, et a
+::X|FR|gr.hvci.vbs.killkey.057|                           partir d octobre 2026 la machine devient eligible
+::X|FR|gr.hvci.vbs.killkey.058|                           au deploiement automatique. :gaming_restore ne fait
+::X|FR|gr.hvci.vbs.killkey.059|                           plus cela.
+::X|FR|gr.hvci.vbs.killkey.060|    0                    : Conserve le forcage qui desactive HVCI et la VBS. C
+::X|FR|gr.hvci.vbs.killkey.061|                           est l etat laisse par un script de bidouille ou par
+::X|FR|gr.hvci.vbs.killkey.062|                           le profil jeu, et pour Enabled c est aussi ce qu
+::X|FR|gr.hvci.vbs.killkey.063|                           ecrit hvci.off. La restauration le conserve
+::X|FR|gr.hvci.vbs.killkey.064|                           desormais et journalise « kept ».
+::X|FR|gr.hvci.vbs.killkey.065|    1                    : Force les deux. Ce n est PAS le defaut mais un
+::X|FR|gr.hvci.vbs.killkey.066|                           troisieme etat : sur du materiel ou des pilotes
+::X|FR|gr.hvci.vbs.killkey.067|                           incapables de supporter HVCI, cela provoque des
+::X|FR|gr.hvci.vbs.killkey.068|                           echecs de chargement de pilotes, raison pour
+::X|FR|gr.hvci.vbs.killkey.069|                           laquelle OPTY n ecrit jamais 1 ; passez plutot par
+::X|FR|gr.hvci.vbs.killkey.070|                           le bouton de Securite Windows.
+::X|FR|gr.hvci.vbs.killkey.071|
+::X|FR|gr.hvci.vbs.killkey.072|  Pourquoi ces profils : La ligne ne sert plus qu a l affichage et a ete
+::X|FR|gr.hvci.vbs.killkey.073|                         laissee telle quelle : :gaming_restore ne l applique
+::X|FR|gr.hvci.vbs.killkey.074|                         pas et ne supprime rien, quel que soit le profil.
+::X|FR|gr.hvci.vbs.killkey.075|                         Cinq colonnes identiques a DELETE parce que l ancien
+::X|FR|gr.hvci.vbs.killkey.076|                         raisonnement etait « laisser Windows decider » sur
+::X|FR|gr.hvci.vbs.killkey.077|                         toutes les machines, profil WINDOWS compris, ou l
+::X|FR|gr.hvci.vbs.killkey.078|                         absence EST l etat d origine. Ce que chaque profil
+::X|FR|gr.hvci.vbs.killkey.079|                         obtient vraiment est decide par hvci.off. Si un
+::X|FR|gr.hvci.vbs.killkey.080|                         pilote dont vous avez besoin bloque reellement HVCI,
+::X|FR|gr.hvci.vbs.killkey.081|                         Windows refusera de l activer tout seul et aucun
+::X|FR|gr.hvci.vbs.killkey.082|                         forcage n est necessaire.
+::X|FR|gr.hvci.vbs.killkey.083|
+::X|FR|gr.hvci.vbs.killkey.084|  Non verifie (en)  : Whether these values ship absent or present as 1
+::X|FR|gr.hvci.vbs.killkey.085|                      depends on the image: machines that ship with Memory
+::X|FR|gr.hvci.vbs.killkey.086|                      Integrity enabled can carry Enabled=1 placed there
+::X|FR|gr.hvci.vbs.killkey.087|                      by the OEM or by policy. How Windows detects
+::X|FR|gr.hvci.vbs.killkey.088|                      "explicitly disabled" for the automatic rollout is
+::X|FR|gr.hvci.vbs.killkey.089|                      not documented, so whether the Windows Security
+::X|FR|gr.hvci.vbs.killkey.090|                      toggle alone counts is UNVERIFIED.
+::X|FR|gr.hvci.vbs.killkey.091|
+::X|FR|gr.hvci.vbs.killkey.092|  Cible           : :gaming_restore appelle :hvcistate, qui fait un reg query
+::X|FR|gr.hvci.vbs.killkey.093|                    sur "HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard\Sce
+::X|FR|gr.hvci.vbs.killkey.094|                    narios\HypervisorEnforcedCodeIntegrity" /v Enabled et ne
+::X|FR|gr.hvci.vbs.killkey.095|                    fait que journaliser le resultat ; il ne reste aucun
+::X|FR|gr.hvci.vbs.killkey.096|                    :killkey sur Enabled ni sur
+::X|FR|gr.hvci.vbs.killkey.097|                    DeviceGuard\EnableVirtualizationBasedSecurity.
+::X|FR|gr.hvci.vbs.killkey.098|                    :reassert_defaults appelle :hvcistate de la meme facon. Le
+::X|FR|gr.hvci.vbs.killkey.099|                    0 explicite est ecrit par :askreg "hvci.off" dans SETUP ->
+::X|FR|gr.hvci.vbs.killkey.100|                    Systeme.
 ::
 :: ---- rad.mmcss.scheduler (repair) -------------------------------
 ::P|rad.mmcss.scheduler|20/10/2|20/10/2|20/10/2|20/10/2|20/10/2|
@@ -33788,9 +33842,9 @@ goto :eof
 :: ---- cl.gpu.shadercache (cleanup) --------------------------------
 ::P|cl.gpu.shadercache|DELETE|DELETE|DELETE|DELETE|KEEP|
 ::T|EN|cl.gpu.shadercache.001|GPU SHADER CACHES (AMD, NVIDIA, INTEL, DIRECTX)
-::T|EN|cl.gpu.shadercache.002|Clears the compiled-shader files your graphics driver saves so games do not have to recompile them, which frees some space and fixes stutter caused by a corrupted cache, but makes every game recompile its shaders (with visible stutter) the next time you launch it.
+::T|EN|cl.gpu.shadercache.002|Clears the compiled-shader files your graphics driver saves, only when you say yes in Manual mode (Auto lite and Auto full keep them) - fixes stutter caused by a corrupted cache, but makes every game recompile its shaders (with visible stutter) the next time you launch it.
 ::T|FR|cl.gpu.shadercache.001|CACHES DE SHADERS GPU (AMD, NVIDIA, INTEL, DIRECTX)
-::T|FR|cl.gpu.shadercache.002|Vide les fichiers de shaders compilés que le pilote graphique conserve pour éviter de les recompiler, ce qui libère de la place et corrige les saccades dues à un cache corrompu, mais oblige chaque jeu à recompiler ses shaders (avec des saccades visibles) au prochain lancement.
+::T|FR|cl.gpu.shadercache.002|Vide les fichiers de shaders compilés que le pilote graphique conserve, seulement si vous dites oui en mode Manuel (Auto léger et Auto complet les gardent) - corrige les saccades dues à un cache corrompu, mais oblige chaque jeu à recompiler ses shaders (avec des saccades visibles) au prochain lancement.
 ::X|EN|cl.gpu.shadercache.001|  What it is      : When a game or app compiles a shader, the driver
 ::X|EN|cl.gpu.shadercache.002|                    stores the compiled result so it does not have to do
 ::X|EN|cl.gpu.shadercache.003|                    the work again. Those results sit in the vendor
@@ -33802,89 +33856,102 @@ goto :eof
 ::X|EN|cl.gpu.shadercache.009|                    recreate a missing folder and you get permanent
 ::X|EN|cl.gpu.shadercache.010|                    stutter instead of a one-off recompile.
 ::X|EN|cl.gpu.shadercache.011|
-::X|EN|cl.gpu.shadercache.012|  Actual effect   : Deletes the files inside those folders, for the
-::X|EN|cl.gpu.shadercache.013|                    account running OPTY only - other Windows accounts
-::X|EN|cl.gpu.shadercache.014|                    keep their own caches. Empty subfolders are left
-::X|EN|cl.gpu.shadercache.015|                    behind, since del /S removes files and not
-::X|EN|cl.gpu.shadercache.016|                    directories. The deletes do succeed on an idle
-::X|EN|cl.gpu.shadercache.017|                    machine: nothing holds these files open once the 3D
-::X|EN|cl.gpu.shadercache.018|                    app has exited. If a game, the Radeon panel or a GPU-
-::X|EN|cl.gpu.shadercache.019|                    accelerated browser is running while OPTY passes, its
-::X|EN|cl.gpu.shadercache.020|                    cache files are open and those particular deletes fail
-::X|EN|cl.gpu.shadercache.021|                    silently - there is no guard and no message, so close
-::X|EN|cl.gpu.shadercache.022|                    your 3D apps first if you want the whole thing gone.
-::X|EN|cl.gpu.shadercache.023|
-::X|EN|cl.gpu.shadercache.024|  Gain            : Two things, and only one of them is space. Space:
-::X|EN|cl.gpu.shadercache.025|                    commonly 100 to 800 MB on a normal install, and
-::X|EN|cl.gpu.shadercache.026|                    several GB on a machine with a large game library,
-::X|EN|cl.gpu.shadercache.027|                    since NVIDIA DXCache alone is allowed to grow into the
-::X|EN|cl.gpu.shadercache.028|                    gigabytes. On an office PC that never renders
-::X|EN|cl.gpu.shadercache.029|                    anything, tens of MB at most. Fix: a corrupted shader
-::X|EN|cl.gpu.shadercache.030|                    cache is a classic cause of artifacts, stutter and
-::X|EN|cl.gpu.shadercache.031|                    games that refuse to start, and clearing it is the fix
-::X|EN|cl.gpu.shadercache.032|                    the vendors themselves publish. On a healthy machine
-::X|EN|cl.gpu.shadercache.033|                    there is no speed gain of any kind - a freshly emptied
-::X|EN|cl.gpu.shadercache.034|                    cache is strictly slower until it refills.
-::X|EN|cl.gpu.shadercache.035|
-::X|EN|cl.gpu.shadercache.036|  Cost            : The first launch of each game after this recompiles
-::X|EN|cl.gpu.shadercache.037|                    its shaders: seconds for a small title, up to a couple
-::X|EN|cl.gpu.shadercache.038|                    of minutes for a big one, with visible stutter while
-::X|EN|cl.gpu.shadercache.039|                    it happens. The Radeon panel rebuilds its own UI cache
-::X|EN|cl.gpu.shadercache.040|                    the first time you open it. Nothing you created is
-::X|EN|cl.gpu.shadercache.041|                    touched and nothing has to be downloaded, so this is
-::X|EN|cl.gpu.shadercache.042|                    well inside the thirty-minute regeneration rule. Not
-::X|EN|cl.gpu.shadercache.043|                    touched: game files, save games, settings and
-::X|EN|cl.gpu.shadercache.044|                    profiles.
-::X|EN|cl.gpu.shadercache.045|
-::X|EN|cl.gpu.shadercache.046|  Windows default : Half applies. D3DSCache and DirectX Shader Cache are
-::X|EN|cl.gpu.shadercache.047|                    Windows-managed and Disk Cleanup has a handler for
-::X|EN|cl.gpu.shadercache.048|                    them. The vendor folders are written by the driver,
-::X|EN|cl.gpu.shadercache.049|                    and nothing in Windows ever empties them.
-::X|EN|cl.gpu.shadercache.050|
-::X|EN|cl.gpu.shadercache.051|  Possible values:
-::X|EN|cl.gpu.shadercache.052|    DELETE               : Empty the shader cache folders now and let
-::X|EN|cl.gpu.shadercache.053|                           every game recompile its shaders on its next
-::X|EN|cl.gpu.shadercache.054|                           launch.
-::X|EN|cl.gpu.shadercache.055|    KEEP                 : Leave the compiled shaders in place. First
-::X|EN|cl.gpu.shadercache.056|                           launches stay fast, and a cache that has gone
-::X|EN|cl.gpu.shadercache.057|                           bad stays bad.
-::X|EN|cl.gpu.shadercache.058|    ASK                  : Stop and ask. Sensible only when you are about
-::X|EN|cl.gpu.shadercache.059|                           to play or benchmark and do not want to pay a
-::X|EN|cl.gpu.shadercache.060|                           recompile at that moment.
-::X|EN|cl.gpu.shadercache.061|
-::X|EN|cl.gpu.shadercache.062|  Why these profiles : Four identical columns, because the mechanism does
-::X|EN|cl.gpu.shadercache.063|                       not care what the machine is for. GAMING gains the
-::X|EN|cl.gpu.shadercache.064|                       corruption fix and pays the recompile, so run it
-::X|EN|cl.gpu.shadercache.065|                       after a driver update and not fifteen minutes
-::X|EN|cl.gpu.shadercache.066|                       before a session. SERVER and OFFICE rarely have
-::X|EN|cl.gpu.shadercache.067|                       anything in these folders, so the step is nearly a
-::X|EN|cl.gpu.shadercache.068|                       no-op there. LAPTOP pays one recompile of CPU and
-::X|EN|cl.gpu.shadercache.069|                       GPU time on battery, once. WINDOWS means leave it
-::X|EN|cl.gpu.shadercache.070|                       alone: Windows never empties these by itself, so
-::X|EN|cl.gpu.shadercache.071|                       doing nothing is a real, defensible position.
-::X|EN|cl.gpu.shadercache.072|
-::X|EN|cl.gpu.shadercache.073|  Unverified      : No byte count was measured on this machine for this
-::X|EN|cl.gpu.shadercache.074|                    step, so the sizes quoted are ranges from typical
-::X|EN|cl.gpu.shadercache.075|                    installs, not a measurement. How often a shader cache
-::X|EN|cl.gpu.shadercache.076|                    actually goes bad is anecdotal - it is a well-known
-::X|EN|cl.gpu.shadercache.077|                    failure mode and the vendors' own first fix, but most
-::X|EN|cl.gpu.shadercache.078|                    machines never need it. The AMD claim that a missing
-::X|EN|cl.gpu.shadercache.079|                    DxCache folder is not recreated by some driver builds
-::X|EN|cl.gpu.shadercache.080|                    is the reason for the contents-only design; it was
-::X|EN|cl.gpu.shadercache.081|                    reported, not re-tested here.
-::X|EN|cl.gpu.shadercache.082|
-::X|EN|cl.gpu.shadercache.083|  Target          : OPTY.bat :dl_shader_go. del /S /F /Q on the CONTENTS of
-::X|EN|cl.gpu.shadercache.084|                    %LOCALAPPDATA%\AMD\DxCache, DxcCache, DX9Cache,
-::X|EN|cl.gpu.shadercache.085|                    OglCache, VkCache, cl.cache, Radeonsoftware\cache,
-::X|EN|cl.gpu.shadercache.086|                    AMDRSSrcExt\cache;
-::X|EN|cl.gpu.shadercache.087|                    %USERPROFILE%\AppData\LocalLow\AMD\DxCache;
-::X|EN|cl.gpu.shadercache.088|                    %LOCALAPPDATA%\NVIDIA\GLCache, DXCache, ComputeCache,
-::X|EN|cl.gpu.shadercache.089|                    OptixCache; %ProgramData%\NVIDIA Corporation\NV_Cache;
-::X|EN|cl.gpu.shadercache.090|                    %LOCALAPPDATA%\Intel\ShaderCache;
-::X|EN|cl.gpu.shadercache.091|                    %LOCALAPPDATA%\D3DSCache;
-::X|EN|cl.gpu.shadercache.092|                    %LOCALAPPDATA%\Microsoft\DirectX Shader Cache. There
-::X|EN|cl.gpu.shadercache.093|                    is no rd anywhere in the block - the folders
-::X|EN|cl.gpu.shadercache.094|                    themselves always survive.
+::X|EN|cl.gpu.shadercache.012|  Actual effect   : Runs only in Manual mode, and only when you choose Run at
+::X|EN|cl.gpu.shadercache.013|                    its own step (clean.shader, a manual-only row of the ::S
+::X|EN|cl.gpu.shadercache.014|                    table). On the owner's instruction Auto lite and Auto full
+::X|EN|cl.gpu.shadercache.015|                    no longer clear these caches: they log "GPU shader caches
+::X|EN|cl.gpu.shadercache.016|                    kept" and move on. When it runs, it deletes the files
+::X|EN|cl.gpu.shadercache.017|                    inside those folders, for the account running OPTY only -
+::X|EN|cl.gpu.shadercache.018|                    other Windows accounts keep their own caches. Empty
+::X|EN|cl.gpu.shadercache.019|                    subfolders are left behind, since del /S removes files and
+::X|EN|cl.gpu.shadercache.020|                    not directories. The deletes do succeed on an idle
+::X|EN|cl.gpu.shadercache.021|                    machine: nothing holds these files open once the 3D app
+::X|EN|cl.gpu.shadercache.022|                    has exited. If a game, the Radeon panel or a
+::X|EN|cl.gpu.shadercache.023|                    GPU-accelerated browser is running while OPTY passes, its
+::X|EN|cl.gpu.shadercache.024|                    cache files are open and those particular deletes fail
+::X|EN|cl.gpu.shadercache.025|                    silently - there is no guard and no message, so close your
+::X|EN|cl.gpu.shadercache.026|                    3D apps first if you want the whole thing gone.
+::X|EN|cl.gpu.shadercache.027|
+::X|EN|cl.gpu.shadercache.028|  Gain            : Two things, and only one of them is space. Space:
+::X|EN|cl.gpu.shadercache.029|                    commonly 100 to 800 MB on a normal install, and
+::X|EN|cl.gpu.shadercache.030|                    several GB on a machine with a large game library,
+::X|EN|cl.gpu.shadercache.031|                    since NVIDIA DXCache alone is allowed to grow into the
+::X|EN|cl.gpu.shadercache.032|                    gigabytes. On an office PC that never renders
+::X|EN|cl.gpu.shadercache.033|                    anything, tens of MB at most. Fix: a corrupted shader
+::X|EN|cl.gpu.shadercache.034|                    cache is a classic cause of artifacts, stutter and
+::X|EN|cl.gpu.shadercache.035|                    games that refuse to start, and clearing it is the fix
+::X|EN|cl.gpu.shadercache.036|                    the vendors themselves publish. On a healthy machine
+::X|EN|cl.gpu.shadercache.037|                    there is no speed gain of any kind - a freshly emptied
+::X|EN|cl.gpu.shadercache.038|                    cache is strictly slower until it refills.
+::X|EN|cl.gpu.shadercache.039|
+::X|EN|cl.gpu.shadercache.040|  Cost            : The first launch of each game after this recompiles its
+::X|EN|cl.gpu.shadercache.041|                    shaders: seconds for a small title, up to a couple of
+::X|EN|cl.gpu.shadercache.042|                    minutes for a big one, with visible stutter while it
+::X|EN|cl.gpu.shadercache.043|                    happens. The Radeon panel rebuilds its own UI cache the
+::X|EN|cl.gpu.shadercache.044|                    first time you open it. Nothing you created is touched and
+::X|EN|cl.gpu.shadercache.045|                    nothing has to be downloaded. Not touched: game files,
+::X|EN|cl.gpu.shadercache.046|                    save games, settings and profiles. This recompile is why
+::X|EN|cl.gpu.shadercache.047|                    the clear is no longer routine: AMD describes the shader
+::X|EN|cl.gpu.shadercache.048|                    cache as what gives faster loading and lower CPU use, and
+::X|EN|cl.gpu.shadercache.049|                    treats Reset Shader Cache as a troubleshooting step (AMD
+::X|EN|cl.gpu.shadercache.050|                    FAQ DH3-012), so clearing it on every CLEAN made every
+::X|EN|cl.gpu.shadercache.051|                    game recompile, with stutter, for nothing.
+::X|EN|cl.gpu.shadercache.052|
+::X|EN|cl.gpu.shadercache.053|  Windows default : Half applies. D3DSCache and DirectX Shader Cache are
+::X|EN|cl.gpu.shadercache.054|                    Windows-managed and Disk Cleanup has a handler for
+::X|EN|cl.gpu.shadercache.055|                    them. The vendor folders are written by the driver,
+::X|EN|cl.gpu.shadercache.056|                    and nothing in Windows ever empties them.
+::X|EN|cl.gpu.shadercache.057|
+::X|EN|cl.gpu.shadercache.058|  Possible values:
+::X|EN|cl.gpu.shadercache.059|    DELETE               : Empty the shader cache folders now and let every
+::X|EN|cl.gpu.shadercache.060|                           game recompile its shaders on its next launch. Only
+::X|EN|cl.gpu.shadercache.061|                           happens when you choose Run at the Manual-mode
+::X|EN|cl.gpu.shadercache.062|                           step.
+::X|EN|cl.gpu.shadercache.063|    KEEP                 : Leave the compiled shaders in place. First
+::X|EN|cl.gpu.shadercache.064|                           launches stay fast, and a cache that has gone
+::X|EN|cl.gpu.shadercache.065|                           bad stays bad.
+::X|EN|cl.gpu.shadercache.066|    ASK                  : Stop and ask. Sensible only when you are about
+::X|EN|cl.gpu.shadercache.067|                           to play or benchmark and do not want to pay a
+::X|EN|cl.gpu.shadercache.068|                           recompile at that moment.
+::X|EN|cl.gpu.shadercache.069|
+::X|EN|cl.gpu.shadercache.070|  Why these profiles : The row was left as it is, but it drives nothing
+::X|EN|cl.gpu.shadercache.071|                       automatic: Auto lite and Auto full keep the caches
+::X|EN|cl.gpu.shadercache.072|                       whatever it says, and Manual mode asks. Four identical
+::X|EN|cl.gpu.shadercache.073|                       columns, because the mechanism does not care what the
+::X|EN|cl.gpu.shadercache.074|                       machine is for. GAMING gains the corruption fix and
+::X|EN|cl.gpu.shadercache.075|                       pays the recompile, so run it after a driver update or
+::X|EN|cl.gpu.shadercache.076|                       when a game shows corruption, not fifteen minutes
+::X|EN|cl.gpu.shadercache.077|                       before a session and not as maintenance. SERVER and
+::X|EN|cl.gpu.shadercache.078|                       OFFICE rarely have anything in these folders, so the
+::X|EN|cl.gpu.shadercache.079|                       step is nearly a no-op there. LAPTOP pays one recompile
+::X|EN|cl.gpu.shadercache.080|                       of CPU and GPU time on battery, once. WINDOWS means
+::X|EN|cl.gpu.shadercache.081|                       leave it alone: Windows never empties these by itself,
+::X|EN|cl.gpu.shadercache.082|                       so doing nothing is a real, defensible position.
+::X|EN|cl.gpu.shadercache.083|
+::X|EN|cl.gpu.shadercache.084|  Unverified      : No byte count was measured on this machine for this
+::X|EN|cl.gpu.shadercache.085|                    step, so the sizes quoted are ranges from typical
+::X|EN|cl.gpu.shadercache.086|                    installs, not a measurement. How often a shader cache
+::X|EN|cl.gpu.shadercache.087|                    actually goes bad is anecdotal - it is a well-known
+::X|EN|cl.gpu.shadercache.088|                    failure mode and the vendors' own first fix, but most
+::X|EN|cl.gpu.shadercache.089|                    machines never need it. The AMD claim that a missing
+::X|EN|cl.gpu.shadercache.090|                    DxCache folder is not recreated by some driver builds
+::X|EN|cl.gpu.shadercache.091|                    is the reason for the contents-only design; it was
+::X|EN|cl.gpu.shadercache.092|                    reported, not re-tested here.
+::X|EN|cl.gpu.shadercache.093|
+::X|EN|cl.gpu.shadercache.094|  Target          : OPTY.bat :dl_shader_go, reached only through
+::X|EN|cl.gpu.shadercache.095|                    :dl_shader_ask (the Manual-mode question, step
+::X|EN|cl.gpu.shadercache.096|                    clean.shader); in Auto mode :dl_shader logs the caches as
+::X|EN|cl.gpu.shadercache.097|                    kept and goes on to :dl_dumps. del /S /F /Q on the
+::X|EN|cl.gpu.shadercache.098|                    CONTENTS of %LOCALAPPDATA%\AMD\DxCache, DxcCache,
+::X|EN|cl.gpu.shadercache.099|                    DX9Cache, OglCache, VkCache, cl.cache,
+::X|EN|cl.gpu.shadercache.100|                    Radeonsoftware\cache, AMDRSSrcExt\cache;
+::X|EN|cl.gpu.shadercache.101|                    %USERPROFILE%\AppData\LocalLow\AMD\DxCache;
+::X|EN|cl.gpu.shadercache.102|                    %LOCALAPPDATA%\NVIDIA\GLCache, DXCache, ComputeCache,
+::X|EN|cl.gpu.shadercache.103|                    OptixCache; %ProgramData%\NVIDIA Corporation\NV_Cache;
+::X|EN|cl.gpu.shadercache.104|                    %LOCALAPPDATA%\Intel\ShaderCache;
+::X|EN|cl.gpu.shadercache.105|                    %LOCALAPPDATA%\D3DSCache; %LOCALAPPDATA%\Microsoft\DirectX
+::X|EN|cl.gpu.shadercache.106|                    Shader Cache. There is no rd anywhere in the block - the
+::X|EN|cl.gpu.shadercache.107|                    folders themselves always survive.
 ::X|FR|cl.gpu.shadercache.001|  Ce que c est    : Quand un jeu ou une application compile un shader, le
 ::X|FR|cl.gpu.shadercache.002|                    pilote garde le résultat compilé pour ne pas refaire
 ::X|FR|cl.gpu.shadercache.003|                    le travail. Ces résultats vivent dans les dossiers
@@ -33897,98 +33964,114 @@ goto :eof
 ::X|FR|cl.gpu.shadercache.010|                    récolte un stuttering permanent au lieu d une simple
 ::X|FR|cl.gpu.shadercache.011|                    recompilation.
 ::X|FR|cl.gpu.shadercache.012|
-::X|FR|cl.gpu.shadercache.013|  Effet reel      : Supprime les fichiers contenus dans ces dossiers,
-::X|FR|cl.gpu.shadercache.014|                    uniquement pour le compte qui exécute OPTY - les
-::X|FR|cl.gpu.shadercache.015|                    autres comptes Windows gardent les leurs. Les sous-
-::X|FR|cl.gpu.shadercache.016|                    dossiers vides restent en place, del /S ne supprimant
-::X|FR|cl.gpu.shadercache.017|                    que des fichiers. Sur une machine au repos, la
-::X|FR|cl.gpu.shadercache.018|                    suppression aboutit vraiment : plus rien ne tient ces
-::X|FR|cl.gpu.shadercache.019|                    fichiers ouverts une fois l application 3D fermée. Si
-::X|FR|cl.gpu.shadercache.020|                    un jeu, le panneau Radeon ou un navigateur en
-::X|FR|cl.gpu.shadercache.021|                    accélération GPU tourne pendant le passage d OPTY, ses
-::X|FR|cl.gpu.shadercache.022|                    fichiers de cache sont ouverts et ces suppressions-là
-::X|FR|cl.gpu.shadercache.023|                    échouent en silence - aucun garde-fou, aucun message.
-::X|FR|cl.gpu.shadercache.024|                    Fermez vos applications 3D si vous voulez que tout
-::X|FR|cl.gpu.shadercache.025|                    parte.
-::X|FR|cl.gpu.shadercache.026|
-::X|FR|cl.gpu.shadercache.027|  Gain            : Deux choses, et une seule est de la place. La place :
-::X|FR|cl.gpu.shadercache.028|                    couramment 100 à 800 Mo sur une installation normale,
-::X|FR|cl.gpu.shadercache.029|                    plusieurs Go sur une machine à grosse ludothèque, le
-::X|FR|cl.gpu.shadercache.030|                    DXCache de NVIDIA pouvant à lui seul atteindre
-::X|FR|cl.gpu.shadercache.031|                    plusieurs gigaoctets. Sur un PC bureautique qui ne
-::X|FR|cl.gpu.shadercache.032|                    rend rien, quelques dizaines de Mo tout au plus. Le
-::X|FR|cl.gpu.shadercache.033|                    remède : un cache de shaders corrompu est une cause
-::X|FR|cl.gpu.shadercache.034|                    classique d artefacts, de saccades et de jeux qui
-::X|FR|cl.gpu.shadercache.035|                    refusent de démarrer, et le vider est le correctif
-::X|FR|cl.gpu.shadercache.036|                    publié par les fabricants eux-mêmes. Sur une machine
-::X|FR|cl.gpu.shadercache.037|                    saine, il n y a aucun gain de vitesse : un cache
-::X|FR|cl.gpu.shadercache.038|                    fraîchement vidé est strictement plus lent tant qu il
-::X|FR|cl.gpu.shadercache.039|                    ne s est pas rempli.
-::X|FR|cl.gpu.shadercache.040|
-::X|FR|cl.gpu.shadercache.041|  Cout            : Le premier lancement de chaque jeu recompile ses
-::X|FR|cl.gpu.shadercache.042|                    shaders : quelques secondes pour un petit titre,
-::X|FR|cl.gpu.shadercache.043|                    jusqu à deux minutes pour un gros, avec des saccades
-::X|FR|cl.gpu.shadercache.044|                    visibles pendant ce temps. Le panneau Radeon
-::X|FR|cl.gpu.shadercache.045|                    reconstruit son cache d interface à la première
-::X|FR|cl.gpu.shadercache.046|                    ouverture. Rien de ce que vous avez créé n est touché
-::X|FR|cl.gpu.shadercache.047|                    et rien n a besoin d être téléchargé : on reste
-::X|FR|cl.gpu.shadercache.048|                    largement sous la règle des trente minutes de
-::X|FR|cl.gpu.shadercache.049|                    régénération. Non touchés : fichiers de jeu,
-::X|FR|cl.gpu.shadercache.050|                    sauvegardes, réglages et profils.
-::X|FR|cl.gpu.shadercache.051|
-::X|FR|cl.gpu.shadercache.052|  Defaut Windows  : À moitié applicable. D3DSCache et DirectX Shader Cache
-::X|FR|cl.gpu.shadercache.053|                    sont gérés par Windows et le Nettoyage de disque
-::X|FR|cl.gpu.shadercache.054|                    possède un gestionnaire pour eux. Les dossiers
-::X|FR|cl.gpu.shadercache.055|                    constructeurs sont écrits par le pilote, et rien dans
-::X|FR|cl.gpu.shadercache.056|                    Windows ne les vide jamais.
-::X|FR|cl.gpu.shadercache.057|
-::X|FR|cl.gpu.shadercache.058|  Valeurs possibles :
-::X|FR|cl.gpu.shadercache.059|    DELETE               : Vider maintenant les dossiers de cache de
-::X|FR|cl.gpu.shadercache.060|                           shaders et laisser chaque jeu recompiler ses
-::X|FR|cl.gpu.shadercache.061|                           shaders au prochain lancement.
-::X|FR|cl.gpu.shadercache.062|    KEEP                 : Laisser les shaders compilés en place. Les
-::X|FR|cl.gpu.shadercache.063|                           premiers lancements restent rapides, et un
-::X|FR|cl.gpu.shadercache.064|                           cache devenu corrompu le reste.
-::X|FR|cl.gpu.shadercache.065|    ASK                  : S arrêter et demander. N a de sens que si vous
-::X|FR|cl.gpu.shadercache.066|                           êtes sur le point de jouer ou de faire un
-::X|FR|cl.gpu.shadercache.067|                           benchmark et ne voulez pas payer la
-::X|FR|cl.gpu.shadercache.068|                           recompilation à cet instant.
-::X|FR|cl.gpu.shadercache.069|
-::X|FR|cl.gpu.shadercache.070|  Pourquoi ces profils : Quatre colonnes identiques, parce que le
-::X|FR|cl.gpu.shadercache.071|                         mécanisme se moque de l usage de la machine.
-::X|FR|cl.gpu.shadercache.072|                         GAMING gagne le correctif anti-corruption et paie
-::X|FR|cl.gpu.shadercache.073|                         la recompilation : à faire après une mise à jour
-::X|FR|cl.gpu.shadercache.074|                         de pilote, pas un quart d heure avant une
-::X|FR|cl.gpu.shadercache.075|                         session. SERVEUR et BUREAU n ont quasiment rien
-::X|FR|cl.gpu.shadercache.076|                         dans ces dossiers, l étape y est presque sans
-::X|FR|cl.gpu.shadercache.077|                         effet. PORTABLE paie une seule fois une
-::X|FR|cl.gpu.shadercache.078|                         recompilation de CPU et de GPU sur batterie.
-::X|FR|cl.gpu.shadercache.079|                         WINDOWS veut dire ne touchez à rien : Windows ne
-::X|FR|cl.gpu.shadercache.080|                         vide jamais ces dossiers tout seul, donc ne rien
-::X|FR|cl.gpu.shadercache.081|                         faire est une position parfaitement défendable.
-::X|FR|cl.gpu.shadercache.082|
-::X|FR|cl.gpu.shadercache.083|  Non verifie (en)  : No byte count was measured on this machine for this
-::X|FR|cl.gpu.shadercache.084|                      step, so the sizes quoted are ranges from typical
-::X|FR|cl.gpu.shadercache.085|                      installs, not a measurement. How often a shader
-::X|FR|cl.gpu.shadercache.086|                      cache actually goes bad is anecdotal - it is a well-
-::X|FR|cl.gpu.shadercache.087|                      known failure mode and the vendors own first fix,
-::X|FR|cl.gpu.shadercache.088|                      but most machines never need it. The AMD claim that
-::X|FR|cl.gpu.shadercache.089|                      a missing DxCache folder is not recreated by some
-::X|FR|cl.gpu.shadercache.090|                      driver builds is the reason for the contents-only
-::X|FR|cl.gpu.shadercache.091|                      design; it was reported, not re-tested here.
-::X|FR|cl.gpu.shadercache.092|
-::X|FR|cl.gpu.shadercache.093|  Cible           : OPTY.bat :dl_shader_go. del /S /F /Q sur le CONTENU de
-::X|FR|cl.gpu.shadercache.094|                    %LOCALAPPDATA%\AMD\DxCache, DxcCache, DX9Cache,
-::X|FR|cl.gpu.shadercache.095|                    OglCache, VkCache, cl.cache, Radeonsoftware\cache,
-::X|FR|cl.gpu.shadercache.096|                    AMDRSSrcExt\cache ;
-::X|FR|cl.gpu.shadercache.097|                    %USERPROFILE%\AppData\LocalLow\AMD\DxCache ;
-::X|FR|cl.gpu.shadercache.098|                    %LOCALAPPDATA%\NVIDIA\GLCache, DXCache, ComputeCache,
-::X|FR|cl.gpu.shadercache.099|                    OptixCache ; %ProgramData%\NVIDIA Corporation\NV_Cache ;
-::X|FR|cl.gpu.shadercache.100|                    %LOCALAPPDATA%\Intel\ShaderCache ;
-::X|FR|cl.gpu.shadercache.101|                    %LOCALAPPDATA%\D3DSCache ;
-::X|FR|cl.gpu.shadercache.102|                    %LOCALAPPDATA%\Microsoft\DirectX Shader Cache. Aucun
-::X|FR|cl.gpu.shadercache.103|                    rd dans tout le bloc - les dossiers eux-mêmes sont
-::X|FR|cl.gpu.shadercache.104|                    toujours conservés.
+::X|FR|cl.gpu.shadercache.013|  Effet reel      : Ne s exécute qu en mode Manuel, et seulement si vous
+::X|FR|cl.gpu.shadercache.014|                    choisissez Exécuter à son étape propre (clean.shader, une
+::X|FR|cl.gpu.shadercache.015|                    ligne manuelle seulement du tableau ::S). Sur instruction
+::X|FR|cl.gpu.shadercache.016|                    du propriétaire, Auto léger et Auto complet ne vident plus
+::X|FR|cl.gpu.shadercache.017|                    ces caches : ils journalisent « GPU shader caches kept »
+::X|FR|cl.gpu.shadercache.018|                    et passent à la suite. Quand l étape tourne, elle supprime
+::X|FR|cl.gpu.shadercache.019|                    les fichiers contenus dans ces dossiers, uniquement pour
+::X|FR|cl.gpu.shadercache.020|                    le compte qui exécute OPTY - les autres comptes Windows
+::X|FR|cl.gpu.shadercache.021|                    gardent les leurs. Les sous-dossiers vides restent en
+::X|FR|cl.gpu.shadercache.022|                    place, del /S ne supprimant que des fichiers. Sur une
+::X|FR|cl.gpu.shadercache.023|                    machine au repos, la suppression aboutit vraiment : plus
+::X|FR|cl.gpu.shadercache.024|                    rien ne tient ces fichiers ouverts une fois l application
+::X|FR|cl.gpu.shadercache.025|                    3D fermée. Si un jeu, le panneau Radeon ou un navigateur
+::X|FR|cl.gpu.shadercache.026|                    en accélération GPU tourne pendant le passage d OPTY, ses
+::X|FR|cl.gpu.shadercache.027|                    fichiers de cache sont ouverts et ces suppressions-là
+::X|FR|cl.gpu.shadercache.028|                    échouent en silence - aucun garde-fou, aucun message.
+::X|FR|cl.gpu.shadercache.029|                    Fermez vos applications 3D si vous voulez que tout parte.
+::X|FR|cl.gpu.shadercache.030|
+::X|FR|cl.gpu.shadercache.031|  Gain            : Deux choses, et une seule est de la place. La place :
+::X|FR|cl.gpu.shadercache.032|                    couramment 100 à 800 Mo sur une installation normale,
+::X|FR|cl.gpu.shadercache.033|                    plusieurs Go sur une machine à grosse ludothèque, le
+::X|FR|cl.gpu.shadercache.034|                    DXCache de NVIDIA pouvant à lui seul atteindre
+::X|FR|cl.gpu.shadercache.035|                    plusieurs gigaoctets. Sur un PC bureautique qui ne
+::X|FR|cl.gpu.shadercache.036|                    rend rien, quelques dizaines de Mo tout au plus. Le
+::X|FR|cl.gpu.shadercache.037|                    remède : un cache de shaders corrompu est une cause
+::X|FR|cl.gpu.shadercache.038|                    classique d artefacts, de saccades et de jeux qui
+::X|FR|cl.gpu.shadercache.039|                    refusent de démarrer, et le vider est le correctif
+::X|FR|cl.gpu.shadercache.040|                    publié par les fabricants eux-mêmes. Sur une machine
+::X|FR|cl.gpu.shadercache.041|                    saine, il n y a aucun gain de vitesse : un cache
+::X|FR|cl.gpu.shadercache.042|                    fraîchement vidé est strictement plus lent tant qu il
+::X|FR|cl.gpu.shadercache.043|                    ne s est pas rempli.
+::X|FR|cl.gpu.shadercache.044|
+::X|FR|cl.gpu.shadercache.045|  Cout            : Le premier lancement de chaque jeu recompile ses shaders :
+::X|FR|cl.gpu.shadercache.046|                    quelques secondes pour un petit titre, jusqu à deux
+::X|FR|cl.gpu.shadercache.047|                    minutes pour un gros, avec des saccades visibles pendant
+::X|FR|cl.gpu.shadercache.048|                    ce temps. Le panneau Radeon reconstruit son cache d
+::X|FR|cl.gpu.shadercache.049|                    interface à la première ouverture. Rien de ce que vous
+::X|FR|cl.gpu.shadercache.050|                    avez créé n est touché et rien n a besoin d être
+::X|FR|cl.gpu.shadercache.051|                    téléchargé. Non touchés : fichiers de jeu, sauvegardes,
+::X|FR|cl.gpu.shadercache.052|                    réglages et profils. C est cette recompilation qui fait
+::X|FR|cl.gpu.shadercache.053|                    que le vidage n est plus systématique : AMD décrit le
+::X|FR|cl.gpu.shadercache.054|                    cache de shaders comme ce qui donne des chargements plus
+::X|FR|cl.gpu.shadercache.055|                    rapides et moins de charge CPU, et traite Reset Shader
+::X|FR|cl.gpu.shadercache.056|                    Cache comme une étape de dépannage (FAQ AMD DH3-012) ; le
+::X|FR|cl.gpu.shadercache.057|                    vider à chaque CLEAN faisait recompiler chaque jeu, avec
+::X|FR|cl.gpu.shadercache.058|                    saccades, pour rien.
+::X|FR|cl.gpu.shadercache.059|
+::X|FR|cl.gpu.shadercache.060|  Defaut Windows  : À moitié applicable. D3DSCache et DirectX Shader Cache
+::X|FR|cl.gpu.shadercache.061|                    sont gérés par Windows et le Nettoyage de disque
+::X|FR|cl.gpu.shadercache.062|                    possède un gestionnaire pour eux. Les dossiers
+::X|FR|cl.gpu.shadercache.063|                    constructeurs sont écrits par le pilote, et rien dans
+::X|FR|cl.gpu.shadercache.064|                    Windows ne les vide jamais.
+::X|FR|cl.gpu.shadercache.065|
+::X|FR|cl.gpu.shadercache.066|  Valeurs possibles :
+::X|FR|cl.gpu.shadercache.067|    DELETE               : Vider maintenant les dossiers de cache de shaders
+::X|FR|cl.gpu.shadercache.068|                           et laisser chaque jeu recompiler ses shaders au
+::X|FR|cl.gpu.shadercache.069|                           prochain lancement. Seulement si vous choisissez
+::X|FR|cl.gpu.shadercache.070|                           Exécuter à l étape du mode Manuel.
+::X|FR|cl.gpu.shadercache.071|    KEEP                 : Laisser les shaders compilés en place. Les
+::X|FR|cl.gpu.shadercache.072|                           premiers lancements restent rapides, et un
+::X|FR|cl.gpu.shadercache.073|                           cache devenu corrompu le reste.
+::X|FR|cl.gpu.shadercache.074|    ASK                  : S arrêter et demander. N a de sens que si vous
+::X|FR|cl.gpu.shadercache.075|                           êtes sur le point de jouer ou de faire un
+::X|FR|cl.gpu.shadercache.076|                           benchmark et ne voulez pas payer la
+::X|FR|cl.gpu.shadercache.077|                           recompilation à cet instant.
+::X|FR|cl.gpu.shadercache.078|
+::X|FR|cl.gpu.shadercache.079|  Pourquoi ces profils : La ligne a été laissée telle quelle, mais elle ne
+::X|FR|cl.gpu.shadercache.080|                         pilote rien d automatique : Auto léger et Auto
+::X|FR|cl.gpu.shadercache.081|                         complet gardent les caches quoi qu elle dise, et le
+::X|FR|cl.gpu.shadercache.082|                         mode Manuel pose la question. Quatre colonnes
+::X|FR|cl.gpu.shadercache.083|                         identiques, parce que le mécanisme se moque de l
+::X|FR|cl.gpu.shadercache.084|                         usage de la machine. GAMING gagne le correctif
+::X|FR|cl.gpu.shadercache.085|                         anti-corruption et paie la recompilation : à faire
+::X|FR|cl.gpu.shadercache.086|                         après une mise à jour de pilote ou quand un jeu
+::X|FR|cl.gpu.shadercache.087|                         montre une corruption, pas un quart d heure avant une
+::X|FR|cl.gpu.shadercache.088|                         session ni comme entretien. SERVEUR et BUREAU n ont
+::X|FR|cl.gpu.shadercache.089|                         quasiment rien dans ces dossiers, l étape y est
+::X|FR|cl.gpu.shadercache.090|                         presque sans effet. PORTABLE paie une seule fois une
+::X|FR|cl.gpu.shadercache.091|                         recompilation de CPU et de GPU sur batterie. WINDOWS
+::X|FR|cl.gpu.shadercache.092|                         veut dire ne touchez à rien : Windows ne vide jamais
+::X|FR|cl.gpu.shadercache.093|                         ces dossiers tout seul, donc ne rien faire est une
+::X|FR|cl.gpu.shadercache.094|                         position parfaitement défendable.
+::X|FR|cl.gpu.shadercache.095|
+::X|FR|cl.gpu.shadercache.096|  Non verifie (en)  : No byte count was measured on this machine for this
+::X|FR|cl.gpu.shadercache.097|                      step, so the sizes quoted are ranges from typical
+::X|FR|cl.gpu.shadercache.098|                      installs, not a measurement. How often a shader
+::X|FR|cl.gpu.shadercache.099|                      cache actually goes bad is anecdotal - it is a well-
+::X|FR|cl.gpu.shadercache.100|                      known failure mode and the vendors own first fix,
+::X|FR|cl.gpu.shadercache.101|                      but most machines never need it. The AMD claim that
+::X|FR|cl.gpu.shadercache.102|                      a missing DxCache folder is not recreated by some
+::X|FR|cl.gpu.shadercache.103|                      driver builds is the reason for the contents-only
+::X|FR|cl.gpu.shadercache.104|                      design; it was reported, not re-tested here.
+::X|FR|cl.gpu.shadercache.105|
+::X|FR|cl.gpu.shadercache.106|  Cible           : OPTY.bat :dl_shader_go, atteint seulement par
+::X|FR|cl.gpu.shadercache.107|                    :dl_shader_ask (la question du mode Manuel, étape
+::X|FR|cl.gpu.shadercache.108|                    clean.shader) ; en mode Auto, :dl_shader journalise les
+::X|FR|cl.gpu.shadercache.109|                    caches comme conservés et passe à :dl_dumps. del /S /F /Q
+::X|FR|cl.gpu.shadercache.110|                    sur le CONTENU de %LOCALAPPDATA%\AMD\DxCache, DxcCache,
+::X|FR|cl.gpu.shadercache.111|                    DX9Cache, OglCache, VkCache, cl.cache,
+::X|FR|cl.gpu.shadercache.112|                    Radeonsoftware\cache, AMDRSSrcExt\cache ;
+::X|FR|cl.gpu.shadercache.113|                    %USERPROFILE%\AppData\LocalLow\AMD\DxCache ;
+::X|FR|cl.gpu.shadercache.114|                    %LOCALAPPDATA%\NVIDIA\GLCache, DXCache, ComputeCache,
+::X|FR|cl.gpu.shadercache.115|                    OptixCache ; %ProgramData%\NVIDIA Corporation\NV_Cache ;
+::X|FR|cl.gpu.shadercache.116|                    %LOCALAPPDATA%\Intel\ShaderCache ;
+::X|FR|cl.gpu.shadercache.117|                    %LOCALAPPDATA%\D3DSCache ;
+::X|FR|cl.gpu.shadercache.118|                    %LOCALAPPDATA%\Microsoft\DirectX Shader Cache. Aucun rd
+::X|FR|cl.gpu.shadercache.119|                    dans tout le bloc - les dossiers eux-mêmes sont toujours
+::X|FR|cl.gpu.shadercache.120|                    conservés.
 ::
 :: ---- cl.iconcache.noop (cleanup) ---------------------------------
 ::P|cl.iconcache.noop|KEEP|KEEP|KEEP|KEEP|KEEP|
@@ -34185,18 +34268,18 @@ goto :eof
 ::X|EN|cl.wer.dumps.006|                    nothing prunes them by size.
 ::X|EN|cl.wer.dumps.007|
 ::X|EN|cl.wer.dumps.008|  Actual effect   : This answer deletes the files under the machine-wide
-::X|EN|cl.wer.dumps.009|                    %ProgramData%\Microsoft\Windows\WER tree only. The
-::X|EN|cl.wer.dumps.010|                    per-user WER and CrashDumps folders are swept in
-::X|EN|cl.wer.dumps.011|                    :userclean, for EVERY Windows profile, under the
-::X|EN|cl.wer.dumps.012|                    Browser caches answer (cl.browser.caches) - so SKIP or
-::X|EN|cl.wer.dumps.013|                    KEEP here does not stop those per-user deletes if
-::X|EN|cl.wer.dumps.014|                    Browser caches is run. Because del /S removes files
-::X|EN|cl.wer.dumps.015|                    and not directories, the folder skeleton stays behind
-::X|EN|cl.wer.dumps.016|                    - you can be left with hundreds of empty ReportQueue
-::X|EN|cl.wer.dumps.017|                    and ReportArchive folders taking essentially no space.
-::X|EN|cl.wer.dumps.018|                    A report being written at that exact moment by
-::X|EN|cl.wer.dumps.019|                    WerFault.exe is locked and skipped, silently. WER
-::X|EN|cl.wer.dumps.020|                    itself keeps running exactly as before.
+::X|EN|cl.wer.dumps.009|                    %ProgramData%\Microsoft\Windows\WER tree and then, through
+::X|EN|cl.wer.dumps.010|                    :userclean "<profile>" wer, the per-user WER and
+::X|EN|cl.wer.dumps.011|                    CrashDumps folders of EVERY Windows profile under
+::X|EN|cl.wer.dumps.012|                    %SystemDrive%\Users. Skipping this step in Manual mode now
+::X|EN|cl.wer.dumps.013|                    stops all of them; the per-user part used to run under the
+::X|EN|cl.wer.dumps.014|                    Browser caches answer, so a Skip here was ignored for it.
+::X|EN|cl.wer.dumps.015|                    Because del /S removes files and not directories, the
+::X|EN|cl.wer.dumps.016|                    folder skeleton stays behind - you can be left with
+::X|EN|cl.wer.dumps.017|                    hundreds of empty ReportQueue and ReportArchive folders
+::X|EN|cl.wer.dumps.018|                    taking essentially no space. A report being written at
+::X|EN|cl.wer.dumps.019|                    that exact moment by WerFault.exe is locked and skipped,
+::X|EN|cl.wer.dumps.020|                    silently. WER itself keeps running exactly as before.
 ::X|EN|cl.wer.dumps.021|
 ::X|EN|cl.wer.dumps.022|  Gain            : The ProgramData queue is usually 5 to 100 MB.
 ::X|EN|cl.wer.dumps.023|                    CrashDumps is the one that can be large: each dump is
@@ -34221,51 +34304,47 @@ goto :eof
 ::X|EN|cl.wer.dumps.042|                    "Windows Error Reporting Files".
 ::X|EN|cl.wer.dumps.043|
 ::X|EN|cl.wer.dumps.044|  Possible values:
-::X|EN|cl.wer.dumps.045|    DELETE               : Empty the machine-wide WER report queue. The
-::X|EN|cl.wer.dumps.046|                           per-user queues and crash dumps go with the
-::X|EN|cl.wer.dumps.047|                           Browser caches answer. WER keeps working; you
-::X|EN|cl.wer.dumps.048|                           simply lose the backlog.
-::X|EN|cl.wer.dumps.049|    KEEP                 : Right when an application is crashing and a
-::X|EN|cl.wer.dumps.050|                           vendor has asked you for the .dmp files, or
-::X|EN|cl.wer.dumps.051|                           when you want to see for yourself what has been
-::X|EN|cl.wer.dumps.052|                           crashing - but to keep the per-user dumps, the
-::X|EN|cl.wer.dumps.053|                           Browser caches answer must not run either.
-::X|EN|cl.wer.dumps.054|    ASK                  : Worth asking on a machine you are actively
-::X|EN|cl.wer.dumps.055|                           troubleshooting, since the dumps are the
-::X|EN|cl.wer.dumps.056|                           evidence and nothing regenerates them.
-::X|EN|cl.wer.dumps.057|
-::X|EN|cl.wer.dumps.058|  Why these profiles : Four identical columns because the file is either
-::X|EN|cl.wer.dumps.059|                       useful evidence or dead weight, and that depends on
-::X|EN|cl.wer.dumps.060|                       your situation, not on the machine's role. SERVER
-::X|EN|cl.wer.dumps.061|                       is the one place to think twice: an unattended box
-::X|EN|cl.wer.dumps.062|                       that crashes at 4 in the morning leaves its only
-::X|EN|cl.wer.dumps.063|                       trace here. On GAMING, OFFICE and LAPTOP these are
-::X|EN|cl.wer.dumps.064|                       almost always stale reports nobody will ever open.
-::X|EN|cl.wer.dumps.065|                       WINDOWS means leave it alone and let the queue sit
-::X|EN|cl.wer.dumps.066|                       there, which costs you nothing but disk.
-::X|EN|cl.wer.dumps.067|
-::X|EN|cl.wer.dumps.068|  Known problems  : This card and the files it describes are split: only
-::X|EN|cl.wer.dumps.069|                    the %ProgramData% store follows this answer, while the
-::X|EN|cl.wer.dumps.070|                    per-user WER and %LOCALAPPDATA%\CrashDumps folders of
-::X|EN|cl.wer.dumps.071|                    every profile are deleted by :userclean whenever
-::X|EN|cl.wer.dumps.072|                    Browser caches is run, whatever you answered here.
-::X|EN|cl.wer.dumps.073|
-::X|EN|cl.wer.dumps.074|  Unverified      : WER has per-queue entry-count limits in its own
-::X|EN|cl.wer.dumps.075|                    configuration, so the queue is not literally unlimited
-::X|EN|cl.wer.dumps.076|                    on every machine; what it has no notion of is a size
-::X|EN|cl.wer.dumps.077|                    budget, and CrashDumps has neither. The sizes below
-::X|EN|cl.wer.dumps.078|                    are ranges from ordinary installs, not a measurement
-::X|EN|cl.wer.dumps.079|                    of this machine.
-::X|EN|cl.wer.dumps.080|
-::X|EN|cl.wer.dumps.081|  Target          : :dl_wer_go (asked under :dl_wer). del /F /S /Q on
-::X|EN|cl.wer.dumps.082|                    %ProgramData%\Microsoft\Windows\WER\*. The per-user
-::X|EN|cl.wer.dumps.083|                    lines are in :userclean, called for every folder of
-::X|EN|cl.wer.dumps.084|                    %SystemDrive%\Users\* under Browser caches: del /F /S
-::X|EN|cl.wer.dumps.085|                    /Q on AppData\Local\Microsoft\Windows\WER\* and
-::X|EN|cl.wer.dumps.086|                    AppData\Local\CrashDumps\* (USERHOME is %USERPROFILE%
-::X|EN|cl.wer.dumps.087|                    and is not used here). Kernel dumps are a different
-::X|EN|cl.wer.dumps.088|                    step: %SystemRoot%\Minidump and MEMORY.DMP are deleted
-::X|EN|cl.wer.dumps.089|                    in :dl_dumps_go, unless freeze capture is on.
+::X|EN|cl.wer.dumps.045|    DELETE               : Empty the machine-wide WER report queue and, for
+::X|EN|cl.wer.dumps.046|                           every profile, the per-user queue and crash dumps.
+::X|EN|cl.wer.dumps.047|                           WER keeps working; you simply lose the backlog.
+::X|EN|cl.wer.dumps.048|    KEEP                 : Right when an application is crashing and a vendor
+::X|EN|cl.wer.dumps.049|                           has asked you for the .dmp files, or when you want
+::X|EN|cl.wer.dumps.050|                           to see for yourself what has been crashing.
+::X|EN|cl.wer.dumps.051|                           Skipping keeps the machine-wide queue and every
+::X|EN|cl.wer.dumps.052|                           profile's dumps.
+::X|EN|cl.wer.dumps.053|    ASK                  : Worth asking on a machine you are actively
+::X|EN|cl.wer.dumps.054|                           troubleshooting, since the dumps are the
+::X|EN|cl.wer.dumps.055|                           evidence and nothing regenerates them.
+::X|EN|cl.wer.dumps.056|
+::X|EN|cl.wer.dumps.057|  Why these profiles : Four identical columns because the file is either
+::X|EN|cl.wer.dumps.058|                       useful evidence or dead weight, and that depends on
+::X|EN|cl.wer.dumps.059|                       your situation, not on the machine's role. SERVER
+::X|EN|cl.wer.dumps.060|                       is the one place to think twice: an unattended box
+::X|EN|cl.wer.dumps.061|                       that crashes at 4 in the morning leaves its only
+::X|EN|cl.wer.dumps.062|                       trace here. On GAMING, OFFICE and LAPTOP these are
+::X|EN|cl.wer.dumps.063|                       almost always stale reports nobody will ever open.
+::X|EN|cl.wer.dumps.064|                       WINDOWS means leave it alone and let the queue sit
+::X|EN|cl.wer.dumps.065|                       there, which costs you nothing but disk.
+::X|EN|cl.wer.dumps.066|
+::X|EN|cl.wer.dumps.067|  Known problems  : None left from the old split. The per-user WER and
+::X|EN|cl.wer.dumps.068|                    %LOCALAPPDATA%\CrashDumps folders of every profile used to
+::X|EN|cl.wer.dumps.069|                    be deleted under Browser caches whatever you answered
+::X|EN|cl.wer.dumps.070|                    here; they now follow this card.
+::X|EN|cl.wer.dumps.071|
+::X|EN|cl.wer.dumps.072|  Unverified      : WER has per-queue entry-count limits in its own
+::X|EN|cl.wer.dumps.073|                    configuration, so the queue is not literally unlimited on
+::X|EN|cl.wer.dumps.074|                    every machine; what it has no notion of is a size budget,
+::X|EN|cl.wer.dumps.075|                    and CrashDumps has neither. The sizes above are ranges
+::X|EN|cl.wer.dumps.076|                    from ordinary installs, not a measurement of this machine.
+::X|EN|cl.wer.dumps.077|
+::X|EN|cl.wer.dumps.078|  Target          : :dl_wer_go (asked under :dl_wer). del /F /S /Q on
+::X|EN|cl.wer.dumps.079|                    %ProgramData%\Microsoft\Windows\WER\*, then call
+::X|EN|cl.wer.dumps.080|                    :userclean "<profile>" wer for every folder of
+::X|EN|cl.wer.dumps.081|                    %SystemDrive%\Users\*; its :uc_wer part runs del /F /S /Q
+::X|EN|cl.wer.dumps.082|                    on AppData\Local\Microsoft\Windows\WER\* and
+::X|EN|cl.wer.dumps.083|                    AppData\Local\CrashDumps\* of that profile. Kernel dumps
+::X|EN|cl.wer.dumps.084|                    are a different step: %SystemRoot%\Minidump and MEMORY.DMP
+::X|EN|cl.wer.dumps.085|                    are deleted in :dl_dumps_go, unless freeze capture is on.
 ::X|FR|cl.wer.dumps.001|  Ce que c est    : WER est la mécanique derrière « Cette application a
 ::X|FR|cl.wer.dumps.002|                    cessé de fonctionner ». Les rapports s empilent dans
 ::X|FR|cl.wer.dumps.003|                    %ProgramData%\Microsoft\Windows\WER et dans votre
@@ -34274,21 +34353,21 @@ goto :eof
 ::X|FR|cl.wer.dumps.006|                    jamais envoyés, rien ne les purge en fonction de leur
 ::X|FR|cl.wer.dumps.007|                    taille.
 ::X|FR|cl.wer.dumps.008|
-::X|FR|cl.wer.dumps.009|  Effet reel      : Cette réponse ne supprime que les fichiers de
-::X|FR|cl.wer.dumps.010|                    l arborescence WER de la machine,
-::X|FR|cl.wer.dumps.011|                    %ProgramData%\Microsoft\Windows\WER. Les dossiers WER
-::X|FR|cl.wer.dumps.012|                    et CrashDumps par utilisateur sont vidés dans
-::X|FR|cl.wer.dumps.013|                    :userclean, pour CHAQUE profil Windows, sous la
-::X|FR|cl.wer.dumps.014|                    réponse Caches des navigateurs (cl.browser.caches) :
-::X|FR|cl.wer.dumps.015|                    SKIP ou KEEP ici n empêche donc pas ces suppressions
-::X|FR|cl.wer.dumps.016|                    par utilisateur si Caches des navigateurs est exécuté.
-::X|FR|cl.wer.dumps.017|                    Comme del /S ne supprime que des fichiers, la
-::X|FR|cl.wer.dumps.018|                    charpente de dossiers reste : vous pouvez vous
-::X|FR|cl.wer.dumps.019|                    retrouver avec des centaines de dossiers ReportQueue
-::X|FR|cl.wer.dumps.020|                    et ReportArchive vides, qui ne pèsent pratiquement
-::X|FR|cl.wer.dumps.021|                    rien. Un rapport en cours d écriture par WerFault.exe
-::X|FR|cl.wer.dumps.022|                    à cet instant précis est verrouillé et ignoré, en
-::X|FR|cl.wer.dumps.023|                    silence. WER lui-même continue exactement comme avant.
+::X|FR|cl.wer.dumps.009|  Effet reel      : Cette réponse supprime les fichiers de l arborescence WER
+::X|FR|cl.wer.dumps.010|                    de la machine, %ProgramData%\Microsoft\Windows\WER, puis,
+::X|FR|cl.wer.dumps.011|                    via :userclean "<profil>" wer, les dossiers WER et
+::X|FR|cl.wer.dumps.012|                    CrashDumps par utilisateur de CHAQUE profil Windows de
+::X|FR|cl.wer.dumps.013|                    %SystemDrive%\Users. Passer cette étape en mode Manuel les
+::X|FR|cl.wer.dumps.014|                    arrête désormais tous ; la partie par utilisateur
+::X|FR|cl.wer.dumps.015|                    dépendait de la réponse Caches des navigateurs, donc un
+::X|FR|cl.wer.dumps.016|                    refus ici était ignoré pour elle. Comme del /S ne supprime
+::X|FR|cl.wer.dumps.017|                    que des fichiers, la charpente de dossiers reste : vous
+::X|FR|cl.wer.dumps.018|                    pouvez vous retrouver avec des centaines de dossiers
+::X|FR|cl.wer.dumps.019|                    ReportQueue et ReportArchive vides, qui ne pèsent
+::X|FR|cl.wer.dumps.020|                    pratiquement rien. Un rapport en cours d écriture par
+::X|FR|cl.wer.dumps.021|                    WerFault.exe à cet instant précis est verrouillé et
+::X|FR|cl.wer.dumps.022|                    ignoré, en silence. WER lui-même continue exactement comme
+::X|FR|cl.wer.dumps.023|                    avant.
 ::X|FR|cl.wer.dumps.024|
 ::X|FR|cl.wer.dumps.025|  Gain            : La file de ProgramData fait en général 5 à 100 Mo.
 ::X|FR|cl.wer.dumps.026|                    C est CrashDumps qui peut être gros : chaque dump est
@@ -34314,59 +34393,52 @@ goto :eof
 ::X|FR|cl.wer.dumps.046|                    Windows ».
 ::X|FR|cl.wer.dumps.047|
 ::X|FR|cl.wer.dumps.048|  Valeurs possibles :
-::X|FR|cl.wer.dumps.049|    DELETE               : Vider la file de rapports WER de la machine.
-::X|FR|cl.wer.dumps.050|                           Les files par utilisateur et les dumps
-::X|FR|cl.wer.dumps.051|                           d applications suivent la réponse Caches des
-::X|FR|cl.wer.dumps.052|                           navigateurs. WER continue de fonctionner, vous
-::X|FR|cl.wer.dumps.053|                           perdez seulement l arriéré.
-::X|FR|cl.wer.dumps.054|    KEEP                 : Le bon choix quand une application plante et
-::X|FR|cl.wer.dumps.055|                           qu un éditeur vous a demandé les fichiers .dmp,
-::X|FR|cl.wer.dumps.056|                           ou quand vous voulez constater vous-même ce qui
-::X|FR|cl.wer.dumps.057|                           plante - mais pour garder les dumps par
-::X|FR|cl.wer.dumps.058|                           utilisateur, Caches des navigateurs ne doit pas
-::X|FR|cl.wer.dumps.059|                           s exécuter non plus.
-::X|FR|cl.wer.dumps.060|    ASK                  : Une question utile sur une machine en cours de
-::X|FR|cl.wer.dumps.061|                           diagnostic : les dumps sont la preuve, et rien
-::X|FR|cl.wer.dumps.062|                           ne les régénère.
-::X|FR|cl.wer.dumps.063|
-::X|FR|cl.wer.dumps.064|  Pourquoi ces profils : Quatre colonnes identiques, parce qu un dump est
-::X|FR|cl.wer.dumps.065|                         soit une preuve utile, soit du poids mort, et
-::X|FR|cl.wer.dumps.066|                         cela dépend de votre situation, pas du rôle de la
-::X|FR|cl.wer.dumps.067|                         machine. SERVEUR est le seul cas où réfléchir :
-::X|FR|cl.wer.dumps.068|                         une machine sans surveillance qui plante à 4 h du
-::X|FR|cl.wer.dumps.069|                         matin ne laisse de trace qu ici. Sur GAMING,
-::X|FR|cl.wer.dumps.070|                         BUREAU et PORTABLE, ce sont presque toujours de
-::X|FR|cl.wer.dumps.071|                         vieux rapports que personne n ouvrira jamais.
-::X|FR|cl.wer.dumps.072|                         WINDOWS veut dire ne touchez à rien et laissez la
-::X|FR|cl.wer.dumps.073|                         file où elle est : cela ne vous coûte que du
-::X|FR|cl.wer.dumps.074|                         disque.
-::X|FR|cl.wer.dumps.075|
-::X|FR|cl.wer.dumps.076|  Problemes connus : Cette fiche et les fichiers qu elle décrit sont
-::X|FR|cl.wer.dumps.077|                     séparés : seul le magasin de %ProgramData% suit
-::X|FR|cl.wer.dumps.078|                     cette réponse, tandis que les dossiers WER et
-::X|FR|cl.wer.dumps.079|                     %LOCALAPPDATA%\CrashDumps de chaque profil sont
-::X|FR|cl.wer.dumps.080|                     supprimés par :userclean dès que Caches des
-::X|FR|cl.wer.dumps.081|                     navigateurs est exécuté, quelle que soit la réponse
-::X|FR|cl.wer.dumps.082|                     donnée ici.
-::X|FR|cl.wer.dumps.083|
-::X|FR|cl.wer.dumps.084|  Non verifie (en)  : WER has per-queue entry-count limits in its own
-::X|FR|cl.wer.dumps.085|                      configuration, so the queue is not literally
-::X|FR|cl.wer.dumps.086|                      unlimited on every machine; what it has no notion of
-::X|FR|cl.wer.dumps.087|                      is a size budget, and CrashDumps has neither. The
-::X|FR|cl.wer.dumps.088|                      sizes below are ranges from ordinary installs, not a
-::X|FR|cl.wer.dumps.089|                      measurement of this machine.
-::X|FR|cl.wer.dumps.090|
-::X|FR|cl.wer.dumps.091|  Cible           : :dl_wer_go (question posée sous :dl_wer). del /F /S /Q
-::X|FR|cl.wer.dumps.092|                    sur %ProgramData%\Microsoft\Windows\WER\*. Les lignes
-::X|FR|cl.wer.dumps.093|                    par utilisateur sont dans :userclean, appelé pour
-::X|FR|cl.wer.dumps.094|                    chaque dossier de %SystemDrive%\Users\* sous Caches
-::X|FR|cl.wer.dumps.095|                    des navigateurs : del /F /S /Q sur
-::X|FR|cl.wer.dumps.096|                    AppData\Local\Microsoft\Windows\WER\* et
-::X|FR|cl.wer.dumps.097|                    AppData\Local\CrashDumps\* (USERHOME vaut
-::X|FR|cl.wer.dumps.098|                    %USERPROFILE% et n est pas utilisé ici). Les dumps du
-::X|FR|cl.wer.dumps.099|                    noyau sont une autre étape : %SystemRoot%\Minidump et
-::X|FR|cl.wer.dumps.100|                    MEMORY.DMP sont supprimés dans :dl_dumps_go, sauf si
-::X|FR|cl.wer.dumps.101|                    la capture des blocages est active.
+::X|FR|cl.wer.dumps.049|    DELETE               : Vider la file de rapports WER de la machine et,
+::X|FR|cl.wer.dumps.050|                           pour chaque profil, la file par utilisateur et les
+::X|FR|cl.wer.dumps.051|                           dumps d applications. WER continue de fonctionner,
+::X|FR|cl.wer.dumps.052|                           vous perdez seulement l arriéré.
+::X|FR|cl.wer.dumps.053|    KEEP                 : Le bon choix quand une application plante et qu un
+::X|FR|cl.wer.dumps.054|                           éditeur vous a demandé les fichiers .dmp, ou quand
+::X|FR|cl.wer.dumps.055|                           vous voulez constater vous-même ce qui plante.
+::X|FR|cl.wer.dumps.056|                           Passer l étape garde la file de la machine et les
+::X|FR|cl.wer.dumps.057|                           dumps de chaque profil.
+::X|FR|cl.wer.dumps.058|    ASK                  : Une question utile sur une machine en cours de
+::X|FR|cl.wer.dumps.059|                           diagnostic : les dumps sont la preuve, et rien
+::X|FR|cl.wer.dumps.060|                           ne les régénère.
+::X|FR|cl.wer.dumps.061|
+::X|FR|cl.wer.dumps.062|  Pourquoi ces profils : Quatre colonnes identiques, parce qu un dump est
+::X|FR|cl.wer.dumps.063|                         soit une preuve utile, soit du poids mort, et
+::X|FR|cl.wer.dumps.064|                         cela dépend de votre situation, pas du rôle de la
+::X|FR|cl.wer.dumps.065|                         machine. SERVEUR est le seul cas où réfléchir :
+::X|FR|cl.wer.dumps.066|                         une machine sans surveillance qui plante à 4 h du
+::X|FR|cl.wer.dumps.067|                         matin ne laisse de trace qu ici. Sur GAMING,
+::X|FR|cl.wer.dumps.068|                         BUREAU et PORTABLE, ce sont presque toujours de
+::X|FR|cl.wer.dumps.069|                         vieux rapports que personne n ouvrira jamais.
+::X|FR|cl.wer.dumps.070|                         WINDOWS veut dire ne touchez à rien et laissez la
+::X|FR|cl.wer.dumps.071|                         file où elle est : cela ne vous coûte que du
+::X|FR|cl.wer.dumps.072|                         disque.
+::X|FR|cl.wer.dumps.073|
+::X|FR|cl.wer.dumps.074|  Problemes connus : Plus rien de l ancienne séparation. Les dossiers WER et
+::X|FR|cl.wer.dumps.075|                     %LOCALAPPDATA%\CrashDumps de chaque profil étaient
+::X|FR|cl.wer.dumps.076|                     supprimés sous Caches des navigateurs quelle que soit la
+::X|FR|cl.wer.dumps.077|                     réponse donnée ici ; ils suivent désormais cette fiche.
+::X|FR|cl.wer.dumps.078|
+::X|FR|cl.wer.dumps.079|  Non verifie (en)  : WER has per-queue entry-count limits in its own
+::X|FR|cl.wer.dumps.080|                      configuration, so the queue is not literally unlimited
+::X|FR|cl.wer.dumps.081|                      on every machine; what it has no notion of is a size
+::X|FR|cl.wer.dumps.082|                      budget, and CrashDumps has neither. The sizes above are
+::X|FR|cl.wer.dumps.083|                      ranges from ordinary installs, not a measurement of this
+::X|FR|cl.wer.dumps.084|                      machine.
+::X|FR|cl.wer.dumps.085|
+::X|FR|cl.wer.dumps.086|  Cible           : :dl_wer_go (question posée sous :dl_wer). del /F /S /Q sur
+::X|FR|cl.wer.dumps.087|                    %ProgramData%\Microsoft\Windows\WER\*, puis call
+::X|FR|cl.wer.dumps.088|                    :userclean "<profil>" wer pour chaque dossier de
+::X|FR|cl.wer.dumps.089|                    %SystemDrive%\Users\* ; sa partie :uc_wer fait del /F /S
+::X|FR|cl.wer.dumps.090|                    /Q sur AppData\Local\Microsoft\Windows\WER\* et
+::X|FR|cl.wer.dumps.091|                    AppData\Local\CrashDumps\* de ce profil. Les dumps du
+::X|FR|cl.wer.dumps.092|                    noyau sont une autre étape : %SystemRoot%\Minidump et
+::X|FR|cl.wer.dumps.093|                    MEMORY.DMP sont supprimés dans :dl_dumps_go, sauf si la
+::X|FR|cl.wer.dumps.094|                    capture des blocages est active.
 ::
 :: ---- cl.logs.unbounded (cleanup) ---------------------------------
 ::P|cl.logs.unbounded|DELETE|DELETE|DELETE|DELETE|KEEP|
@@ -34908,213 +34980,220 @@ goto :eof
 ::T|FR|cl.browser.caches.002|Vide les fichiers de cache jetables de chaque navigateur sur chaque compte Windows, libérant typiquement 1 à 4 Go et corrigeant les pages qui s affichent mal, sans toucher aux connexions, cookies, historique et favoris, au prix de quelques minutes de navigation un peu plus lente le temps que tout se recharge.
 ::X|EN|cl.browser.caches.001|  What it is      : Every Chromium browser - Chrome, Edge, Brave, Vivaldi,
 ::X|EN|cl.browser.caches.002|                    Opera, Opera GX, Yandex, Chromium - and Firefox keeps
-::X|EN|cl.browser.caches.003|                    disposable caches: the page cache, the compiled-
-::X|EN|cl.browser.caches.004|                    JavaScript code cache, GPU and shader caches, service-
-::X|EN|cl.browser.caches.005|                    worker caches, extension package caches and crash
-::X|EN|cl.browser.caches.006|                    reports. This step clears them for every browser
-::X|EN|cl.browser.caches.007|                    profile of every Windows account. A browser that is
-::X|EN|cl.browser.caches.008|                    running is skipped entirely rather than force-closed.
-::X|EN|cl.browser.caches.009|
-::X|EN|cl.browser.caches.010|  Actual effect   : Deletes files inside cache directories only, leaving
-::X|EN|cl.browser.caches.011|                    the directories in place. Cookies, Login Data, Web
-::X|EN|cl.browser.caches.012|                    Data, History, Bookmarks, Preferences, Local Storage
-::X|EN|cl.browser.caches.013|                    and IndexedDB are never touched - you stay signed in
-::X|EN|cl.browser.caches.014|                    everywhere. Two things decide how much actually goes.
-::X|EN|cl.browser.caches.015|                    The guard is by process name across the whole machine,
-::X|EN|cl.browser.caches.016|                    so one running chrome.exe in any account skips Chrome
-::X|EN|cl.browser.caches.017|                    for all accounts. And Edge in particular often keeps
-::X|EN|cl.browser.caches.018|                    msedge.exe resident after you close its window, which
-::X|EN|cl.browser.caches.019|                    means Edge is skipped even though it looks closed -
-::X|EN|cl.browser.caches.020|                    check Task Manager, not the taskbar.
-::X|EN|cl.browser.caches.021|
-::X|EN|cl.browser.caches.022|  Gain            : Usually the biggest single win after Windows.old, but
-::X|EN|cl.browser.caches.023|                    be realistic about the number: a busy Chromium profile
-::X|EN|cl.browser.caches.024|                    holds roughly 300 MB to 2 GB across Cache, Code Cache
-::X|EN|cl.browser.caches.025|                    and service-worker storage, and Chromium caps its own
-::X|EN|cl.browser.caches.026|                    HTTP cache well below the multi-gigabyte figures often
-::X|EN|cl.browser.caches.027|                    quoted. Measured on this machine: 28 MB in
-::X|EN|cl.browser.caches.028|                    component_crx_cache alone, a folder a per-profile-only
-::X|EN|cl.browser.caches.029|                    sweep misses entirely. Across several profiles and
-::X|EN|cl.browser.caches.030|                    several accounts, 1 to 4 GB total is a fair
-::X|EN|cl.browser.caches.031|                    expectation. It is also the standard fix for pages
-::X|EN|cl.browser.caches.032|                    that render wrong, a stale asset that will not go
-::X|EN|cl.browser.caches.033|                    away, or a browser that has become crashy.
-::X|EN|cl.browser.caches.034|
-::X|EN|cl.browser.caches.035|  Cost            : Pages re-download as you browse and JavaScript
-::X|EN|cl.browser.caches.036|                    recompiles per site, so the first few minutes feel
-::X|EN|cl.browser.caches.037|                    slightly slower - a few hundred MB of traffic over the
-::X|EN|cl.browser.caches.038|                    following days, worth thinking about on a metered or
-::X|EN|cl.browser.caches.039|                    tethered connection. There is no lasting speed loss
-::X|EN|cl.browser.caches.040|                    and nothing permanent is lost. Regeneration is
-::X|EN|cl.browser.caches.041|                    automatic and immediate, well inside the thirty-minute
-::X|EN|cl.browser.caches.042|                    rule. Not touched: passwords, cookies, sessions,
-::X|EN|cl.browser.caches.043|                    history, bookmarks, extensions and their settings.
-::X|EN|cl.browser.caches.044|
-::X|EN|cl.browser.caches.045|  Windows default : Not applicable. These are application caches, managed
-::X|EN|cl.browser.caches.046|                    by each browser, and Windows never touches them.
-::X|EN|cl.browser.caches.047|
-::X|EN|cl.browser.caches.048|  Possible values:
-::X|EN|cl.browser.caches.049|    DELETE               : Clear the disposable browser caches for every
-::X|EN|cl.browser.caches.050|                           browser profile of every account. Logins,
-::X|EN|cl.browser.caches.051|                           cookies, history and bookmarks stay.
-::X|EN|cl.browser.caches.052|    KEEP                 : Reasonable on a metered or tethered connection,
-::X|EN|cl.browser.caches.053|                           where refetching a few hundred MB of page
-::X|EN|cl.browser.caches.054|                           assets costs real money.
-::X|EN|cl.browser.caches.055|    ASK                  : Not needed here. The step already refuses to
-::X|EN|cl.browser.caches.056|                           touch a browser that is running, which is the
-::X|EN|cl.browser.caches.057|                           only case that could do damage.
-::X|EN|cl.browser.caches.058|
-::X|EN|cl.browser.caches.059|  Why these profiles : Four identical columns because a page cache behaves
-::X|EN|cl.browser.caches.060|                       the same on every machine. Close your browsers
-::X|EN|cl.browser.caches.061|                       first, or you get half the benefit and no warning
-::X|EN|cl.browser.caches.062|                       that you did. LAPTOP is the only one with a caveat
-::X|EN|cl.browser.caches.063|                       worth stating: refetching page assets costs battery
-::X|EN|cl.browser.caches.064|                       and mobile data, so it is a poor thing to do right
-::X|EN|cl.browser.caches.065|                       before going offline. WINDOWS means leave it alone
-::X|EN|cl.browser.caches.066|                       - these caches are bounded by the browser and will
-::X|EN|cl.browser.caches.067|                       not run away with your disk.
-::X|EN|cl.browser.caches.068|
-::X|EN|cl.browser.caches.069|  Known problems  : The running-process guard matches on image name across
-::X|EN|cl.browser.caches.070|                    the whole machine, so if any account has chrome.exe
-::X|EN|cl.browser.caches.071|                    up, every account's Chrome caches are skipped in the
-::X|EN|cl.browser.caches.072|                    same pass. Chrome, Chrome Beta and Chromium all share
-::X|EN|cl.browser.caches.073|                    the chrome.exe guard, so any one of them running skips
-::X|EN|cl.browser.caches.074|                    all three.
-::X|EN|cl.browser.caches.075|
-::X|EN|cl.browser.caches.076|  Unverified      : Whether Edge is skipped in practice depends on its
-::X|EN|cl.browser.caches.077|                    startup-boost and background-apps settings, which vary
-::X|EN|cl.browser.caches.078|                    by install and by policy - the mechanism is certain,
-::X|EN|cl.browser.caches.079|                    the frequency on your machine is not. The per-profile
-::X|EN|cl.browser.caches.080|                    size range is from ordinary installs; the only figure
-::X|EN|cl.browser.caches.081|                    actually measured here is 28 MB of
-::X|EN|cl.browser.caches.082|                    component_crx_cache.
-::X|EN|cl.browser.caches.083|
-::X|EN|cl.browser.caches.084|  Target          : OPTY.bat :dl_browsers_go, which runs helper :userclean for
-::X|EN|cl.browser.caches.085|                    every C:\Users\* profile; :userclean calls :chromecache
-::X|EN|cl.browser.caches.086|                    once per Chromium browser. For each one, in every
-::X|EN|cl.browser.caches.087|                    profile folder (Default, "Profile *", "Guest Profile"):
-::X|EN|cl.browser.caches.088|                    Cache, Code Cache, GPUCache, DawnWebGPUCache,
-::X|EN|cl.browser.caches.089|                    DawnGraphiteCache, Service Worker\CacheStorage and
-::X|EN|cl.browser.caches.090|                    ScriptCache; and beside the profiles GrShaderCache,
-::X|EN|cl.browser.caches.091|                    ShaderCache, GraphiteDawnCache, GPUPersistentCache,
-::X|EN|cl.browser.caches.092|                    component_crx_cache, extensions_crx_cache,
-::X|EN|cl.browser.caches.093|                    Crashpad\reports and BrowserMetrics\*.pma. Firefox:
-::X|EN|cl.browser.caches.094|                    cache2, startupCache, jumpListCache and thumbnails per
-::X|EN|cl.browser.caches.095|                    profile. The same :userclean pass also clears each
-::X|EN|cl.browser.caches.096|                    account's WER reports and CrashDumps, the Ubisoft, EA,
-::X|EN|cl.browser.caches.097|                    Origin and Epic launcher caches and logs, and the
-::X|EN|cl.browser.caches.098|                    Discord caches, each skipped while its app runs.
-::X|FR|cl.browser.caches.001|  Ce que c est    : Chaque navigateur Chromium - Chrome, Edge, Brave,
-::X|FR|cl.browser.caches.002|                    Vivaldi, Opera, Opera GX, Yandex, Chromium - et
-::X|FR|cl.browser.caches.003|                    Firefox conserve des caches jetables : cache de pages,
-::X|FR|cl.browser.caches.004|                    cache de code JavaScript compilé, caches GPU et
-::X|FR|cl.browser.caches.005|                    shaders, caches de service workers, caches de paquets
-::X|FR|cl.browser.caches.006|                    d extensions et rapports de plantage. Cette étape les
-::X|FR|cl.browser.caches.007|                    vide pour chaque profil de navigateur de chaque compte
-::X|FR|cl.browser.caches.008|                    Windows. Un navigateur en cours d exécution est
-::X|FR|cl.browser.caches.009|                    intégralement ignoré, jamais fermé de force.
-::X|FR|cl.browser.caches.010|
-::X|FR|cl.browser.caches.011|  Effet reel      : Supprime uniquement des fichiers situés dans des
-::X|FR|cl.browser.caches.012|                    dossiers de cache, en laissant les dossiers en place.
-::X|FR|cl.browser.caches.013|                    Les cookies, Login Data, Web Data, l historique, les
-::X|FR|cl.browser.caches.014|                    favoris, les préférences, le Local Storage et
-::X|FR|cl.browser.caches.015|                    IndexedDB ne sont jamais touchés : vous restez
-::X|FR|cl.browser.caches.016|                    connecté partout. Deux choses déterminent ce qui part
-::X|FR|cl.browser.caches.017|                    réellement. Le garde-fou porte sur le nom du processus
-::X|FR|cl.browser.caches.018|                    à l échelle de la machine : un seul chrome.exe ouvert
-::X|FR|cl.browser.caches.019|                    dans n importe quel compte fait sauter Chrome pour
-::X|FR|cl.browser.caches.020|                    tous les comptes. Et Edge en particulier laisse
-::X|FR|cl.browser.caches.021|                    souvent msedge.exe résident après la fermeture de sa
-::X|FR|cl.browser.caches.022|                    fenêtre, si bien qu Edge est ignoré alors qu il a
-::X|FR|cl.browser.caches.023|                    l air fermé - fiez-vous au Gestionnaire des tâches,
-::X|FR|cl.browser.caches.024|                    pas à la barre des tâches.
-::X|FR|cl.browser.caches.025|
-::X|FR|cl.browser.caches.026|  Gain            : Souvent le plus gros gain unitaire après Windows.old,
-::X|FR|cl.browser.caches.027|                    mais restons honnêtes sur le chiffre : un profil
-::X|FR|cl.browser.caches.028|                    Chromium très utilisé contient environ 300 Mo à 2 Go
-::X|FR|cl.browser.caches.029|                    entre Cache, Code Cache et stockage des service
-::X|FR|cl.browser.caches.030|                    workers, et Chromium plafonne lui-même son cache HTTP
-::X|FR|cl.browser.caches.031|                    bien en dessous des chiffres de plusieurs gigaoctets
-::X|FR|cl.browser.caches.032|                    souvent avancés. Mesuré sur cette machine : 28 Mo rien
-::X|FR|cl.browser.caches.033|                    que dans component_crx_cache, un dossier qu un
-::X|FR|cl.browser.caches.034|                    balayage par profil seul manque totalement. Sur
-::X|FR|cl.browser.caches.035|                    plusieurs profils et plusieurs comptes, 1 à 4 Go au
-::X|FR|cl.browser.caches.036|                    total est une attente raisonnable. C est aussi le
-::X|FR|cl.browser.caches.037|                    remède standard aux pages qui s affichent mal, à un
-::X|FR|cl.browser.caches.038|                    élément périmé qui s accroche ou à un navigateur
-::X|FR|cl.browser.caches.039|                    devenu instable.
-::X|FR|cl.browser.caches.040|
-::X|FR|cl.browser.caches.041|  Cout            : Les pages se retéléchargent au fil de la navigation et
-::X|FR|cl.browser.caches.042|                    le JavaScript se recompile site par site : les
-::X|FR|cl.browser.caches.043|                    premières minutes semblent un peu plus lentes -
-::X|FR|cl.browser.caches.044|                    quelques centaines de Mo de trafic sur les jours
-::X|FR|cl.browser.caches.045|                    suivants, ce qui mérite réflexion sur une connexion
-::X|FR|cl.browser.caches.046|                    limitée ou en partage de connexion. Aucune perte de
-::X|FR|cl.browser.caches.047|                    vitesse durable, rien de définitif n est perdu. La
-::X|FR|cl.browser.caches.048|                    régénération est automatique et immédiate, très en
-::X|FR|cl.browser.caches.049|                    deçà de la règle des trente minutes. Non touchés :
-::X|FR|cl.browser.caches.050|                    mots de passe, cookies, sessions, historique, favoris,
-::X|FR|cl.browser.caches.051|                    extensions et leurs réglages.
-::X|FR|cl.browser.caches.052|
-::X|FR|cl.browser.caches.053|  Defaut Windows  : Sans objet. Ce sont des caches applicatifs, gérés par
-::X|FR|cl.browser.caches.054|                    chaque navigateur, auxquels Windows ne touche jamais.
-::X|FR|cl.browser.caches.055|
-::X|FR|cl.browser.caches.056|  Valeurs possibles :
-::X|FR|cl.browser.caches.057|    DELETE               : Vider les caches jetables de chaque profil de
-::X|FR|cl.browser.caches.058|                           navigateur de chaque compte. Connexions,
-::X|FR|cl.browser.caches.059|                           cookies, historique et favoris restent.
-::X|FR|cl.browser.caches.060|    KEEP                 : Raisonnable sur une connexion limitée ou en
-::X|FR|cl.browser.caches.061|                           partage de connexion, où retélécharger quelques
-::X|FR|cl.browser.caches.062|                           centaines de Mo d éléments de page coûte
-::X|FR|cl.browser.caches.063|                           vraiment.
-::X|FR|cl.browser.caches.064|    ASK                  : Inutile ici. L étape refuse déjà de toucher un
-::X|FR|cl.browser.caches.065|                           navigateur en cours d exécution, le seul cas
-::X|FR|cl.browser.caches.066|                           qui pourrait faire des dégâts.
-::X|FR|cl.browser.caches.067|
-::X|FR|cl.browser.caches.068|  Pourquoi ces profils : Quatre colonnes identiques, parce qu un cache de
-::X|FR|cl.browser.caches.069|                         pages se comporte pareil sur toutes les machines.
-::X|FR|cl.browser.caches.070|                         Fermez vos navigateurs d abord, sinon vous
-::X|FR|cl.browser.caches.071|                         n obtiendrez que la moitié du bénéfice, sans le
-::X|FR|cl.browser.caches.072|                         moindre avertissement. PORTABLE est le seul cas
-::X|FR|cl.browser.caches.073|                         avec une nuance à dire : retélécharger les
-::X|FR|cl.browser.caches.074|                         éléments de page coûte de la batterie et des
-::X|FR|cl.browser.caches.075|                         données mobiles, donc mauvaise idée juste avant
-::X|FR|cl.browser.caches.076|                         de passer hors ligne. WINDOWS veut dire ne
-::X|FR|cl.browser.caches.077|                         touchez à rien : ces caches sont bornés par le
-::X|FR|cl.browser.caches.078|                         navigateur et n emporteront pas votre disque.
-::X|FR|cl.browser.caches.079|
-::X|FR|cl.browser.caches.080|  Problemes connus : Le garde-fou compare le nom d image à l échelle de la
-::X|FR|cl.browser.caches.081|                     machine entière : si un seul compte a chrome.exe
-::X|FR|cl.browser.caches.082|                     ouvert, les caches Chrome de tous les comptes sont
-::X|FR|cl.browser.caches.083|                     ignorés dans le même passage. Chrome, Chrome Beta et
-::X|FR|cl.browser.caches.084|                     Chromium partagent le garde-fou chrome.exe : l un
-::X|FR|cl.browser.caches.085|                     des trois ouvert fait sauter les trois.
-::X|FR|cl.browser.caches.086|
-::X|FR|cl.browser.caches.087|  Non verifie (en)  : Whether Edge is skipped in practice depends on its
-::X|FR|cl.browser.caches.088|                      startup-boost and background-apps settings, which
-::X|FR|cl.browser.caches.089|                      vary by install and by policy - the mechanism is
-::X|FR|cl.browser.caches.090|                      certain, the frequency on your machine is not. The
-::X|FR|cl.browser.caches.091|                      per-profile size range is from ordinary installs;
-::X|FR|cl.browser.caches.092|                      the only figure actually measured here is 28 MB of
-::X|FR|cl.browser.caches.093|                      component_crx_cache.
-::X|FR|cl.browser.caches.094|
-::X|FR|cl.browser.caches.095|  Cible           : OPTY.bat :dl_browsers_go, qui lance l aide :userclean
-::X|FR|cl.browser.caches.096|                    pour chaque profil C:\Users\* ; :userclean appelle
-::X|FR|cl.browser.caches.097|                    :chromecache une fois par navigateur Chromium. Pour
-::X|FR|cl.browser.caches.098|                    chacun, dans chaque dossier de profil (Default,
-::X|FR|cl.browser.caches.099|                    "Profile *", "Guest Profile") : Cache, Code Cache,
-::X|FR|cl.browser.caches.100|                    GPUCache, DawnWebGPUCache, DawnGraphiteCache, Service
-::X|FR|cl.browser.caches.101|                    Worker\CacheStorage et ScriptCache ; et à côté des
-::X|FR|cl.browser.caches.102|                    profils GrShaderCache, ShaderCache,
-::X|FR|cl.browser.caches.103|                    GraphiteDawnCache, GPUPersistentCache,
-::X|FR|cl.browser.caches.104|                    component_crx_cache, extensions_crx_cache,
-::X|FR|cl.browser.caches.105|                    Crashpad\reports et BrowserMetrics\*.pma. Firefox :
-::X|FR|cl.browser.caches.106|                    cache2, startupCache, jumpListCache et thumbnails par
-::X|FR|cl.browser.caches.107|                    profil. Le même passage :userclean vide aussi, pour
-::X|FR|cl.browser.caches.108|                    chaque compte, les rapports WER et CrashDumps, les
-::X|FR|cl.browser.caches.109|                    caches et journaux des lanceurs Ubisoft, EA, Origin et
-::X|FR|cl.browser.caches.110|                    Epic, et les caches Discord, chacun ignoré tant que
-::X|FR|cl.browser.caches.111|                    son application tourne.
+::X|EN|cl.browser.caches.003|                    disposable caches: the page cache, the compiled-JavaScript
+::X|EN|cl.browser.caches.004|                    code cache, GPU and shader caches, service-worker caches,
+::X|EN|cl.browser.caches.005|                    extension package caches and crash reports. This step
+::X|EN|cl.browser.caches.006|                    clears them for every browser profile of every Windows
+::X|EN|cl.browser.caches.007|                    account. A browser that is running is skipped entirely
+::X|EN|cl.browser.caches.008|                    rather than force-closed. The same answer also covers the
+::X|EN|cl.browser.caches.009|                    Epic launcher's web cache and logs, which have no card of
+::X|EN|cl.browser.caches.010|                    their own.
+::X|EN|cl.browser.caches.011|
+::X|EN|cl.browser.caches.012|  Actual effect   : Deletes files inside cache directories only, leaving
+::X|EN|cl.browser.caches.013|                    the directories in place. Cookies, Login Data, Web
+::X|EN|cl.browser.caches.014|                    Data, History, Bookmarks, Preferences, Local Storage
+::X|EN|cl.browser.caches.015|                    and IndexedDB are never touched - you stay signed in
+::X|EN|cl.browser.caches.016|                    everywhere. Two things decide how much actually goes.
+::X|EN|cl.browser.caches.017|                    The guard is by process name across the whole machine,
+::X|EN|cl.browser.caches.018|                    so one running chrome.exe in any account skips Chrome
+::X|EN|cl.browser.caches.019|                    for all accounts. And Edge in particular often keeps
+::X|EN|cl.browser.caches.020|                    msedge.exe resident after you close its window, which
+::X|EN|cl.browser.caches.021|                    means Edge is skipped even though it looks closed -
+::X|EN|cl.browser.caches.022|                    check Task Manager, not the taskbar.
+::X|EN|cl.browser.caches.023|
+::X|EN|cl.browser.caches.024|  Gain            : Usually the biggest single win after Windows.old, but
+::X|EN|cl.browser.caches.025|                    be realistic about the number: a busy Chromium profile
+::X|EN|cl.browser.caches.026|                    holds roughly 300 MB to 2 GB across Cache, Code Cache
+::X|EN|cl.browser.caches.027|                    and service-worker storage, and Chromium caps its own
+::X|EN|cl.browser.caches.028|                    HTTP cache well below the multi-gigabyte figures often
+::X|EN|cl.browser.caches.029|                    quoted. Measured on this machine: 28 MB in
+::X|EN|cl.browser.caches.030|                    component_crx_cache alone, a folder a per-profile-only
+::X|EN|cl.browser.caches.031|                    sweep misses entirely. Across several profiles and
+::X|EN|cl.browser.caches.032|                    several accounts, 1 to 4 GB total is a fair
+::X|EN|cl.browser.caches.033|                    expectation. It is also the standard fix for pages
+::X|EN|cl.browser.caches.034|                    that render wrong, a stale asset that will not go
+::X|EN|cl.browser.caches.035|                    away, or a browser that has become crashy.
+::X|EN|cl.browser.caches.036|
+::X|EN|cl.browser.caches.037|  Cost            : Pages re-download as you browse and JavaScript
+::X|EN|cl.browser.caches.038|                    recompiles per site, so the first few minutes feel
+::X|EN|cl.browser.caches.039|                    slightly slower - a few hundred MB of traffic over the
+::X|EN|cl.browser.caches.040|                    following days, worth thinking about on a metered or
+::X|EN|cl.browser.caches.041|                    tethered connection. There is no lasting speed loss
+::X|EN|cl.browser.caches.042|                    and nothing permanent is lost. Regeneration is
+::X|EN|cl.browser.caches.043|                    automatic and immediate, well inside the thirty-minute
+::X|EN|cl.browser.caches.044|                    rule. Not touched: passwords, cookies, sessions,
+::X|EN|cl.browser.caches.045|                    history, bookmarks, extensions and their settings.
+::X|EN|cl.browser.caches.046|
+::X|EN|cl.browser.caches.047|  Windows default : Not applicable. These are application caches, managed
+::X|EN|cl.browser.caches.048|                    by each browser, and Windows never touches them.
+::X|EN|cl.browser.caches.049|
+::X|EN|cl.browser.caches.050|  Possible values:
+::X|EN|cl.browser.caches.051|    DELETE               : Clear the disposable browser caches for every
+::X|EN|cl.browser.caches.052|                           browser profile of every account. Logins,
+::X|EN|cl.browser.caches.053|                           cookies, history and bookmarks stay.
+::X|EN|cl.browser.caches.054|    KEEP                 : Reasonable on a metered or tethered connection,
+::X|EN|cl.browser.caches.055|                           where refetching a few hundred MB of page
+::X|EN|cl.browser.caches.056|                           assets costs real money.
+::X|EN|cl.browser.caches.057|    ASK                  : Not needed here. The step already refuses to
+::X|EN|cl.browser.caches.058|                           touch a browser that is running, which is the
+::X|EN|cl.browser.caches.059|                           only case that could do damage.
+::X|EN|cl.browser.caches.060|
+::X|EN|cl.browser.caches.061|  Why these profiles : Four identical columns because a page cache behaves
+::X|EN|cl.browser.caches.062|                       the same on every machine. Close your browsers
+::X|EN|cl.browser.caches.063|                       first, or you get half the benefit and no warning
+::X|EN|cl.browser.caches.064|                       that you did. LAPTOP is the only one with a caveat
+::X|EN|cl.browser.caches.065|                       worth stating: refetching page assets costs battery
+::X|EN|cl.browser.caches.066|                       and mobile data, so it is a poor thing to do right
+::X|EN|cl.browser.caches.067|                       before going offline. WINDOWS means leave it alone
+::X|EN|cl.browser.caches.068|                       - these caches are bounded by the browser and will
+::X|EN|cl.browser.caches.069|                       not run away with your disk.
+::X|EN|cl.browser.caches.070|
+::X|EN|cl.browser.caches.071|  Known problems  : The running-process guard matches on image name across
+::X|EN|cl.browser.caches.072|                    the whole machine, so if any account has chrome.exe
+::X|EN|cl.browser.caches.073|                    up, every account's Chrome caches are skipped in the
+::X|EN|cl.browser.caches.074|                    same pass. Chrome, Chrome Beta and Chromium all share
+::X|EN|cl.browser.caches.075|                    the chrome.exe guard, so any one of them running skips
+::X|EN|cl.browser.caches.076|                    all three.
+::X|EN|cl.browser.caches.077|
+::X|EN|cl.browser.caches.078|  Unverified      : Whether Edge is skipped in practice depends on its
+::X|EN|cl.browser.caches.079|                    startup-boost and background-apps settings, which vary
+::X|EN|cl.browser.caches.080|                    by install and by policy - the mechanism is certain,
+::X|EN|cl.browser.caches.081|                    the frequency on your machine is not. The per-profile
+::X|EN|cl.browser.caches.082|                    size range is from ordinary installs; the only figure
+::X|EN|cl.browser.caches.083|                    actually measured here is 28 MB of
+::X|EN|cl.browser.caches.084|                    component_crx_cache.
+::X|EN|cl.browser.caches.085|
+::X|EN|cl.browser.caches.086|  Target          : OPTY.bat :dl_browsers_go, which runs :userclean
+::X|EN|cl.browser.caches.087|                    "<profile>" browsers for every C:\Users\* profile; its
+::X|EN|cl.browser.caches.088|                    :uc_browsers part calls :chromecache once per Chromium
+::X|EN|cl.browser.caches.089|                    browser. For each one, in every profile folder (Default,
+::X|EN|cl.browser.caches.090|                    "Profile *", "Guest Profile"): Cache, Code Cache,
+::X|EN|cl.browser.caches.091|                    GPUCache, DawnWebGPUCache, DawnGraphiteCache, Service
+::X|EN|cl.browser.caches.092|                    Worker\CacheStorage and ScriptCache; and beside the
+::X|EN|cl.browser.caches.093|                    profiles GrShaderCache, ShaderCache, GraphiteDawnCache,
+::X|EN|cl.browser.caches.094|                    GPUPersistentCache, component_crx_cache,
+::X|EN|cl.browser.caches.095|                    extensions_crx_cache, Crashpad\reports and
+::X|EN|cl.browser.caches.096|                    BrowserMetrics\*.pma. Firefox: cache2, startupCache,
+::X|EN|cl.browser.caches.097|                    jumpListCache and thumbnails per profile. The same part
+::X|EN|cl.browser.caches.098|                    also removes each account's Epic webcache folders and
+::X|EN|cl.browser.caches.099|                    Saved\Logs, skipped while EpicGamesLauncher.exe runs. WER
+::X|EN|cl.browser.caches.100|                    reports and CrashDumps, the Ubisoft, EA and Origin caches
+::X|EN|cl.browser.caches.101|                    and logs, and the Discord caches are no longer part of
+::X|EN|cl.browser.caches.102|                    this answer: each follows its own card.
+::X|FR|cl.browser.caches.001|  Ce que c est    : Chaque navigateur Chromium - Chrome, Edge, Brave, Vivaldi,
+::X|FR|cl.browser.caches.002|                    Opera, Opera GX, Yandex, Chromium - et Firefox conserve
+::X|FR|cl.browser.caches.003|                    des caches jetables : cache de pages, cache de code
+::X|FR|cl.browser.caches.004|                    JavaScript compilé, caches GPU et shaders, caches de
+::X|FR|cl.browser.caches.005|                    service workers, caches de paquets d extensions et
+::X|FR|cl.browser.caches.006|                    rapports de plantage. Cette étape les vide pour chaque
+::X|FR|cl.browser.caches.007|                    profil de navigateur de chaque compte Windows. Un
+::X|FR|cl.browser.caches.008|                    navigateur en cours d exécution est intégralement ignoré,
+::X|FR|cl.browser.caches.009|                    jamais fermé de force. La même réponse couvre aussi le
+::X|FR|cl.browser.caches.010|                    cache web et les journaux du launcher Epic, qui n ont pas
+::X|FR|cl.browser.caches.011|                    de fiche à eux.
+::X|FR|cl.browser.caches.012|
+::X|FR|cl.browser.caches.013|  Effet reel      : Supprime uniquement des fichiers situés dans des
+::X|FR|cl.browser.caches.014|                    dossiers de cache, en laissant les dossiers en place.
+::X|FR|cl.browser.caches.015|                    Les cookies, Login Data, Web Data, l historique, les
+::X|FR|cl.browser.caches.016|                    favoris, les préférences, le Local Storage et
+::X|FR|cl.browser.caches.017|                    IndexedDB ne sont jamais touchés : vous restez
+::X|FR|cl.browser.caches.018|                    connecté partout. Deux choses déterminent ce qui part
+::X|FR|cl.browser.caches.019|                    réellement. Le garde-fou porte sur le nom du processus
+::X|FR|cl.browser.caches.020|                    à l échelle de la machine : un seul chrome.exe ouvert
+::X|FR|cl.browser.caches.021|                    dans n importe quel compte fait sauter Chrome pour
+::X|FR|cl.browser.caches.022|                    tous les comptes. Et Edge en particulier laisse
+::X|FR|cl.browser.caches.023|                    souvent msedge.exe résident après la fermeture de sa
+::X|FR|cl.browser.caches.024|                    fenêtre, si bien qu Edge est ignoré alors qu il a
+::X|FR|cl.browser.caches.025|                    l air fermé - fiez-vous au Gestionnaire des tâches,
+::X|FR|cl.browser.caches.026|                    pas à la barre des tâches.
+::X|FR|cl.browser.caches.027|
+::X|FR|cl.browser.caches.028|  Gain            : Souvent le plus gros gain unitaire après Windows.old,
+::X|FR|cl.browser.caches.029|                    mais restons honnêtes sur le chiffre : un profil
+::X|FR|cl.browser.caches.030|                    Chromium très utilisé contient environ 300 Mo à 2 Go
+::X|FR|cl.browser.caches.031|                    entre Cache, Code Cache et stockage des service
+::X|FR|cl.browser.caches.032|                    workers, et Chromium plafonne lui-même son cache HTTP
+::X|FR|cl.browser.caches.033|                    bien en dessous des chiffres de plusieurs gigaoctets
+::X|FR|cl.browser.caches.034|                    souvent avancés. Mesuré sur cette machine : 28 Mo rien
+::X|FR|cl.browser.caches.035|                    que dans component_crx_cache, un dossier qu un
+::X|FR|cl.browser.caches.036|                    balayage par profil seul manque totalement. Sur
+::X|FR|cl.browser.caches.037|                    plusieurs profils et plusieurs comptes, 1 à 4 Go au
+::X|FR|cl.browser.caches.038|                    total est une attente raisonnable. C est aussi le
+::X|FR|cl.browser.caches.039|                    remède standard aux pages qui s affichent mal, à un
+::X|FR|cl.browser.caches.040|                    élément périmé qui s accroche ou à un navigateur
+::X|FR|cl.browser.caches.041|                    devenu instable.
+::X|FR|cl.browser.caches.042|
+::X|FR|cl.browser.caches.043|  Cout            : Les pages se retéléchargent au fil de la navigation et
+::X|FR|cl.browser.caches.044|                    le JavaScript se recompile site par site : les
+::X|FR|cl.browser.caches.045|                    premières minutes semblent un peu plus lentes -
+::X|FR|cl.browser.caches.046|                    quelques centaines de Mo de trafic sur les jours
+::X|FR|cl.browser.caches.047|                    suivants, ce qui mérite réflexion sur une connexion
+::X|FR|cl.browser.caches.048|                    limitée ou en partage de connexion. Aucune perte de
+::X|FR|cl.browser.caches.049|                    vitesse durable, rien de définitif n est perdu. La
+::X|FR|cl.browser.caches.050|                    régénération est automatique et immédiate, très en
+::X|FR|cl.browser.caches.051|                    deçà de la règle des trente minutes. Non touchés :
+::X|FR|cl.browser.caches.052|                    mots de passe, cookies, sessions, historique, favoris,
+::X|FR|cl.browser.caches.053|                    extensions et leurs réglages.
+::X|FR|cl.browser.caches.054|
+::X|FR|cl.browser.caches.055|  Defaut Windows  : Sans objet. Ce sont des caches applicatifs, gérés par
+::X|FR|cl.browser.caches.056|                    chaque navigateur, auxquels Windows ne touche jamais.
+::X|FR|cl.browser.caches.057|
+::X|FR|cl.browser.caches.058|  Valeurs possibles :
+::X|FR|cl.browser.caches.059|    DELETE               : Vider les caches jetables de chaque profil de
+::X|FR|cl.browser.caches.060|                           navigateur de chaque compte. Connexions,
+::X|FR|cl.browser.caches.061|                           cookies, historique et favoris restent.
+::X|FR|cl.browser.caches.062|    KEEP                 : Raisonnable sur une connexion limitée ou en
+::X|FR|cl.browser.caches.063|                           partage de connexion, où retélécharger quelques
+::X|FR|cl.browser.caches.064|                           centaines de Mo d éléments de page coûte
+::X|FR|cl.browser.caches.065|                           vraiment.
+::X|FR|cl.browser.caches.066|    ASK                  : Inutile ici. L étape refuse déjà de toucher un
+::X|FR|cl.browser.caches.067|                           navigateur en cours d exécution, le seul cas
+::X|FR|cl.browser.caches.068|                           qui pourrait faire des dégâts.
+::X|FR|cl.browser.caches.069|
+::X|FR|cl.browser.caches.070|  Pourquoi ces profils : Quatre colonnes identiques, parce qu un cache de
+::X|FR|cl.browser.caches.071|                         pages se comporte pareil sur toutes les machines.
+::X|FR|cl.browser.caches.072|                         Fermez vos navigateurs d abord, sinon vous
+::X|FR|cl.browser.caches.073|                         n obtiendrez que la moitié du bénéfice, sans le
+::X|FR|cl.browser.caches.074|                         moindre avertissement. PORTABLE est le seul cas
+::X|FR|cl.browser.caches.075|                         avec une nuance à dire : retélécharger les
+::X|FR|cl.browser.caches.076|                         éléments de page coûte de la batterie et des
+::X|FR|cl.browser.caches.077|                         données mobiles, donc mauvaise idée juste avant
+::X|FR|cl.browser.caches.078|                         de passer hors ligne. WINDOWS veut dire ne
+::X|FR|cl.browser.caches.079|                         touchez à rien : ces caches sont bornés par le
+::X|FR|cl.browser.caches.080|                         navigateur et n emporteront pas votre disque.
+::X|FR|cl.browser.caches.081|
+::X|FR|cl.browser.caches.082|  Problemes connus : Le garde-fou compare le nom d image à l échelle de la
+::X|FR|cl.browser.caches.083|                     machine entière : si un seul compte a chrome.exe
+::X|FR|cl.browser.caches.084|                     ouvert, les caches Chrome de tous les comptes sont
+::X|FR|cl.browser.caches.085|                     ignorés dans le même passage. Chrome, Chrome Beta et
+::X|FR|cl.browser.caches.086|                     Chromium partagent le garde-fou chrome.exe : l un
+::X|FR|cl.browser.caches.087|                     des trois ouvert fait sauter les trois.
+::X|FR|cl.browser.caches.088|
+::X|FR|cl.browser.caches.089|  Non verifie (en)  : Whether Edge is skipped in practice depends on its
+::X|FR|cl.browser.caches.090|                      startup-boost and background-apps settings, which
+::X|FR|cl.browser.caches.091|                      vary by install and by policy - the mechanism is
+::X|FR|cl.browser.caches.092|                      certain, the frequency on your machine is not. The
+::X|FR|cl.browser.caches.093|                      per-profile size range is from ordinary installs;
+::X|FR|cl.browser.caches.094|                      the only figure actually measured here is 28 MB of
+::X|FR|cl.browser.caches.095|                      component_crx_cache.
+::X|FR|cl.browser.caches.096|
+::X|FR|cl.browser.caches.097|  Cible           : OPTY.bat :dl_browsers_go, qui lance :userclean "<profil>"
+::X|FR|cl.browser.caches.098|                    browsers pour chaque profil C:\Users\* ; sa partie
+::X|FR|cl.browser.caches.099|                    :uc_browsers appelle :chromecache une fois par navigateur
+::X|FR|cl.browser.caches.100|                    Chromium. Pour chacun, dans chaque dossier de profil
+::X|FR|cl.browser.caches.101|                    (Default, "Profile *", "Guest Profile") : Cache, Code
+::X|FR|cl.browser.caches.102|                    Cache, GPUCache, DawnWebGPUCache, DawnGraphiteCache,
+::X|FR|cl.browser.caches.103|                    Service Worker\CacheStorage et ScriptCache ; et à côté des
+::X|FR|cl.browser.caches.104|                    profils GrShaderCache, ShaderCache, GraphiteDawnCache,
+::X|FR|cl.browser.caches.105|                    GPUPersistentCache, component_crx_cache,
+::X|FR|cl.browser.caches.106|                    extensions_crx_cache, Crashpad\reports et
+::X|FR|cl.browser.caches.107|                    BrowserMetrics\*.pma. Firefox : cache2, startupCache,
+::X|FR|cl.browser.caches.108|                    jumpListCache et thumbnails par profil. La même partie
+::X|FR|cl.browser.caches.109|                    supprime aussi, pour chaque compte, les dossiers webcache
+::X|FR|cl.browser.caches.110|                    et Saved\Logs d Epic, ignorés tant que
+::X|FR|cl.browser.caches.111|                    EpicGamesLauncher.exe tourne. Les rapports WER et
+::X|FR|cl.browser.caches.112|                    CrashDumps, les caches et journaux Ubisoft, EA et Origin,
+::X|FR|cl.browser.caches.113|                    et les caches Discord ne font plus partie de cette réponse
+::X|FR|cl.browser.caches.114|                    : chacun suit sa propre fiche.
 ::
 :: ---- cl.winold.remove (risky) ----------------------------------
 ::P|cl.winold.remove|ASK|ASK|ASK|ASK|KEEP|
@@ -35344,166 +35423,179 @@ goto :eof
 ::T|EN|cl.discord.cache.002|Clears Discord's temporary cache files (a few hundred MB) - fixes a grey or blank window and images re-download as you scroll, but only works if Discord is fully quit, not just minimized to the tray.
 ::T|FR|cl.discord.cache.001|CACHE DE DISCORD
 ::T|FR|cl.discord.cache.002|Vide les fichiers de cache temporaires de Discord (quelques centaines de Mo) - corrige une fenêtre grise ou vide et fait retélécharger les images au fil du défilement, mais seulement si Discord est vraiment quitté, pas juste réduit dans la zone de notification.
-::X|EN|cl.discord.cache.001|  What it is      : Discord is an Electron app, so it carries a browser
-::X|EN|cl.discord.cache.002|                    inside it, with the same Cache, Code Cache and
-::X|EN|cl.discord.cache.003|                    GPUCache folders a browser has. This step clears those
-::X|EN|cl.discord.cache.004|                    three, and only when Discord.exe is not running.
-::X|EN|cl.discord.cache.005|
-::X|EN|cl.discord.cache.006|  Actual effect   : Deletes the files in the three cache folders of the
-::X|EN|cl.discord.cache.007|                    account running OPTY. The one thing to know is that
-::X|EN|cl.discord.cache.008|                    this step is skipped far more often than people
-::X|EN|cl.discord.cache.009|                    expect: Discord installs itself to start with Windows
-::X|EN|cl.discord.cache.010|                    and to minimise to the tray, so Discord.exe is usually
-::X|EN|cl.discord.cache.011|                    running even when no window is open. Closing the
-::X|EN|cl.discord.cache.012|                    window is not enough - quit it from the tray icon,
-::X|EN|cl.discord.cache.013|                    otherwise OPTY prints "Discord is running - caches
-::X|EN|cl.discord.cache.014|                    skipped" and moves on. Not touched: Local Storage,
-::X|EN|cl.discord.cache.015|                    where the login token lives, and the leveldb databases
-::X|EN|cl.discord.cache.016|                    beside it.
-::X|EN|cl.discord.cache.017|
-::X|EN|cl.discord.cache.018|  Gain            : A few hundred MB on an active account - Cache_Data
-::X|EN|cl.discord.cache.019|                    alone is commonly 100 to 600 MB. More usefully, it is
-::X|EN|cl.discord.cache.020|                    the standard fix for a Discord that opens to a grey or
-::X|EN|cl.discord.cache.021|                    blank window, refuses to load images, or sits on
-::X|EN|cl.discord.cache.022|                    "Connecting".
-::X|EN|cl.discord.cache.023|
-::X|EN|cl.discord.cache.024|  Cost            : Images, avatars and emoji re-download the first time
-::X|EN|cl.discord.cache.025|                    you scroll a channel - seconds, and a few tens of MB.
-::X|EN|cl.discord.cache.026|                    You stay logged in. Nothing user-created is touched:
-::X|EN|cl.discord.cache.027|                    your settings, servers and message history live on
-::X|EN|cl.discord.cache.028|                    Discord's servers, not in these folders.
-::X|EN|cl.discord.cache.029|
-::X|EN|cl.discord.cache.030|  Windows default : Not applicable. This is an application cache and
-::X|EN|cl.discord.cache.031|                    Windows never touches it.
-::X|EN|cl.discord.cache.032|
-::X|EN|cl.discord.cache.033|  Possible values:
-::X|EN|cl.discord.cache.034|    DELETE               : Clear the three Electron cache folders,
-::X|EN|cl.discord.cache.035|                           provided Discord is fully quit. Your login
-::X|EN|cl.discord.cache.036|                           token lives in Local Storage and is not
-::X|EN|cl.discord.cache.037|                           touched.
-::X|EN|cl.discord.cache.038|    KEEP                 : Nothing is lost by keeping it: the cache is
-::X|EN|cl.discord.cache.039|                           bounded and a working client has no reason to
-::X|EN|cl.discord.cache.040|                           be cleaned.
-::X|EN|cl.discord.cache.041|    ASK                  : Not needed. The step already refuses to run
-::X|EN|cl.discord.cache.042|                           while Discord is up, which is the only case
-::X|EN|cl.discord.cache.043|                           that could corrupt the client.
-::X|EN|cl.discord.cache.044|
-::X|EN|cl.discord.cache.045|  Why these profiles : Four identical columns because an Electron cache
-::X|EN|cl.discord.cache.046|                       behaves the same everywhere. On OFFICE and SERVER,
-::X|EN|cl.discord.cache.047|                       where Discord may not be installed, the step simply
-::X|EN|cl.discord.cache.048|                       finds nothing and does nothing - not harmful, just
-::X|EN|cl.discord.cache.049|                       empty. WINDOWS means leave it alone: this cache is
-::X|EN|cl.discord.cache.050|                       bounded and will not eat your disk.
-::X|EN|cl.discord.cache.051|
-::X|EN|cl.discord.cache.052|  Known problems  : This step itself covers only the Discord stable
-::X|EN|cl.discord.cache.053|                    channel of the account running OPTY (%APPDATA%). The
-::X|EN|cl.discord.cache.054|                    wider sweep lives elsewhere: :userclean, run for every
-::X|EN|cl.discord.cache.055|                    Windows profile under the Browser caches answer
-::X|EN|cl.discord.cache.056|                    (cl.browser.caches), already empties Cache, Code Cache
-::X|EN|cl.discord.cache.057|                    and GPUCache of discord, discordptb and discordcanary,
-::X|EN|cl.discord.cache.058|                    skipped while any Discord build is running. So KEEP
-::X|EN|cl.discord.cache.059|                    here does not protect those caches if Browser caches
-::X|EN|cl.discord.cache.060|                    is DELETE, and PTB / Canary and other accounts are
-::X|EN|cl.discord.cache.061|                    only cleaned through that answer.
-::X|EN|cl.discord.cache.062|
-::X|EN|cl.discord.cache.063|  Unverified      : Whether Discord is running when you launch OPTY
-::X|EN|cl.discord.cache.064|                    depends on your own start-with-Windows setting, which
-::X|EN|cl.discord.cache.065|                    is on by default on a normal install but is a setting,
-::X|EN|cl.discord.cache.066|                    not a law. The cache sizes are the usual range for an
-::X|EN|cl.discord.cache.067|                    active account, not a measurement of this machine.
-::X|EN|cl.discord.cache.068|
-::X|EN|cl.discord.cache.069|  Target          : :dl_discord_go (asked under :dl_discord). call
-::X|EN|cl.discord.cache.070|                    :isrunning "Discord.exe" then, only if it is not
-::X|EN|cl.discord.cache.071|                    running, del /F /S /Q on
-::X|EN|cl.discord.cache.072|                    %APPDATA%\discord\Cache\Cache_Data,
-::X|EN|cl.discord.cache.073|                    %APPDATA%\discord\Code Cache and
-::X|EN|cl.discord.cache.074|                    %APPDATA%\discord\GPUCache. %APPDATA% is the roaming
-::X|EN|cl.discord.cache.075|                    folder of the account running OPTY. The every-profile,
-::X|EN|cl.discord.cache.076|                    every-channel sweep is the RUNDISC-guarded loop in
-::X|EN|cl.discord.cache.077|                    :userclean.
-::X|FR|cl.discord.cache.001|  Ce que c est    : Discord est une application Electron : elle embarque
-::X|FR|cl.discord.cache.002|                    un navigateur, avec les mêmes dossiers Cache, Code
-::X|FR|cl.discord.cache.003|                    Cache et GPUCache qu un navigateur. Cette étape vide
-::X|FR|cl.discord.cache.004|                    ces trois-là, et uniquement si Discord.exe ne tourne
-::X|FR|cl.discord.cache.005|                    pas.
+::X|EN|cl.discord.cache.001|  What it is      : Discord is an Electron app, so it carries a browser inside
+::X|EN|cl.discord.cache.002|                    it, with the same Cache, Code Cache and GPUCache folders a
+::X|EN|cl.discord.cache.003|                    browser has. This step clears those three for the stable,
+::X|EN|cl.discord.cache.004|                    PTB and Canary builds of every Windows profile, and only
+::X|EN|cl.discord.cache.005|                    while Discord is not running.
+::X|EN|cl.discord.cache.006|
+::X|EN|cl.discord.cache.007|  Actual effect   : First deletes the files in the three cache folders of the
+::X|EN|cl.discord.cache.008|                    account running OPTY, only if Discord.exe is not running.
+::X|EN|cl.discord.cache.009|                    Then it runs :userclean "<profile>" discord for EVERY
+::X|EN|cl.discord.cache.010|                    profile under %SystemDrive%\Users, which empties Cache,
+::X|EN|cl.discord.cache.011|                    Code Cache and GPUCache of discord, discordptb and
+::X|EN|cl.discord.cache.012|                    discordcanary, skipped while any Discord build runs
+::X|EN|cl.discord.cache.013|                    (RUNDISC, probed once at the top of :delete). Skipping
+::X|EN|cl.discord.cache.014|                    this step now stops all of it; the every-profile part used
+::X|EN|cl.discord.cache.015|                    to run under the Browser caches answer. The one thing to
+::X|EN|cl.discord.cache.016|                    know is that this step is skipped far more often than
+::X|EN|cl.discord.cache.017|                    people expect: Discord installs itself to start with
+::X|EN|cl.discord.cache.018|                    Windows and to minimise to the tray, so Discord.exe is
+::X|EN|cl.discord.cache.019|                    usually running even when no window is open. Closing the
+::X|EN|cl.discord.cache.020|                    window is not enough - quit it from the tray icon,
+::X|EN|cl.discord.cache.021|                    otherwise OPTY prints "Discord is running - caches
+::X|EN|cl.discord.cache.022|                    skipped" and moves on. Not touched: Local Storage, where
+::X|EN|cl.discord.cache.023|                    the login token lives, and the leveldb databases beside
+::X|EN|cl.discord.cache.024|                    it.
+::X|EN|cl.discord.cache.025|
+::X|EN|cl.discord.cache.026|  Gain            : A few hundred MB on an active account - Cache_Data
+::X|EN|cl.discord.cache.027|                    alone is commonly 100 to 600 MB. More usefully, it is
+::X|EN|cl.discord.cache.028|                    the standard fix for a Discord that opens to a grey or
+::X|EN|cl.discord.cache.029|                    blank window, refuses to load images, or sits on
+::X|EN|cl.discord.cache.030|                    "Connecting".
+::X|EN|cl.discord.cache.031|
+::X|EN|cl.discord.cache.032|  Cost            : Images, avatars and emoji re-download the first time
+::X|EN|cl.discord.cache.033|                    you scroll a channel - seconds, and a few tens of MB.
+::X|EN|cl.discord.cache.034|                    You stay logged in. Nothing user-created is touched:
+::X|EN|cl.discord.cache.035|                    your settings, servers and message history live on
+::X|EN|cl.discord.cache.036|                    Discord's servers, not in these folders.
+::X|EN|cl.discord.cache.037|
+::X|EN|cl.discord.cache.038|  Windows default : Not applicable. This is an application cache and
+::X|EN|cl.discord.cache.039|                    Windows never touches it.
+::X|EN|cl.discord.cache.040|
+::X|EN|cl.discord.cache.041|  Possible values:
+::X|EN|cl.discord.cache.042|    DELETE               : Clear the three Electron cache folders of every
+::X|EN|cl.discord.cache.043|                           Discord build in every profile, provided Discord is
+::X|EN|cl.discord.cache.044|                           fully quit. Your login token lives in Local Storage
+::X|EN|cl.discord.cache.045|                           and is not touched.
+::X|EN|cl.discord.cache.046|    KEEP                 : Nothing is lost by keeping it: the cache is
+::X|EN|cl.discord.cache.047|                           bounded and a working client has no reason to
+::X|EN|cl.discord.cache.048|                           be cleaned.
+::X|EN|cl.discord.cache.049|    ASK                  : Not needed. The step already refuses to run
+::X|EN|cl.discord.cache.050|                           while Discord is up, which is the only case
+::X|EN|cl.discord.cache.051|                           that could corrupt the client.
+::X|EN|cl.discord.cache.052|
+::X|EN|cl.discord.cache.053|  Why these profiles : Four identical columns because an Electron cache
+::X|EN|cl.discord.cache.054|                       behaves the same everywhere. On OFFICE and SERVER,
+::X|EN|cl.discord.cache.055|                       where Discord may not be installed, the step simply
+::X|EN|cl.discord.cache.056|                       finds nothing and does nothing - not harmful, just
+::X|EN|cl.discord.cache.057|                       empty. WINDOWS means leave it alone: this cache is
+::X|EN|cl.discord.cache.058|                       bounded and will not eat your disk.
+::X|EN|cl.discord.cache.059|
+::X|EN|cl.discord.cache.060|  Known problems  : The two parts use different running checks: the part for
+::X|EN|cl.discord.cache.061|                    the account running OPTY tests only Discord.exe, the
+::X|EN|cl.discord.cache.062|                    every-profile part skips while Discord.exe, DiscordPTB.exe
+::X|EN|cl.discord.cache.063|                    or DiscordCanary.exe runs. With only PTB or Canary open,
+::X|EN|cl.discord.cache.064|                    the current account's stable cache is therefore still
+::X|EN|cl.discord.cache.065|                    cleared by the first part, which is harmless because those
+::X|EN|cl.discord.cache.066|                    builds keep their own folders.
+::X|EN|cl.discord.cache.067|
+::X|EN|cl.discord.cache.068|  Unverified      : Whether Discord is running when you launch OPTY
+::X|EN|cl.discord.cache.069|                    depends on your own start-with-Windows setting, which
+::X|EN|cl.discord.cache.070|                    is on by default on a normal install but is a setting,
+::X|EN|cl.discord.cache.071|                    not a law. The cache sizes are the usual range for an
+::X|EN|cl.discord.cache.072|                    active account, not a measurement of this machine.
+::X|EN|cl.discord.cache.073|
+::X|EN|cl.discord.cache.074|  Target          : :dl_discord_go (asked under :dl_discord). call :isrunning
+::X|EN|cl.discord.cache.075|                    "Discord.exe" then, only if it is not running, del /F /S
+::X|EN|cl.discord.cache.076|                    /Q on %APPDATA%\discord\Cache\Cache_Data,
+::X|EN|cl.discord.cache.077|                    %APPDATA%\discord\Code Cache and
+::X|EN|cl.discord.cache.078|                    %APPDATA%\discord\GPUCache (%APPDATA% is the roaming
+::X|EN|cl.discord.cache.079|                    folder of the account running OPTY). Then call :userclean
+::X|EN|cl.discord.cache.080|                    "<profile>" discord for every folder of
+::X|EN|cl.discord.cache.081|                    %SystemDrive%\Users; its :uc_discord part, guarded by
+::X|EN|cl.discord.cache.082|                    RUNDISC, empties Cache, Code Cache and GPUCache of
+::X|EN|cl.discord.cache.083|                    discord, discordptb and discordcanary under that profile's
+::X|EN|cl.discord.cache.084|                    AppData\Roaming.
+::X|FR|cl.discord.cache.001|  Ce que c est    : Discord est une application Electron : elle embarque un
+::X|FR|cl.discord.cache.002|                    navigateur, avec les mêmes dossiers Cache, Code Cache et
+::X|FR|cl.discord.cache.003|                    GPUCache qu un navigateur. Cette étape vide ces trois-là
+::X|FR|cl.discord.cache.004|                    pour les versions stable, PTB et Canary de chaque profil
+::X|FR|cl.discord.cache.005|                    Windows, et uniquement tant que Discord ne tourne pas.
 ::X|FR|cl.discord.cache.006|
-::X|FR|cl.discord.cache.007|  Effet reel      : Supprime les fichiers des trois dossiers de cache du
-::X|FR|cl.discord.cache.008|                    compte qui exécute OPTY. Ce qu il faut savoir, c est
-::X|FR|cl.discord.cache.009|                    que cette étape est ignorée bien plus souvent qu on ne
-::X|FR|cl.discord.cache.010|                    le croit : Discord s installe en démarrage automatique
-::X|FR|cl.discord.cache.011|                    et se réduit dans la zone de notification, donc
-::X|FR|cl.discord.cache.012|                    Discord.exe tourne généralement même sans fenêtre
-::X|FR|cl.discord.cache.013|                    ouverte. Fermer la fenêtre ne suffit pas : quittez-le
-::X|FR|cl.discord.cache.014|                    depuis l icône de la zone de notification, sinon OPTY
-::X|FR|cl.discord.cache.015|                    affiche « Discord is running - caches skipped » et
-::X|FR|cl.discord.cache.016|                    passe à la suite. Non touchés : Local Storage, où
-::X|FR|cl.discord.cache.017|                    réside le jeton de connexion, et les bases leveldb qui
-::X|FR|cl.discord.cache.018|                    l accompagnent.
-::X|FR|cl.discord.cache.019|
-::X|FR|cl.discord.cache.020|  Gain            : Quelques centaines de Mo sur un compte actif :
-::X|FR|cl.discord.cache.021|                    Cache_Data seul fait couramment 100 à 600 Mo. Plus
-::X|FR|cl.discord.cache.022|                    utile encore, c est le remède standard à un Discord
-::X|FR|cl.discord.cache.023|                    qui s ouvre sur une fenêtre grise ou blanche, ne
-::X|FR|cl.discord.cache.024|                    charge plus les images, ou reste bloqué sur «
-::X|FR|cl.discord.cache.025|                    Connexion ».
-::X|FR|cl.discord.cache.026|
-::X|FR|cl.discord.cache.027|  Cout            : Images, avatars et émojis se retéléchargent au premier
-::X|FR|cl.discord.cache.028|                    défilement d un salon : quelques secondes et quelques
-::X|FR|cl.discord.cache.029|                    dizaines de Mo. Vous restez connecté. Rien de ce que
-::X|FR|cl.discord.cache.030|                    vous avez créé n est touché : vos réglages, vos
-::X|FR|cl.discord.cache.031|                    serveurs et votre historique de messages vivent sur
-::X|FR|cl.discord.cache.032|                    les serveurs de Discord, pas dans ces dossiers.
-::X|FR|cl.discord.cache.033|
-::X|FR|cl.discord.cache.034|  Defaut Windows  : Sans objet. C est un cache applicatif, auquel Windows
-::X|FR|cl.discord.cache.035|                    ne touche jamais.
-::X|FR|cl.discord.cache.036|
-::X|FR|cl.discord.cache.037|  Valeurs possibles :
-::X|FR|cl.discord.cache.038|    DELETE               : Vider les trois dossiers de cache Electron, à
-::X|FR|cl.discord.cache.039|                           condition d avoir quitté Discord pour de bon.
-::X|FR|cl.discord.cache.040|                           Votre jeton de connexion est dans Local Storage
-::X|FR|cl.discord.cache.041|                           et n est pas touché.
-::X|FR|cl.discord.cache.042|    KEEP                 : Rien à perdre à le garder : ce cache est borné,
-::X|FR|cl.discord.cache.043|                           et un client qui fonctionne n a aucune raison
-::X|FR|cl.discord.cache.044|                           d être nettoyé.
-::X|FR|cl.discord.cache.045|    ASK                  : Inutile. L étape refuse déjà de s exécuter tant
-::X|FR|cl.discord.cache.046|                           que Discord tourne, le seul cas où le client
-::X|FR|cl.discord.cache.047|                           pourrait être corrompu.
-::X|FR|cl.discord.cache.048|
-::X|FR|cl.discord.cache.049|  Pourquoi ces profils : Quatre colonnes identiques, parce qu un cache
-::X|FR|cl.discord.cache.050|                         Electron se comporte pareil partout. Sur BUREAU
-::X|FR|cl.discord.cache.051|                         et SERVEUR, où Discord n est peut-être pas
-::X|FR|cl.discord.cache.052|                         installé, l étape ne trouve rien et ne fait rien
-::X|FR|cl.discord.cache.053|                         : pas nuisible, juste vide. WINDOWS veut dire ne
-::X|FR|cl.discord.cache.054|                         touchez à rien : ce cache est borné et ne
-::X|FR|cl.discord.cache.055|                         dévorera pas votre disque.
-::X|FR|cl.discord.cache.056|
-::X|FR|cl.discord.cache.057|  Problemes connus : Cette étape ne couvre que la version stable de
-::X|FR|cl.discord.cache.058|                     Discord du compte qui exécute OPTY (%APPDATA%). Le
-::X|FR|cl.discord.cache.059|                     nettoyage large est ailleurs : :userclean, lancé
-::X|FR|cl.discord.cache.060|                     pour chaque profil Windows sous la réponse Caches des
-::X|FR|cl.discord.cache.061|                     navigateurs (cl.browser.caches), vide déjà Cache,
-::X|FR|cl.discord.cache.062|                     Code Cache et GPUCache de discord, discordptb et
-::X|FR|cl.discord.cache.063|                     discordcanary, sauf si une version de Discord tourne.
-::X|FR|cl.discord.cache.064|                     KEEP ici ne protège donc pas ces caches si Caches des
-::X|FR|cl.discord.cache.065|                     navigateurs est sur DELETE, et PTB / Canary ou les
-::X|FR|cl.discord.cache.066|                     autres comptes ne sont nettoyés que par cette réponse.
-::X|FR|cl.discord.cache.067|
-::X|FR|cl.discord.cache.068|  Non verifie (en)  : Whether Discord is running when you launch OPTY
-::X|FR|cl.discord.cache.069|                      depends on your own start-with-Windows setting,
-::X|FR|cl.discord.cache.070|                      which is on by default on a normal install but is a
-::X|FR|cl.discord.cache.071|                      setting, not a law. The cache sizes are the usual
-::X|FR|cl.discord.cache.072|                      range for an active account, not a measurement of
-::X|FR|cl.discord.cache.073|                      this machine.
-::X|FR|cl.discord.cache.074|
-::X|FR|cl.discord.cache.075|  Cible           : :dl_discord_go (question posée sous :dl_discord).
-::X|FR|cl.discord.cache.076|                    call :isrunning "Discord.exe" puis, seulement s il ne
-::X|FR|cl.discord.cache.077|                    tourne pas, del /F /S /Q sur
-::X|FR|cl.discord.cache.078|                    %APPDATA%\discord\Cache\Cache_Data,
-::X|FR|cl.discord.cache.079|                    %APPDATA%\discord\Code Cache et
-::X|FR|cl.discord.cache.080|                    %APPDATA%\discord\GPUCache. %APPDATA% est le dossier
-::X|FR|cl.discord.cache.081|                    itinérant du compte qui exécute OPTY. Le nettoyage de
-::X|FR|cl.discord.cache.082|                    tous les profils et de toutes les versions est la
-::X|FR|cl.discord.cache.083|                    boucle gardée par RUNDISC dans :userclean.
+::X|FR|cl.discord.cache.007|  Effet reel      : Supprime d abord les fichiers des trois dossiers de cache
+::X|FR|cl.discord.cache.008|                    du compte qui exécute OPTY, seulement si Discord.exe ne
+::X|FR|cl.discord.cache.009|                    tourne pas. Puis lance :userclean "<profil>" discord pour
+::X|FR|cl.discord.cache.010|                    CHAQUE profil de %SystemDrive%\Users, qui vide Cache, Code
+::X|FR|cl.discord.cache.011|                    Cache et GPUCache de discord, discordptb et discordcanary,
+::X|FR|cl.discord.cache.012|                    sauf si une version de Discord tourne (RUNDISC, testé une
+::X|FR|cl.discord.cache.013|                    seule fois en tête de :delete). Passer cette étape arrête
+::X|FR|cl.discord.cache.014|                    désormais le tout ; la partie tous profils dépendait de la
+::X|FR|cl.discord.cache.015|                    réponse Caches des navigateurs. Ce qu il faut savoir, c
+::X|FR|cl.discord.cache.016|                    est que cette étape est ignorée bien plus souvent qu on ne
+::X|FR|cl.discord.cache.017|                    le croit : Discord s installe en démarrage automatique et
+::X|FR|cl.discord.cache.018|                    se réduit dans la zone de notification, donc Discord.exe
+::X|FR|cl.discord.cache.019|                    tourne généralement même sans fenêtre ouverte. Fermer la
+::X|FR|cl.discord.cache.020|                    fenêtre ne suffit pas : quittez-le depuis l icône de la
+::X|FR|cl.discord.cache.021|                    zone de notification, sinon OPTY affiche « Discord is
+::X|FR|cl.discord.cache.022|                    running - caches skipped » et passe à la suite. Non
+::X|FR|cl.discord.cache.023|                    touchés : Local Storage, où réside le jeton de connexion,
+::X|FR|cl.discord.cache.024|                    et les bases leveldb qui l accompagnent.
+::X|FR|cl.discord.cache.025|
+::X|FR|cl.discord.cache.026|  Gain            : Quelques centaines de Mo sur un compte actif :
+::X|FR|cl.discord.cache.027|                    Cache_Data seul fait couramment 100 à 600 Mo. Plus
+::X|FR|cl.discord.cache.028|                    utile encore, c est le remède standard à un Discord
+::X|FR|cl.discord.cache.029|                    qui s ouvre sur une fenêtre grise ou blanche, ne
+::X|FR|cl.discord.cache.030|                    charge plus les images, ou reste bloqué sur «
+::X|FR|cl.discord.cache.031|                    Connexion ».
+::X|FR|cl.discord.cache.032|
+::X|FR|cl.discord.cache.033|  Cout            : Images, avatars et émojis se retéléchargent au premier
+::X|FR|cl.discord.cache.034|                    défilement d un salon : quelques secondes et quelques
+::X|FR|cl.discord.cache.035|                    dizaines de Mo. Vous restez connecté. Rien de ce que
+::X|FR|cl.discord.cache.036|                    vous avez créé n est touché : vos réglages, vos
+::X|FR|cl.discord.cache.037|                    serveurs et votre historique de messages vivent sur
+::X|FR|cl.discord.cache.038|                    les serveurs de Discord, pas dans ces dossiers.
+::X|FR|cl.discord.cache.039|
+::X|FR|cl.discord.cache.040|  Defaut Windows  : Sans objet. C est un cache applicatif, auquel Windows
+::X|FR|cl.discord.cache.041|                    ne touche jamais.
+::X|FR|cl.discord.cache.042|
+::X|FR|cl.discord.cache.043|  Valeurs possibles :
+::X|FR|cl.discord.cache.044|    DELETE               : Vider les trois dossiers de cache Electron de
+::X|FR|cl.discord.cache.045|                           chaque version de Discord dans chaque profil, à
+::X|FR|cl.discord.cache.046|                           condition que Discord soit complètement quitté.
+::X|FR|cl.discord.cache.047|                           Votre jeton de connexion vit dans Local Storage et
+::X|FR|cl.discord.cache.048|                           n est pas touché.
+::X|FR|cl.discord.cache.049|    KEEP                 : Rien à perdre à le garder : ce cache est borné,
+::X|FR|cl.discord.cache.050|                           et un client qui fonctionne n a aucune raison
+::X|FR|cl.discord.cache.051|                           d être nettoyé.
+::X|FR|cl.discord.cache.052|    ASK                  : Inutile. L étape refuse déjà de s exécuter tant
+::X|FR|cl.discord.cache.053|                           que Discord tourne, le seul cas où le client
+::X|FR|cl.discord.cache.054|                           pourrait être corrompu.
+::X|FR|cl.discord.cache.055|
+::X|FR|cl.discord.cache.056|  Pourquoi ces profils : Quatre colonnes identiques, parce qu un cache
+::X|FR|cl.discord.cache.057|                         Electron se comporte pareil partout. Sur BUREAU
+::X|FR|cl.discord.cache.058|                         et SERVEUR, où Discord n est peut-être pas
+::X|FR|cl.discord.cache.059|                         installé, l étape ne trouve rien et ne fait rien
+::X|FR|cl.discord.cache.060|                         : pas nuisible, juste vide. WINDOWS veut dire ne
+::X|FR|cl.discord.cache.061|                         touchez à rien : ce cache est borné et ne
+::X|FR|cl.discord.cache.062|                         dévorera pas votre disque.
+::X|FR|cl.discord.cache.063|
+::X|FR|cl.discord.cache.064|  Problemes connus : Les deux parties n utilisent pas le même test : la partie
+::X|FR|cl.discord.cache.065|                     du compte qui exécute OPTY ne teste que Discord.exe, la
+::X|FR|cl.discord.cache.066|                     partie tous profils saute tant que Discord.exe,
+::X|FR|cl.discord.cache.067|                     DiscordPTB.exe ou DiscordCanary.exe tourne. Avec
+::X|FR|cl.discord.cache.068|                     seulement PTB ou Canary ouvert, le cache stable du compte
+::X|FR|cl.discord.cache.069|                     courant est donc quand même vidé par la première partie,
+::X|FR|cl.discord.cache.070|                     sans danger puisque ces versions ont leurs propres
+::X|FR|cl.discord.cache.071|                     dossiers.
+::X|FR|cl.discord.cache.072|
+::X|FR|cl.discord.cache.073|  Non verifie (en)  : Whether Discord is running when you launch OPTY
+::X|FR|cl.discord.cache.074|                      depends on your own start-with-Windows setting,
+::X|FR|cl.discord.cache.075|                      which is on by default on a normal install but is a
+::X|FR|cl.discord.cache.076|                      setting, not a law. The cache sizes are the usual
+::X|FR|cl.discord.cache.077|                      range for an active account, not a measurement of
+::X|FR|cl.discord.cache.078|                      this machine.
+::X|FR|cl.discord.cache.079|
+::X|FR|cl.discord.cache.080|  Cible           : :dl_discord_go (question posée sous :dl_discord). call
+::X|FR|cl.discord.cache.081|                    :isrunning "Discord.exe" puis, seulement s il ne tourne
+::X|FR|cl.discord.cache.082|                    pas, del /F /S /Q sur %APPDATA%\discord\Cache\Cache_Data,
+::X|FR|cl.discord.cache.083|                    %APPDATA%\discord\Code Cache et %APPDATA%\discord\GPUCache
+::X|FR|cl.discord.cache.084|                    (%APPDATA% est le dossier itinérant du compte qui exécute
+::X|FR|cl.discord.cache.085|                    OPTY). Ensuite call :userclean "<profil>" discord pour
+::X|FR|cl.discord.cache.086|                    chaque dossier de %SystemDrive%\Users ; sa partie
+::X|FR|cl.discord.cache.087|                    :uc_discord, gardée par RUNDISC, vide Cache, Code Cache et
+::X|FR|cl.discord.cache.088|                    GPUCache de discord, discordptb et discordcanary dans l
+::X|FR|cl.discord.cache.089|                    AppData\Roaming de ce profil.
 ::
 :: ---- cl.steam.cache (cleanup) ------------------------------------
 ::P|cl.steam.cache|DELETE|DELETE|DELETE|DELETE|KEEP|
@@ -35710,20 +35802,20 @@ goto :eof
 ::X|EN|cl.ubisoft.cache.008|                    skipped.
 ::X|EN|cl.ubisoft.cache.009|
 ::X|EN|cl.ubisoft.cache.010|  Actual effect   : This card empties http2, club and ulcf under
-::X|EN|cl.ubisoft.cache.011|                    %ProgramFiles(x86)%\Ubisoft\Ubisoft Game Launcher\cache.
-::X|EN|cl.ubisoft.cache.012|                    The per-user copy (AppData\Local\Ubisoft Game
-::X|EN|cl.ubisoft.cache.013|                    Launcher\cache\http2, club and ulcf) is swept for
-::X|EN|cl.ubisoft.cache.014|                    EVERY profile under C:\Users by :userclean, which runs
-::X|EN|cl.ubisoft.cache.015|                    under the browser-caches answer (cl.browser.caches),
-::X|EN|cl.ubisoft.cache.016|                    not under this one. cache\ownership and
-::X|EN|cl.ubisoft.cache.017|                    cache\activations - the offline entitlement and
-::X|EN|cl.ubisoft.cache.018|                    activation state - are never touched, and the folders
-::X|EN|cl.ubisoft.cache.019|                    stay in place. Installed games and save data are not
-::X|EN|cl.ubisoft.cache.020|                    touched either. Whether upc.exe runs is probed once
-::X|EN|cl.ubisoft.cache.021|                    (RUNUBI) before any cleanup question, so declining an
-::X|EN|cl.ubisoft.cache.022|                    unrelated card cannot skip the check. The Program
-::X|EN|cl.ubisoft.cache.023|                    Files path follows %ProgramFiles(x86)%, so a Ubisoft
-::X|EN|cl.ubisoft.cache.024|                    Connect installed on another drive is silently
+::X|EN|cl.ubisoft.cache.011|                    %ProgramFiles(x86)%\Ubisoft\Ubisoft Game Launcher\cache
+::X|EN|cl.ubisoft.cache.012|                    and then, through :userclean "<profile>" ubi, the same
+::X|EN|cl.ubisoft.cache.013|                    three folders of the per-user copy (AppData\Local\Ubisoft
+::X|EN|cl.ubisoft.cache.014|                    Game Launcher\cache) for EVERY profile under C:\Users.
+::X|EN|cl.ubisoft.cache.015|                    Skipping this step now stops both; the per-user part used
+::X|EN|cl.ubisoft.cache.016|                    to run under the browser-caches answer
+::X|EN|cl.ubisoft.cache.017|                    (cl.browser.caches). cache\ownership and cache\activations
+::X|EN|cl.ubisoft.cache.018|                    - the offline entitlement and activation state - are never
+::X|EN|cl.ubisoft.cache.019|                    touched, and the folders stay in place. Installed games
+::X|EN|cl.ubisoft.cache.020|                    and save data are not touched either. Whether upc.exe runs
+::X|EN|cl.ubisoft.cache.021|                    is probed once (RUNUBI) before any cleanup question, so
+::X|EN|cl.ubisoft.cache.022|                    declining an unrelated card cannot skip the check. The
+::X|EN|cl.ubisoft.cache.023|                    Program Files path follows %ProgramFiles(x86)%, so a
+::X|EN|cl.ubisoft.cache.024|                    Ubisoft Connect installed on another drive is silently
 ::X|EN|cl.ubisoft.cache.025|                    missed.
 ::X|EN|cl.ubisoft.cache.026|
 ::X|EN|cl.ubisoft.cache.027|  Gain            : Modest and honest: typically 50 to 300 MB of
@@ -35744,13 +35836,13 @@ goto :eof
 ::X|EN|cl.ubisoft.cache.042|                    by the launcher.
 ::X|EN|cl.ubisoft.cache.043|
 ::X|EN|cl.ubisoft.cache.044|  Possible values:
-::X|EN|cl.ubisoft.cache.045|    DELETE               : Empty the refetchable Ubisoft Connect cache
-::X|EN|cl.ubisoft.cache.046|                           folders under Program Files, provided the
-::X|EN|cl.ubisoft.cache.047|                           launcher is fully closed. Installed games,
+::X|EN|cl.ubisoft.cache.045|    DELETE               : Empty the refetchable Ubisoft Connect cache folders
+::X|EN|cl.ubisoft.cache.046|                           under Program Files and in every profile, provided
+::X|EN|cl.ubisoft.cache.047|                           the launcher is fully closed. Installed games,
 ::X|EN|cl.ubisoft.cache.048|                           saves, ownership and activations are untouched.
-::X|EN|cl.ubisoft.cache.049|    KEEP                 : Reasonable if the launcher works. The per-user
-::X|EN|cl.ubisoft.cache.050|                           copy is still swept if you answer DELETE to the
-::X|EN|cl.ubisoft.cache.051|                           browser caches.
+::X|EN|cl.ubisoft.cache.049|    KEEP                 : Reasonable if the launcher works. Skipping keeps
+::X|EN|cl.ubisoft.cache.050|                           both the Program Files copy and every per-user
+::X|EN|cl.ubisoft.cache.051|                           copy.
 ::X|EN|cl.ubisoft.cache.052|    ASK                  : Not needed for space; fair if you want to decide
 ::X|EN|cl.ubisoft.cache.053|                           case by case.
 ::X|EN|cl.ubisoft.cache.054|
@@ -35761,26 +35853,25 @@ goto :eof
 ::X|EN|cl.ubisoft.cache.059|                       just an absence. WINDOWS means leave it alone: this
 ::X|EN|cl.ubisoft.cache.060|                       cache is small and self-limiting.
 ::X|EN|cl.ubisoft.cache.061|
-::X|EN|cl.ubisoft.cache.062|  Known problems  : The Program Files path follows %ProgramFiles(x86)%,
-::X|EN|cl.ubisoft.cache.063|                    so an installation on another drive is missed and the
-::X|EN|cl.ubisoft.cache.064|                    step reports nothing about it. The per-user half is
-::X|EN|cl.ubisoft.cache.065|                    tied to a different answer (browser caches), so KEEP
-::X|EN|cl.ubisoft.cache.066|                    here does not keep it.
-::X|EN|cl.ubisoft.cache.067|
-::X|EN|cl.ubisoft.cache.068|  Unverified      : That clearing this cache can cost you a sign-in comes
-::X|EN|cl.ubisoft.cache.069|                    from user reports and Ubisoft support threads rather
-::X|EN|cl.ubisoft.cache.070|                    than from a test here. The 50 to 300 MB range is
-::X|EN|cl.ubisoft.cache.071|                    typical for an account with several games, not a
-::X|EN|cl.ubisoft.cache.072|                    measurement of this machine.
-::X|EN|cl.ubisoft.cache.073|
-::X|EN|cl.ubisoft.cache.074|  Target          : OPTY.bat :dl_ubi_go. UBIPF = %ProgramFiles(x86)%\
-::X|EN|cl.ubisoft.cache.075|                    Ubisoft\Ubisoft Game Launcher\cache, then, only if
-::X|EN|cl.ubisoft.cache.076|                    RUNUBI is not defined, del /F /S /Q on %UBIPF%\http2\*,
-::X|EN|cl.ubisoft.cache.077|                    %UBIPF%\club\* and %UBIPF%\ulcf\*. RUNUBI is set by
-::X|EN|cl.ubisoft.cache.078|                    call :isrunning "upc.exe" at the start of :delete.
-::X|EN|cl.ubisoft.cache.079|                    The per-user copy is in :userclean, called for every
-::X|EN|cl.ubisoft.cache.080|                    folder of %SystemDrive%\Users from :dl_browsers_go.
-::X|EN|cl.ubisoft.cache.081|                    USERHOME is %USERPROFILE% and is not used here.
+::X|EN|cl.ubisoft.cache.062|  Known problems  : The Program Files path follows %ProgramFiles(x86)%, so an
+::X|EN|cl.ubisoft.cache.063|                    installation on another drive is missed and the step
+::X|EN|cl.ubisoft.cache.064|                    reports nothing about it.
+::X|EN|cl.ubisoft.cache.065|
+::X|EN|cl.ubisoft.cache.066|  Unverified      : That clearing this cache can cost you a sign-in comes
+::X|EN|cl.ubisoft.cache.067|                    from user reports and Ubisoft support threads rather
+::X|EN|cl.ubisoft.cache.068|                    than from a test here. The 50 to 300 MB range is
+::X|EN|cl.ubisoft.cache.069|                    typical for an account with several games, not a
+::X|EN|cl.ubisoft.cache.070|                    measurement of this machine.
+::X|EN|cl.ubisoft.cache.071|
+::X|EN|cl.ubisoft.cache.072|  Target          : OPTY.bat :dl_ubi_go. UBIPF =
+::X|EN|cl.ubisoft.cache.073|                    %ProgramFiles(x86)%\Ubisoft\Ubisoft Game Launcher\cache,
+::X|EN|cl.ubisoft.cache.074|                    then, only if RUNUBI is not defined, del /F /S /Q on
+::X|EN|cl.ubisoft.cache.075|                    %UBIPF%\http2\*, %UBIPF%\club\* and %UBIPF%\ulcf\*. RUNUBI
+::X|EN|cl.ubisoft.cache.076|                    is set by call :isrunning "upc.exe" at the start of
+::X|EN|cl.ubisoft.cache.077|                    :delete. Then call :userclean "<profile>" ubi for every
+::X|EN|cl.ubisoft.cache.078|                    folder of %SystemDrive%\Users; its :uc_ubi part empties
+::X|EN|cl.ubisoft.cache.079|                    the same three folders under AppData\Local\Ubisoft Game
+::X|EN|cl.ubisoft.cache.080|                    Launcher\cache, with the same RUNUBI guard.
 ::X|FR|cl.ubisoft.cache.001|  Ce que c est    : Le launcher Ubisoft Connect conserve un cache dans
 ::X|FR|cl.ubisoft.cache.002|                    chaque profil utilisateur et un second dans son
 ::X|FR|cl.ubisoft.cache.003|                    dossier de Program Files : visuels de la boutique,
@@ -35792,22 +35883,22 @@ goto :eof
 ::X|FR|cl.ubisoft.cache.009|                    les suppressions Ubisoft sont sautées.
 ::X|FR|cl.ubisoft.cache.010|
 ::X|FR|cl.ubisoft.cache.011|  Effet reel      : Cette fiche vide http2, club et ulcf sous
-::X|FR|cl.ubisoft.cache.012|                    %ProgramFiles(x86)%\Ubisoft\Ubisoft Game Launcher\cache.
-::X|FR|cl.ubisoft.cache.013|                    La copie par utilisateur (AppData\Local\Ubisoft Game
-::X|FR|cl.ubisoft.cache.014|                    Launcher\cache\http2, club et ulcf) est balayée pour
-::X|FR|cl.ubisoft.cache.015|                    CHAQUE profil de C:\Users par :userclean, qui dépend
-::X|FR|cl.ubisoft.cache.016|                    de la réponse sur les caches de navigateur
-::X|FR|cl.ubisoft.cache.017|                    (cl.browser.caches), pas de celle-ci. cache\ownership
-::X|FR|cl.ubisoft.cache.018|                    et cache\activations - l état des licences et des
-::X|FR|cl.ubisoft.cache.019|                    activations hors ligne - ne sont jamais touchés, et
-::X|FR|cl.ubisoft.cache.020|                    les dossiers restent en place. Les jeux installés et
-::X|FR|cl.ubisoft.cache.021|                    les sauvegardes ne sont pas touchés non plus. La
-::X|FR|cl.ubisoft.cache.022|                    présence de upc.exe est testée une seule fois
-::X|FR|cl.ubisoft.cache.023|                    (RUNUBI) avant toute question de nettoyage, donc
-::X|FR|cl.ubisoft.cache.024|                    refuser une fiche sans rapport ne peut pas sauter ce
-::X|FR|cl.ubisoft.cache.025|                    test. Le chemin Program Files suit
-::X|FR|cl.ubisoft.cache.026|                    %ProgramFiles(x86)%, donc un Ubisoft Connect installé
-::X|FR|cl.ubisoft.cache.027|                    sur un autre disque est ignoré en silence.
+::X|FR|cl.ubisoft.cache.012|                    %ProgramFiles(x86)%\Ubisoft\Ubisoft Game Launcher\cache
+::X|FR|cl.ubisoft.cache.013|                    puis, via :userclean "<profil>" ubi, les trois mêmes
+::X|FR|cl.ubisoft.cache.014|                    dossiers de la copie par utilisateur
+::X|FR|cl.ubisoft.cache.015|                    (AppData\Local\Ubisoft Game Launcher\cache) pour CHAQUE
+::X|FR|cl.ubisoft.cache.016|                    profil de C:\Users. Passer cette étape arrête désormais
+::X|FR|cl.ubisoft.cache.017|                    les deux ; la partie par utilisateur dépendait de la
+::X|FR|cl.ubisoft.cache.018|                    réponse sur les caches de navigateur (cl.browser.caches).
+::X|FR|cl.ubisoft.cache.019|                    cache\ownership et cache\activations - l état des licences
+::X|FR|cl.ubisoft.cache.020|                    et des activations hors ligne - ne sont jamais touchés, et
+::X|FR|cl.ubisoft.cache.021|                    les dossiers restent en place. Les jeux installés et les
+::X|FR|cl.ubisoft.cache.022|                    sauvegardes ne sont pas touchés non plus. La présence de
+::X|FR|cl.ubisoft.cache.023|                    upc.exe est testée une seule fois (RUNUBI) avant toute
+::X|FR|cl.ubisoft.cache.024|                    question de nettoyage, donc refuser une fiche sans rapport
+::X|FR|cl.ubisoft.cache.025|                    ne peut pas sauter ce test. Le chemin Program Files suit
+::X|FR|cl.ubisoft.cache.026|                    %ProgramFiles(x86)%, donc un Ubisoft Connect installé sur
+::X|FR|cl.ubisoft.cache.027|                    un autre disque est ignoré en silence.
 ::X|FR|cl.ubisoft.cache.028|
 ::X|FR|cl.ubisoft.cache.029|  Gain            : Modeste et sans exagération : typiquement 50 à 300 Mo
 ::X|FR|cl.ubisoft.cache.030|                    de visuels téléchargés pour un compte avec plusieurs
@@ -35827,14 +35918,14 @@ goto :eof
 ::X|FR|cl.ubisoft.cache.044|                    launcher.
 ::X|FR|cl.ubisoft.cache.045|
 ::X|FR|cl.ubisoft.cache.046|  Valeurs possibles :
-::X|FR|cl.ubisoft.cache.047|    DELETE               : Vider les dossiers de cache retéléchargeables
-::X|FR|cl.ubisoft.cache.048|                           d Ubisoft Connect sous Program Files, à
-::X|FR|cl.ubisoft.cache.049|                           condition que le launcher soit complètement
-::X|FR|cl.ubisoft.cache.050|                           fermé. Jeux installés, sauvegardes, licences et
-::X|FR|cl.ubisoft.cache.051|                           activations intacts.
-::X|FR|cl.ubisoft.cache.052|    KEEP                 : Raisonnable si le launcher fonctionne. La copie
-::X|FR|cl.ubisoft.cache.053|                           par utilisateur est quand même balayée si vous
-::X|FR|cl.ubisoft.cache.054|                           répondez DELETE aux caches de navigateur.
+::X|FR|cl.ubisoft.cache.047|    DELETE               : Vider les dossiers de cache retéléchargeables d
+::X|FR|cl.ubisoft.cache.048|                           Ubisoft Connect sous Program Files et dans chaque
+::X|FR|cl.ubisoft.cache.049|                           profil, à condition que le launcher soit
+::X|FR|cl.ubisoft.cache.050|                           complètement fermé. Jeux installés, sauvegardes,
+::X|FR|cl.ubisoft.cache.051|                           licences et activations intacts.
+::X|FR|cl.ubisoft.cache.052|    KEEP                 : Raisonnable si le launcher fonctionne. Passer l
+::X|FR|cl.ubisoft.cache.053|                           étape garde la copie de Program Files et chaque
+::X|FR|cl.ubisoft.cache.054|                           copie par utilisateur.
 ::X|FR|cl.ubisoft.cache.055|    ASK                  : Inutile pour la place ; légitime si vous voulez
 ::X|FR|cl.ubisoft.cache.056|                           décider au cas par cas.
 ::X|FR|cl.ubisoft.cache.057|
@@ -35846,27 +35937,25 @@ goto :eof
 ::X|FR|cl.ubisoft.cache.063|                         absence. WINDOWS veut dire ne touchez à rien : ce
 ::X|FR|cl.ubisoft.cache.064|                         cache est petit et se limite tout seul.
 ::X|FR|cl.ubisoft.cache.065|
-::X|FR|cl.ubisoft.cache.066|  Problemes connus : Le chemin Program Files suit %ProgramFiles(x86)%,
-::X|FR|cl.ubisoft.cache.067|                     donc une installation sur un autre disque est
-::X|FR|cl.ubisoft.cache.068|                     manquée sans que l étape le signale. La moitié par
-::X|FR|cl.ubisoft.cache.069|                     utilisateur dépend d une autre réponse (caches de
-::X|FR|cl.ubisoft.cache.070|                     navigateur), donc KEEP ici ne la protège pas.
-::X|FR|cl.ubisoft.cache.071|
-::X|FR|cl.ubisoft.cache.072|  Non verifie (en)  : That clearing this cache can cost you a sign-in
-::X|FR|cl.ubisoft.cache.073|                      comes from user reports and Ubisoft support threads
-::X|FR|cl.ubisoft.cache.074|                      rather than from a test here. The 50 to 300 MB
-::X|FR|cl.ubisoft.cache.075|                      range is typical for an account with several games,
-::X|FR|cl.ubisoft.cache.076|                      not a measurement of this machine.
-::X|FR|cl.ubisoft.cache.077|
-::X|FR|cl.ubisoft.cache.078|  Cible           : OPTY.bat :dl_ubi_go. UBIPF = %ProgramFiles(x86)%\
-::X|FR|cl.ubisoft.cache.079|                    Ubisoft\Ubisoft Game Launcher\cache, puis, seulement
-::X|FR|cl.ubisoft.cache.080|                    si RUNUBI n est pas défini, del /F /S /Q sur
-::X|FR|cl.ubisoft.cache.081|                    %UBIPF%\http2\*, %UBIPF%\club\* et %UBIPF%\ulcf\*.
-::X|FR|cl.ubisoft.cache.082|                    RUNUBI est posé par call :isrunning "upc.exe" au début
-::X|FR|cl.ubisoft.cache.083|                    de :delete. La copie par utilisateur est dans
-::X|FR|cl.ubisoft.cache.084|                    :userclean, appelé pour chaque dossier de
-::X|FR|cl.ubisoft.cache.085|                    %SystemDrive%\Users depuis :dl_browsers_go. USERHOME
-::X|FR|cl.ubisoft.cache.086|                    vaut %USERPROFILE% et n est pas utilisé ici.
+::X|FR|cl.ubisoft.cache.066|  Problemes connus : Le chemin Program Files suit %ProgramFiles(x86)%, donc
+::X|FR|cl.ubisoft.cache.067|                     une installation sur un autre disque est manquée sans que
+::X|FR|cl.ubisoft.cache.068|                     l étape le signale.
+::X|FR|cl.ubisoft.cache.069|
+::X|FR|cl.ubisoft.cache.070|  Non verifie (en)  : That clearing this cache can cost you a sign-in
+::X|FR|cl.ubisoft.cache.071|                      comes from user reports and Ubisoft support threads
+::X|FR|cl.ubisoft.cache.072|                      rather than from a test here. The 50 to 300 MB
+::X|FR|cl.ubisoft.cache.073|                      range is typical for an account with several games,
+::X|FR|cl.ubisoft.cache.074|                      not a measurement of this machine.
+::X|FR|cl.ubisoft.cache.075|
+::X|FR|cl.ubisoft.cache.076|  Cible           : OPTY.bat :dl_ubi_go. UBIPF =
+::X|FR|cl.ubisoft.cache.077|                    %ProgramFiles(x86)%\Ubisoft\Ubisoft Game Launcher\cache,
+::X|FR|cl.ubisoft.cache.078|                    puis, seulement si RUNUBI n est pas défini, del /F /S /Q
+::X|FR|cl.ubisoft.cache.079|                    sur %UBIPF%\http2\*, %UBIPF%\club\* et %UBIPF%\ulcf\*.
+::X|FR|cl.ubisoft.cache.080|                    RUNUBI est posé par call :isrunning "upc.exe" au début de
+::X|FR|cl.ubisoft.cache.081|                    :delete. Ensuite call :userclean "<profil>" ubi pour
+::X|FR|cl.ubisoft.cache.082|                    chaque dossier de %SystemDrive%\Users ; sa partie :uc_ubi
+::X|FR|cl.ubisoft.cache.083|                    vide les trois mêmes dossiers sous AppData\Local\Ubisoft
+::X|FR|cl.ubisoft.cache.084|                    Game Launcher\cache, avec le même garde RUNUBI.
 ::
 :: ---- cl.ea.cache (cleanup) ---------------------------------------
 ::P|cl.ea.cache|DELETE|DELETE|DELETE|DELETE|KEEP|
@@ -35876,102 +35965,99 @@ goto :eof
 ::T|FR|cl.ea.cache.002|Vide le cache de l application EA (50 à 500 Mo) - le premier remède recommandé par EA elle-même pour un client qui ne se lance pas ou affiche une bibliothèque vide, au prix d une éventuelle reconnexion.
 ::X|EN|cl.ea.cache.001|  What it is      : The EA App, successor to Origin, keeps a cache in each
 ::X|EN|cl.ea.cache.002|                    Windows profile and a second one under %ProgramData%\EA
-::X|EN|cl.ea.cache.003|                    Core: store artwork, library metadata and web content
-::X|EN|cl.ea.cache.004|                    for the client's embedded browser. This step clears
-::X|EN|cl.ea.cache.005|                    the %ProgramData% one; the per-profile part is swept
-::X|EN|cl.ea.cache.006|                    by the Browser caches answer. Both are skipped while
+::X|EN|cl.ea.cache.003|                    Core: store artwork, library metadata and web content for
+::X|EN|cl.ea.cache.004|                    the client's embedded browser. This step clears the
+::X|EN|cl.ea.cache.005|                    %ProgramData% one and, for every profile, the disposable
+::X|EN|cl.ea.cache.006|                    parts of the per-profile one. Both are skipped while
 ::X|EN|cl.ea.cache.007|                    EADesktop.exe is running.
 ::X|EN|cl.ea.cache.008|
 ::X|EN|cl.ea.cache.009|  Actual effect   : This answer deletes the files under %ProgramData%\EA
-::X|EN|cl.ea.cache.010|                    Core\cache, leaving the folder itself. The per-profile
-::X|EN|cl.ea.cache.011|                    part is handled in :userclean, which runs for EVERY
-::X|EN|cl.ea.cache.012|                    Windows profile under the Browser caches answer
-::X|EN|cl.ea.cache.013|                    (cl.browser.caches): there only EA Desktop\cache\Cache,
-::X|EN|cl.ea.cache.014|                    Code Cache and GPUCache are emptied, never the rest of
-::X|EN|cl.ea.cache.015|                    EA Desktop\cache. Installed games, save data and
-::X|EN|cl.ea.cache.016|                    entitlements are untouched. EADesktop.exe is probed
-::X|EN|cl.ea.cache.017|                    once at the start of the cleanup (RUNEA); the EA App
-::X|EN|cl.ea.cache.018|                    starts with Windows on a default install, so quit it
-::X|EN|cl.ea.cache.019|                    from the tray before running OPTY, or the step prints
-::X|EN|cl.ea.cache.020|                    "EA App is running - skipped" and does nothing.
-::X|EN|cl.ea.cache.021|
-::X|EN|cl.ea.cache.022|  Gain            : Modest: typically 50 to 500 MB depending on how large
-::X|EN|cl.ea.cache.023|                    your library is. The real value is that clearing this
-::X|EN|cl.ea.cache.024|                    cache is EA's own documented first step for a client
-::X|EN|cl.ea.cache.025|                    that will not launch, shows an empty library, or loops
-::X|EN|cl.ea.cache.026|                    on the login screen.
-::X|EN|cl.ea.cache.027|
-::X|EN|cl.ea.cache.028|  Cost            : Rebuilt on the next launch, which takes a few seconds
-::X|EN|cl.ea.cache.029|                    and a small download. You may have to sign in again.
-::X|EN|cl.ea.cache.030|                    Nothing permanent is lost - no game files, no saves,
-::X|EN|cl.ea.cache.031|                    no entitlements, and nothing needs re-installing.
-::X|EN|cl.ea.cache.032|
-::X|EN|cl.ea.cache.033|  Windows default : Not applicable. Application cache, created and managed
-::X|EN|cl.ea.cache.034|                    by the EA App.
-::X|EN|cl.ea.cache.035|
-::X|EN|cl.ea.cache.036|  Possible values:
-::X|EN|cl.ea.cache.037|    DELETE               : Empty the EA Core cache under %ProgramData%,
-::X|EN|cl.ea.cache.038|                           provided the client is fully closed. Games,
-::X|EN|cl.ea.cache.039|                           saves and entitlements are untouched.
-::X|EN|cl.ea.cache.040|    KEEP                 : Fine if the client works: the cache is small
-::X|EN|cl.ea.cache.041|                           and clearing it buys you nothing but a possible
-::X|EN|cl.ea.cache.042|                           sign-in prompt.
-::X|EN|cl.ea.cache.043|    ASK                  : Not needed. This is EA's own first
-::X|EN|cl.ea.cache.044|                           troubleshooting step and it risks nothing
-::X|EN|cl.ea.cache.045|                           beyond re-entering your password.
-::X|EN|cl.ea.cache.046|
-::X|EN|cl.ea.cache.047|  Why these profiles : Four identical columns. GAMING is where the client
-::X|EN|cl.ea.cache.048|                       exists at all; on SERVER, OFFICE and LAPTOP the
-::X|EN|cl.ea.cache.049|                       folders normally do not exist and the step quietly
-::X|EN|cl.ea.cache.050|                       does nothing. WINDOWS means leave it alone, which
-::X|EN|cl.ea.cache.051|                       costs a few hundred MB at most and keeps you signed
-::X|EN|cl.ea.cache.052|                       in.
-::X|EN|cl.ea.cache.053|
-::X|EN|cl.ea.cache.054|  Known problems  : The per-profile EA Desktop caches do not follow this
-::X|EN|cl.ea.cache.055|                    answer: they are swept for every profile by
-::X|EN|cl.ea.cache.056|                    :userclean under Browser caches, so KEEP here does not
-::X|EN|cl.ea.cache.057|                    protect them if Browser caches is DELETE. The guard
-::X|EN|cl.ea.cache.058|                    only looks for EADesktop.exe; EA's background service
-::X|EN|cl.ea.cache.059|                    can be up without it, but it does not hold the cache
-::X|EN|cl.ea.cache.060|                    files open, so that is a note rather than a defect.
-::X|EN|cl.ea.cache.061|
-::X|EN|cl.ea.cache.062|  Unverified      : Having to sign in again after clearing the EA Desktop
-::X|EN|cl.ea.cache.063|                    cache is commonly reported and is what EA's own
-::X|EN|cl.ea.cache.064|                    troubleshooting article prepares you for, but it was
-::X|EN|cl.ea.cache.065|                    not reproduced here. The size range is typical, not
-::X|EN|cl.ea.cache.066|                    measured on this machine.
-::X|EN|cl.ea.cache.067|
-::X|EN|cl.ea.cache.068|  Target          : :dl_ea_go (asked under :dl_ea). if not defined RUNEA
-::X|EN|cl.ea.cache.069|                    del /F /S /Q on %ProgramData%\EA Core\cache\*; RUNEA
-::X|EN|cl.ea.cache.070|                    is set by call :isrunning "EADesktop.exe" at the top
-::X|EN|cl.ea.cache.071|                    of :delete. Per-profile part in :userclean, for every
-::X|EN|cl.ea.cache.072|                    profile (USERHOME is %USERPROFILE%, but that loop
-::X|EN|cl.ea.cache.073|                    walks %SystemDrive%\Users\*): del /F /S /Q on
-::X|EN|cl.ea.cache.074|                    AppData\Local\Electronic Arts\EA Desktop\cache\Cache,
-::X|EN|cl.ea.cache.075|                    Code Cache and GPUCache, same RUNEA guard. The legacy
-::X|EN|cl.ea.cache.076|                    Origin log folders are a separate step.
-::X|FR|cl.ea.cache.001|  Ce que c est    : L application EA, qui succède à Origin, conserve un
-::X|FR|cl.ea.cache.002|                    cache dans chaque profil Windows et un second sous
+::X|EN|cl.ea.cache.010|                    Core\cache, leaving the folder itself, then runs
+::X|EN|cl.ea.cache.011|                    :userclean "<profile>" ea for EVERY Windows profile: there
+::X|EN|cl.ea.cache.012|                    only EA Desktop\cache\Cache, Code Cache and GPUCache are
+::X|EN|cl.ea.cache.013|                    emptied, never the rest of EA Desktop\cache. Skipping this
+::X|EN|cl.ea.cache.014|                    step now stops both; the per-profile part used to run
+::X|EN|cl.ea.cache.015|                    under the Browser caches answer (cl.browser.caches).
+::X|EN|cl.ea.cache.016|                    Installed games, save data and entitlements are untouched.
+::X|EN|cl.ea.cache.017|                    EADesktop.exe is probed once at the start of the cleanup
+::X|EN|cl.ea.cache.018|                    (RUNEA); the EA App starts with Windows on a default
+::X|EN|cl.ea.cache.019|                    install, so quit it from the tray before running OPTY, or
+::X|EN|cl.ea.cache.020|                    the step prints "EA App is running - skipped" and does
+::X|EN|cl.ea.cache.021|                    nothing.
+::X|EN|cl.ea.cache.022|
+::X|EN|cl.ea.cache.023|  Gain            : Modest: typically 50 to 500 MB depending on how large
+::X|EN|cl.ea.cache.024|                    your library is. The real value is that clearing this
+::X|EN|cl.ea.cache.025|                    cache is EA's own documented first step for a client
+::X|EN|cl.ea.cache.026|                    that will not launch, shows an empty library, or loops
+::X|EN|cl.ea.cache.027|                    on the login screen.
+::X|EN|cl.ea.cache.028|
+::X|EN|cl.ea.cache.029|  Cost            : Rebuilt on the next launch, which takes a few seconds
+::X|EN|cl.ea.cache.030|                    and a small download. You may have to sign in again.
+::X|EN|cl.ea.cache.031|                    Nothing permanent is lost - no game files, no saves,
+::X|EN|cl.ea.cache.032|                    no entitlements, and nothing needs re-installing.
+::X|EN|cl.ea.cache.033|
+::X|EN|cl.ea.cache.034|  Windows default : Not applicable. Application cache, created and managed
+::X|EN|cl.ea.cache.035|                    by the EA App.
+::X|EN|cl.ea.cache.036|
+::X|EN|cl.ea.cache.037|  Possible values:
+::X|EN|cl.ea.cache.038|    DELETE               : Empty the EA Core cache under %ProgramData% and the
+::X|EN|cl.ea.cache.039|                           per-profile EA Desktop Cache, Code Cache and
+::X|EN|cl.ea.cache.040|                           GPUCache, provided the client is fully closed.
+::X|EN|cl.ea.cache.041|                           Games, saves and entitlements are untouched.
+::X|EN|cl.ea.cache.042|    KEEP                 : Fine if the client works: the cache is small
+::X|EN|cl.ea.cache.043|                           and clearing it buys you nothing but a possible
+::X|EN|cl.ea.cache.044|                           sign-in prompt.
+::X|EN|cl.ea.cache.045|    ASK                  : Not needed. This is EA's own first
+::X|EN|cl.ea.cache.046|                           troubleshooting step and it risks nothing
+::X|EN|cl.ea.cache.047|                           beyond re-entering your password.
+::X|EN|cl.ea.cache.048|
+::X|EN|cl.ea.cache.049|  Why these profiles : Four identical columns. GAMING is where the client
+::X|EN|cl.ea.cache.050|                       exists at all; on SERVER, OFFICE and LAPTOP the
+::X|EN|cl.ea.cache.051|                       folders normally do not exist and the step quietly
+::X|EN|cl.ea.cache.052|                       does nothing. WINDOWS means leave it alone, which
+::X|EN|cl.ea.cache.053|                       costs a few hundred MB at most and keeps you signed
+::X|EN|cl.ea.cache.054|                       in.
+::X|EN|cl.ea.cache.055|
+::X|EN|cl.ea.cache.056|  Known problems  : The guard only looks for EADesktop.exe; EA's background
+::X|EN|cl.ea.cache.057|                    service can be up without it, but it does not hold the
+::X|EN|cl.ea.cache.058|                    cache files open, so that is a note rather than a defect.
+::X|EN|cl.ea.cache.059|
+::X|EN|cl.ea.cache.060|  Unverified      : Having to sign in again after clearing the EA Desktop
+::X|EN|cl.ea.cache.061|                    cache is commonly reported and is what EA's own
+::X|EN|cl.ea.cache.062|                    troubleshooting article prepares you for, but it was
+::X|EN|cl.ea.cache.063|                    not reproduced here. The size range is typical, not
+::X|EN|cl.ea.cache.064|                    measured on this machine.
+::X|EN|cl.ea.cache.065|
+::X|EN|cl.ea.cache.066|  Target          : :dl_ea_go (asked under :dl_ea). if not defined RUNEA del
+::X|EN|cl.ea.cache.067|                    /F /S /Q on %ProgramData%\EA Core\cache\*; RUNEA is set by
+::X|EN|cl.ea.cache.068|                    call :isrunning "EADesktop.exe" at the top of :delete.
+::X|EN|cl.ea.cache.069|                    Then call :userclean "<profile>" ea for every folder of
+::X|EN|cl.ea.cache.070|                    %SystemDrive%\Users\*; its :uc_ea part runs del /F /S /Q
+::X|EN|cl.ea.cache.071|                    on AppData\Local\Electronic Arts\EA Desktop\cache\Cache,
+::X|EN|cl.ea.cache.072|                    Code Cache and GPUCache, same RUNEA guard. The legacy
+::X|EN|cl.ea.cache.073|                    Origin log folders are a separate step.
+::X|FR|cl.ea.cache.001|  Ce que c est    : L application EA, qui succède à Origin, conserve un cache
+::X|FR|cl.ea.cache.002|                    dans chaque profil Windows et un second sous
 ::X|FR|cl.ea.cache.003|                    %ProgramData%\EA Core : visuels de la boutique,
 ::X|FR|cl.ea.cache.004|                    métadonnées de bibliothèque et contenu web pour le
-::X|FR|cl.ea.cache.005|                    navigateur intégré du client. Cette étape vide celui
-::X|FR|cl.ea.cache.006|                    de %ProgramData% ; la partie par profil est vidée par
-::X|FR|cl.ea.cache.007|                    la réponse Caches des navigateurs. Les deux sont
-::X|FR|cl.ea.cache.008|                    ignorés tant que EADesktop.exe tourne.
+::X|FR|cl.ea.cache.005|                    navigateur intégré du client. Cette étape vide celui de
+::X|FR|cl.ea.cache.006|                    %ProgramData% et, pour chaque profil, les parties jetables
+::X|FR|cl.ea.cache.007|                    de celui par profil. Les deux sont ignorés tant que
+::X|FR|cl.ea.cache.008|                    EADesktop.exe tourne.
 ::X|FR|cl.ea.cache.009|
-::X|FR|cl.ea.cache.010|  Effet reel      : Cette réponse supprime les fichiers de
-::X|FR|cl.ea.cache.011|                    %ProgramData%\EA Core\cache, en laissant le dossier
-::X|FR|cl.ea.cache.012|                    lui-même. La partie par profil est traitée dans
-::X|FR|cl.ea.cache.013|                    :userclean, lancé pour CHAQUE profil Windows sous la
-::X|FR|cl.ea.cache.014|                    réponse Caches des navigateurs (cl.browser.caches) :
-::X|FR|cl.ea.cache.015|                    seuls EA Desktop\cache\Cache, Code Cache et GPUCache y
-::X|FR|cl.ea.cache.016|                    sont vidés, jamais le reste de EA Desktop\cache. Les
-::X|FR|cl.ea.cache.017|                    jeux installés, les sauvegardes et les licences ne
-::X|FR|cl.ea.cache.018|                    sont pas touchés. EADesktop.exe est testé une seule
-::X|FR|cl.ea.cache.019|                    fois au début du nettoyage (RUNEA) ; l application EA
-::X|FR|cl.ea.cache.020|                    démarre avec Windows sur une installation par défaut,
-::X|FR|cl.ea.cache.021|                    donc quittez-la depuis la zone de notification avant
-::X|FR|cl.ea.cache.022|                    de lancer OPTY, sinon l étape affiche « EA App is
+::X|FR|cl.ea.cache.010|  Effet reel      : Cette réponse supprime les fichiers de %ProgramData%\EA
+::X|FR|cl.ea.cache.011|                    Core\cache, en laissant le dossier lui-même, puis lance
+::X|FR|cl.ea.cache.012|                    :userclean "<profil>" ea pour CHAQUE profil Windows :
+::X|FR|cl.ea.cache.013|                    seuls EA Desktop\cache\Cache, Code Cache et GPUCache y
+::X|FR|cl.ea.cache.014|                    sont vidés, jamais le reste de EA Desktop\cache. Passer
+::X|FR|cl.ea.cache.015|                    cette étape arrête désormais les deux ; la partie par
+::X|FR|cl.ea.cache.016|                    profil dépendait de la réponse Caches des navigateurs
+::X|FR|cl.ea.cache.017|                    (cl.browser.caches). Les jeux installés, les sauvegardes
+::X|FR|cl.ea.cache.018|                    et les licences ne sont pas touchés. EADesktop.exe est
+::X|FR|cl.ea.cache.019|                    testé une seule fois au début du nettoyage (RUNEA) ; l
+::X|FR|cl.ea.cache.020|                    application EA démarre avec Windows sur une installation
+::X|FR|cl.ea.cache.021|                    par défaut, donc quittez-la depuis la zone de notification
+::X|FR|cl.ea.cache.022|                    avant de lancer OPTY, sinon l étape affiche « EA App is
 ::X|FR|cl.ea.cache.023|                    running - skipped » et ne fait rien.
 ::X|FR|cl.ea.cache.024|
 ::X|FR|cl.ea.cache.025|  Gain            : Modeste : typiquement 50 à 500 Mo selon la taille de
@@ -35991,49 +36077,46 @@ goto :eof
 ::X|FR|cl.ea.cache.039|                    l application EA.
 ::X|FR|cl.ea.cache.040|
 ::X|FR|cl.ea.cache.041|  Valeurs possibles :
-::X|FR|cl.ea.cache.042|    DELETE               : Vider le cache EA Core sous %ProgramData%, à
-::X|FR|cl.ea.cache.043|                           condition que le client soit complètement
-::X|FR|cl.ea.cache.044|                           fermé. Jeux, sauvegardes et licences intacts.
-::X|FR|cl.ea.cache.045|    KEEP                 : Très bien si le client fonctionne : ce cache
-::X|FR|cl.ea.cache.046|                           est petit, et le vider ne vous rapporte qu une
-::X|FR|cl.ea.cache.047|                           éventuelle demande de reconnexion.
-::X|FR|cl.ea.cache.048|    ASK                  : Inutile. C est la première étape de dépannage
-::X|FR|cl.ea.cache.049|                           recommandée par EA, et elle ne risque rien de
-::X|FR|cl.ea.cache.050|                           plus qu un mot de passe à ressaisir.
-::X|FR|cl.ea.cache.051|
-::X|FR|cl.ea.cache.052|  Pourquoi ces profils : Quatre colonnes identiques. GAMING est le seul
-::X|FR|cl.ea.cache.053|                         profil où le client existe ; sur SERVEUR, BUREAU
-::X|FR|cl.ea.cache.054|                         et PORTABLE les dossiers n existent normalement
-::X|FR|cl.ea.cache.055|                         pas et l étape ne fait rien, sans bruit. WINDOWS
-::X|FR|cl.ea.cache.056|                         veut dire ne touchez à rien : cela coûte quelques
-::X|FR|cl.ea.cache.057|                         centaines de Mo au maximum et vous restez
-::X|FR|cl.ea.cache.058|                         connecté.
-::X|FR|cl.ea.cache.059|
-::X|FR|cl.ea.cache.060|  Problemes connus : Les caches EA Desktop par profil ne suivent pas
-::X|FR|cl.ea.cache.061|                     cette réponse : ils sont vidés pour chaque profil par
-::X|FR|cl.ea.cache.062|                     :userclean sous Caches des navigateurs, donc KEEP ici
-::X|FR|cl.ea.cache.063|                     ne les protège pas si Caches des navigateurs est sur
-::X|FR|cl.ea.cache.064|                     DELETE. Le garde-fou ne cherche que EADesktop.exe ;
-::X|FR|cl.ea.cache.065|                     le service d arrière-plan d EA peut tourner sans
-::X|FR|cl.ea.cache.066|                     lui, mais il ne tient pas les fichiers de cache
-::X|FR|cl.ea.cache.067|                     ouverts, c est donc une remarque et non un défaut.
-::X|FR|cl.ea.cache.068|
-::X|FR|cl.ea.cache.069|  Non verifie (en)  : Having to sign in again after clearing the EA
-::X|FR|cl.ea.cache.070|                      Desktop cache is commonly reported and is what EA s
-::X|FR|cl.ea.cache.071|                      own troubleshooting article prepares you for, but it
-::X|FR|cl.ea.cache.072|                      was not reproduced here. The size range is typical,
-::X|FR|cl.ea.cache.073|                      not measured on this machine.
-::X|FR|cl.ea.cache.074|
-::X|FR|cl.ea.cache.075|  Cible           : :dl_ea_go (question posée sous :dl_ea). if not
-::X|FR|cl.ea.cache.076|                    defined RUNEA del /F /S /Q sur %ProgramData%\EA
-::X|FR|cl.ea.cache.077|                    Core\cache\* ; RUNEA est posé par call :isrunning
-::X|FR|cl.ea.cache.078|                    "EADesktop.exe" en tête de :delete. Partie par profil
-::X|FR|cl.ea.cache.079|                    dans :userclean, pour chaque profil (USERHOME vaut
-::X|FR|cl.ea.cache.080|                    %USERPROFILE%, mais cette boucle parcourt
-::X|FR|cl.ea.cache.081|                    %SystemDrive%\Users\*) : del /F /S /Q sur
-::X|FR|cl.ea.cache.082|                    AppData\Local\Electronic Arts\EA Desktop\cache\Cache,
-::X|FR|cl.ea.cache.083|                    Code Cache et GPUCache, même garde RUNEA. Les dossiers
-::X|FR|cl.ea.cache.084|                    de journaux de l ancien Origin sont une étape à part.
+::X|FR|cl.ea.cache.042|    DELETE               : Vider le cache EA Core sous %ProgramData% et les
+::X|FR|cl.ea.cache.043|                           dossiers Cache, Code Cache et GPUCache d EA Desktop
+::X|FR|cl.ea.cache.044|                           de chaque profil, à condition que le client soit
+::X|FR|cl.ea.cache.045|                           complètement fermé. Jeux, sauvegardes et licences
+::X|FR|cl.ea.cache.046|                           intacts.
+::X|FR|cl.ea.cache.047|    KEEP                 : Très bien si le client fonctionne : ce cache
+::X|FR|cl.ea.cache.048|                           est petit, et le vider ne vous rapporte qu une
+::X|FR|cl.ea.cache.049|                           éventuelle demande de reconnexion.
+::X|FR|cl.ea.cache.050|    ASK                  : Inutile. C est la première étape de dépannage
+::X|FR|cl.ea.cache.051|                           recommandée par EA, et elle ne risque rien de
+::X|FR|cl.ea.cache.052|                           plus qu un mot de passe à ressaisir.
+::X|FR|cl.ea.cache.053|
+::X|FR|cl.ea.cache.054|  Pourquoi ces profils : Quatre colonnes identiques. GAMING est le seul
+::X|FR|cl.ea.cache.055|                         profil où le client existe ; sur SERVEUR, BUREAU
+::X|FR|cl.ea.cache.056|                         et PORTABLE les dossiers n existent normalement
+::X|FR|cl.ea.cache.057|                         pas et l étape ne fait rien, sans bruit. WINDOWS
+::X|FR|cl.ea.cache.058|                         veut dire ne touchez à rien : cela coûte quelques
+::X|FR|cl.ea.cache.059|                         centaines de Mo au maximum et vous restez
+::X|FR|cl.ea.cache.060|                         connecté.
+::X|FR|cl.ea.cache.061|
+::X|FR|cl.ea.cache.062|  Problemes connus : Le garde-fou ne cherche que EADesktop.exe ; le service d
+::X|FR|cl.ea.cache.063|                     arrière-plan d EA peut tourner sans lui, mais il ne tient
+::X|FR|cl.ea.cache.064|                     pas les fichiers de cache ouverts, c est donc une
+::X|FR|cl.ea.cache.065|                     remarque et non un défaut.
+::X|FR|cl.ea.cache.066|
+::X|FR|cl.ea.cache.067|  Non verifie (en)  : Having to sign in again after clearing the EA
+::X|FR|cl.ea.cache.068|                      Desktop cache is commonly reported and is what EA s
+::X|FR|cl.ea.cache.069|                      own troubleshooting article prepares you for, but it
+::X|FR|cl.ea.cache.070|                      was not reproduced here. The size range is typical,
+::X|FR|cl.ea.cache.071|                      not measured on this machine.
+::X|FR|cl.ea.cache.072|
+::X|FR|cl.ea.cache.073|  Cible           : :dl_ea_go (question posée sous :dl_ea). if not defined
+::X|FR|cl.ea.cache.074|                    RUNEA del /F /S /Q sur %ProgramData%\EA Core\cache\* ;
+::X|FR|cl.ea.cache.075|                    RUNEA est posé par call :isrunning "EADesktop.exe" en tête
+::X|FR|cl.ea.cache.076|                    de :delete. Ensuite call :userclean "<profil>" ea pour
+::X|FR|cl.ea.cache.077|                    chaque dossier de %SystemDrive%\Users\* ; sa partie :uc_ea
+::X|FR|cl.ea.cache.078|                    fait del /F /S /Q sur AppData\Local\Electronic Arts\EA
+::X|FR|cl.ea.cache.079|                    Desktop\cache\Cache, Code Cache et GPUCache, même garde
+::X|FR|cl.ea.cache.080|                    RUNEA. Les dossiers de journaux de l ancien Origin sont
+::X|FR|cl.ea.cache.081|                    une étape à part.
 ::
 :: ---- cl.origin.logs (cleanup) ------------------------------------
 ::P|cl.origin.logs|DELETE|DELETE|DELETE|DELETE|KEEP|
@@ -36049,63 +36132,63 @@ goto :eof
 ::X|EN|cl.origin.logs.006|  Actual effect   : del /F /S /Q calls, files only - the empty Logs folders
 ::X|EN|cl.origin.logs.007|                    survive. There is deliberately no running-process guard,
 ::X|EN|cl.origin.logs.008|                    which is safe because a log file Origin holds open simply
-::X|EN|cl.origin.logs.009|                    fails to delete and the error is swallowed by 2>nul.
-::X|EN|cl.origin.logs.010|                    This card's answer governs only the machine-wide folder
-::X|EN|cl.origin.logs.011|                    %ProgramData%\Origin\Logs. The two per-user folders
-::X|EN|cl.origin.logs.012|                    (AppData\Local\Origin\Logs and AppData\Roaming\Origin\Logs)
-::X|EN|cl.origin.logs.013|                    are swept by :userclean for every profile under
-::X|EN|cl.origin.logs.014|                    %SystemDrive%\Users, and that sweep follows the BROWSER
-::X|EN|cl.origin.logs.015|                    CACHES answer (cl.browser.caches), not this one.
-::X|EN|cl.origin.logs.016|
-::X|EN|cl.origin.logs.017|  Gain            : Measured on this machine:
-::X|EN|cl.origin.logs.018|                    C:\Users\compt\AppData\Local\Origin\Logs and the
-::X|EN|cl.origin.logs.019|                    Roaming equivalent are absent, and
-::X|EN|cl.origin.logs.020|                    C:\ProgramData\Origin totals 0 MB. Real recovery here
-::X|EN|cl.origin.logs.021|                    is 0 bytes. On a PC still running Origin, the logs are
-::X|EN|cl.origin.logs.022|                    a few MB, rarely above 20 MB.
-::X|EN|cl.origin.logs.023|
-::X|EN|cl.origin.logs.024|  Cost            : None. Logs are rewritten on the next launch. No
-::X|EN|cl.origin.logs.025|                    entitlement, no setting, no save is in the path.
-::X|EN|cl.origin.logs.026|
-::X|EN|cl.origin.logs.027|  Windows default : Not applicable - third-party application logs. Windows
-::X|EN|cl.origin.logs.028|                    ships nothing here and never cleans it.
-::X|EN|cl.origin.logs.029|
-::X|EN|cl.origin.logs.030|  Possible values:
-::X|EN|cl.origin.logs.031|    DELETE               : Empty the Origin Logs folder under ProgramData.
-::X|EN|cl.origin.logs.032|                           Costs nothing and can break nothing, because no
-::X|EN|cl.origin.logs.033|                           path here reaches LocalContent, where the game
-::X|EN|cl.origin.logs.034|                           entitlements live.
-::X|EN|cl.origin.logs.035|    KEEP                 : Leave it. Defensible simply because there is
-::X|EN|cl.origin.logs.036|                           usually nothing to gain: EA retired Origin, and
-::X|EN|cl.origin.logs.037|                           on this machine the folders do not even exist.
-::X|EN|cl.origin.logs.038|                           The per-user Logs folders are still emptied if
-::X|EN|cl.origin.logs.039|                           BROWSER CACHES is answered yes.
-::X|EN|cl.origin.logs.040|    ASK                  : Not warranted here. Asking implies a decision
-::X|EN|cl.origin.logs.041|                           worth making; deleting a log file that Origin
-::X|EN|cl.origin.logs.042|                           rewrites on its own is not one.
-::X|EN|cl.origin.logs.043|
-::X|EN|cl.origin.logs.044|  Why these profiles : Four identical columns, and that is the honest
-::X|EN|cl.origin.logs.045|                       answer: nothing about latency, throughput or
-::X|EN|cl.origin.logs.046|                       battery is affected by a log file. Profile 5 reads
-::X|EN|cl.origin.logs.047|                       KEEP only because it means leave the shipped state
-::X|EN|cl.origin.logs.048|                       alone, and Windows has no shipped state here at
-::X|EN|cl.origin.logs.049|                       all.
-::X|EN|cl.origin.logs.050|
-::X|EN|cl.origin.logs.051|  Known problems  : None currently. The two user paths used to go through
-::X|EN|cl.origin.logs.052|                    a %USERHOME% that was hardcoded to one maintainer's
-::X|EN|cl.origin.logs.053|                    profile, silently missing on every other account.
-::X|EN|cl.origin.logs.054|                    USERHOME is now simply %USERPROFILE% (see the comment
-::X|EN|cl.origin.logs.055|                    above set "USERHOME=..." in the configuration block),
-::X|EN|cl.origin.logs.056|                    and the two per-user steps moved to :userclean, which
-::X|EN|cl.origin.logs.057|                    loops over every profile on the machine.
-::X|EN|cl.origin.logs.058|
-::X|EN|cl.origin.logs.059|  Target          : del /F /S /Q on %ProgramData%\Origin\Logs\* - inside
-::X|EN|cl.origin.logs.060|                    :dl_origin_go. The two per-user paths,
-::X|EN|cl.origin.logs.061|                    AppData\Local\Origin\Logs\* and AppData\Roaming\Origin\
-::X|EN|cl.origin.logs.062|                    Logs\* of each discovered profile, are separate: they run
-::X|EN|cl.origin.logs.063|                    once per Windows profile from :userclean, which
-::X|EN|cl.origin.logs.064|                    :dl_browsers_go calls for every folder in
-::X|EN|cl.origin.logs.065|                    %SystemDrive%\Users.
+::X|EN|cl.origin.logs.009|                    fails to delete and the error is swallowed by >nul 2>&1.
+::X|EN|cl.origin.logs.010|                    This card's answer governs the machine-wide folder
+::X|EN|cl.origin.logs.011|                    %ProgramData%\Origin\Logs and, through :userclean
+::X|EN|cl.origin.logs.012|                    "<profile>" origin, the two per-user folders
+::X|EN|cl.origin.logs.013|                    (AppData\Local\Origin\Logs and
+::X|EN|cl.origin.logs.014|                    AppData\Roaming\Origin\Logs) of every profile under
+::X|EN|cl.origin.logs.015|                    %SystemDrive%\Users. Skipping this step now stops all
+::X|EN|cl.origin.logs.016|                    three; the per-user part used to follow the BROWSER CACHES
+::X|EN|cl.origin.logs.017|                    answer (cl.browser.caches).
+::X|EN|cl.origin.logs.018|
+::X|EN|cl.origin.logs.019|  Gain            : Measured on this machine:
+::X|EN|cl.origin.logs.020|                    C:\Users\compt\AppData\Local\Origin\Logs and the
+::X|EN|cl.origin.logs.021|                    Roaming equivalent are absent, and
+::X|EN|cl.origin.logs.022|                    C:\ProgramData\Origin totals 0 MB. Real recovery here
+::X|EN|cl.origin.logs.023|                    is 0 bytes. On a PC still running Origin, the logs are
+::X|EN|cl.origin.logs.024|                    a few MB, rarely above 20 MB.
+::X|EN|cl.origin.logs.025|
+::X|EN|cl.origin.logs.026|  Cost            : None. Logs are rewritten on the next launch. No
+::X|EN|cl.origin.logs.027|                    entitlement, no setting, no save is in the path.
+::X|EN|cl.origin.logs.028|
+::X|EN|cl.origin.logs.029|  Windows default : Not applicable - third-party application logs. Windows
+::X|EN|cl.origin.logs.030|                    ships nothing here and never cleans it.
+::X|EN|cl.origin.logs.031|
+::X|EN|cl.origin.logs.032|  Possible values:
+::X|EN|cl.origin.logs.033|    DELETE               : Empty the Origin Logs folders under ProgramData and
+::X|EN|cl.origin.logs.034|                           in every profile. Costs nothing and can break
+::X|EN|cl.origin.logs.035|                           nothing, because no path here reaches LocalContent,
+::X|EN|cl.origin.logs.036|                           where the game entitlements live.
+::X|EN|cl.origin.logs.037|    KEEP                 : Leave it. Defensible simply because there is
+::X|EN|cl.origin.logs.038|                           usually nothing to gain: EA retired Origin, and on
+::X|EN|cl.origin.logs.039|                           this machine the folders do not even exist.
+::X|EN|cl.origin.logs.040|                           Skipping keeps the per-user Logs folders too.
+::X|EN|cl.origin.logs.041|    ASK                  : Not warranted here. Asking implies a decision
+::X|EN|cl.origin.logs.042|                           worth making; deleting a log file that Origin
+::X|EN|cl.origin.logs.043|                           rewrites on its own is not one.
+::X|EN|cl.origin.logs.044|
+::X|EN|cl.origin.logs.045|  Why these profiles : Four identical columns, and that is the honest
+::X|EN|cl.origin.logs.046|                       answer: nothing about latency, throughput or
+::X|EN|cl.origin.logs.047|                       battery is affected by a log file. Profile 5 reads
+::X|EN|cl.origin.logs.048|                       KEEP only because it means leave the shipped state
+::X|EN|cl.origin.logs.049|                       alone, and Windows has no shipped state here at
+::X|EN|cl.origin.logs.050|                       all.
+::X|EN|cl.origin.logs.051|
+::X|EN|cl.origin.logs.052|  Known problems  : None currently. The two user paths used to go through a
+::X|EN|cl.origin.logs.053|                    %USERHOME% that was hardcoded to one maintainer's profile,
+::X|EN|cl.origin.logs.054|                    silently missing on every other account. USERHOME is now
+::X|EN|cl.origin.logs.055|                    simply %USERPROFILE% (see the comment above set
+::X|EN|cl.origin.logs.056|                    "USERHOME=..." in the configuration block), and the two
+::X|EN|cl.origin.logs.057|                    per-user deletes sit in :userclean (its :uc_origin part),
+::X|EN|cl.origin.logs.058|                    which loops over every profile on the machine and is
+::X|EN|cl.origin.logs.059|                    called from this card's own step.
+::X|EN|cl.origin.logs.060|
+::X|EN|cl.origin.logs.061|  Target          : del /F /S /Q on %ProgramData%\Origin\Logs\* - inside
+::X|EN|cl.origin.logs.062|                    :dl_origin_go, which then calls :userclean "<profile>"
+::X|EN|cl.origin.logs.063|                    origin for every folder in %SystemDrive%\Users; its
+::X|EN|cl.origin.logs.064|                    :uc_origin part deletes AppData\Local\Origin\Logs\* and
+::X|EN|cl.origin.logs.065|                    AppData\Roaming\Origin\Logs\* of that profile.
 ::X|FR|cl.origin.logs.001|  Ce que c est    : Origin était le launcher d EA avant l application EA.
 ::X|FR|cl.origin.logs.002|                    Cette étape vide ses dossiers Logs. Le dossier Origin
 ::X|FR|cl.origin.logs.003|                    lui-même n est jamais supprimé, car
@@ -36113,43 +36196,43 @@ goto :eof
 ::X|FR|cl.origin.logs.005|                    de licences de jeux.
 ::X|FR|cl.origin.logs.006|
 ::X|FR|cl.origin.logs.007|  Effet reel      : Des del /F /S /Q, sur les fichiers seulement : les
-::X|FR|cl.origin.logs.008|                    dossiers Logs vides subsistent. Aucun test de
-::X|FR|cl.origin.logs.009|                    processus en cours, volontairement, et c est sans
-::X|FR|cl.origin.logs.010|                    risque : un journal qu Origin garde ouvert échoue
-::X|FR|cl.origin.logs.011|                    simplement à être supprimé, l erreur étant avalée par
-::X|FR|cl.origin.logs.012|                    2>nul. La réponse à cette fiche ne gouverne que le
-::X|FR|cl.origin.logs.013|                    dossier machine %ProgramData%\Origin\Logs. Les deux
-::X|FR|cl.origin.logs.014|                    dossiers par utilisateur (AppData\Local\Origin\Logs et
-::X|FR|cl.origin.logs.015|                    AppData\Roaming\Origin\Logs) sont vidés par :userclean
-::X|FR|cl.origin.logs.016|                    pour chaque profil de %SystemDrive%\Users, et ce
-::X|FR|cl.origin.logs.017|                    balayage suit la réponse CACHES DES NAVIGATEURS
-::X|FR|cl.origin.logs.018|                    (cl.browser.caches), pas celle-ci.
-::X|FR|cl.origin.logs.019|
-::X|FR|cl.origin.logs.020|  Gain            : Mesuré sur cette machine :
-::X|FR|cl.origin.logs.021|                    C:\Users\compt\AppData\Local\Origin\Logs et son
-::X|FR|cl.origin.logs.022|                    équivalent Roaming sont absents, et
-::X|FR|cl.origin.logs.023|                    C:\ProgramData\Origin pèse 0 Mo. Récupération réelle
-::X|FR|cl.origin.logs.024|                    ici : 0 octet. Sur un PC qui utilise encore Origin,
-::X|FR|cl.origin.logs.025|                    ces journaux font quelques Mo, rarement plus de 20.
-::X|FR|cl.origin.logs.026|
-::X|FR|cl.origin.logs.027|  Cout            : Aucun. Les journaux sont réécrits au lancement
-::X|FR|cl.origin.logs.028|                    suivant. Aucune licence, aucun réglage, aucune
-::X|FR|cl.origin.logs.029|                    sauvegarde ne se trouve sur ces chemins.
-::X|FR|cl.origin.logs.030|
-::X|FR|cl.origin.logs.031|  Defaut Windows  : Sans objet - journaux d une application tierce.
-::X|FR|cl.origin.logs.032|                    Windows ne fournit rien ici et n y touche jamais.
-::X|FR|cl.origin.logs.033|
-::X|FR|cl.origin.logs.034|  Valeurs possibles :
-::X|FR|cl.origin.logs.035|    DELETE               : Vider le dossier Logs d Origin sous ProgramData.
-::X|FR|cl.origin.logs.036|                           Ne coûte rien et ne peut rien casser, car aucun
-::X|FR|cl.origin.logs.037|                           chemin ne touche LocalContent, où résident les
-::X|FR|cl.origin.logs.038|                           licences de jeux.
-::X|FR|cl.origin.logs.039|    KEEP                 : Le laisser. Défendable pour une seule raison :
-::X|FR|cl.origin.logs.040|                           il n y a en général rien à gagner. EA a retiré
-::X|FR|cl.origin.logs.041|                           Origin, et sur cette machine les dossiers
-::X|FR|cl.origin.logs.042|                           n existent même pas. Les dossiers Logs par
-::X|FR|cl.origin.logs.043|                           utilisateur sont quand même vidés si CACHES DES
-::X|FR|cl.origin.logs.044|                           NAVIGATEURS reçoit oui.
+::X|FR|cl.origin.logs.008|                    dossiers Logs vides subsistent. Aucun test de processus en
+::X|FR|cl.origin.logs.009|                    cours, volontairement, et c est sans risque : un journal
+::X|FR|cl.origin.logs.010|                    qu Origin garde ouvert échoue simplement à être supprimé,
+::X|FR|cl.origin.logs.011|                    l erreur étant avalée par >nul 2>&1. La réponse à cette
+::X|FR|cl.origin.logs.012|                    fiche gouverne le dossier machine
+::X|FR|cl.origin.logs.013|                    %ProgramData%\Origin\Logs et, via :userclean "<profil>"
+::X|FR|cl.origin.logs.014|                    origin, les deux dossiers par utilisateur
+::X|FR|cl.origin.logs.015|                    (AppData\Local\Origin\Logs et AppData\Roaming\Origin\Logs)
+::X|FR|cl.origin.logs.016|                    de chaque profil de %SystemDrive%\Users. Passer cette
+::X|FR|cl.origin.logs.017|                    étape arrête désormais les trois ; la partie par
+::X|FR|cl.origin.logs.018|                    utilisateur suivait la réponse CACHES DES NAVIGATEURS
+::X|FR|cl.origin.logs.019|                    (cl.browser.caches).
+::X|FR|cl.origin.logs.020|
+::X|FR|cl.origin.logs.021|  Gain            : Mesuré sur cette machine :
+::X|FR|cl.origin.logs.022|                    C:\Users\compt\AppData\Local\Origin\Logs et son
+::X|FR|cl.origin.logs.023|                    équivalent Roaming sont absents, et
+::X|FR|cl.origin.logs.024|                    C:\ProgramData\Origin pèse 0 Mo. Récupération réelle
+::X|FR|cl.origin.logs.025|                    ici : 0 octet. Sur un PC qui utilise encore Origin,
+::X|FR|cl.origin.logs.026|                    ces journaux font quelques Mo, rarement plus de 20.
+::X|FR|cl.origin.logs.027|
+::X|FR|cl.origin.logs.028|  Cout            : Aucun. Les journaux sont réécrits au lancement
+::X|FR|cl.origin.logs.029|                    suivant. Aucune licence, aucun réglage, aucune
+::X|FR|cl.origin.logs.030|                    sauvegarde ne se trouve sur ces chemins.
+::X|FR|cl.origin.logs.031|
+::X|FR|cl.origin.logs.032|  Defaut Windows  : Sans objet - journaux d une application tierce.
+::X|FR|cl.origin.logs.033|                    Windows ne fournit rien ici et n y touche jamais.
+::X|FR|cl.origin.logs.034|
+::X|FR|cl.origin.logs.035|  Valeurs possibles :
+::X|FR|cl.origin.logs.036|    DELETE               : Vider les dossiers Logs d Origin sous ProgramData
+::X|FR|cl.origin.logs.037|                           et dans chaque profil. Ne coûte rien et ne peut
+::X|FR|cl.origin.logs.038|                           rien casser, puisqu aucun chemin ici n atteint
+::X|FR|cl.origin.logs.039|                           LocalContent, où vivent les licences des jeux.
+::X|FR|cl.origin.logs.040|    KEEP                 : Le laisser. Défendable pour une seule raison : il n
+::X|FR|cl.origin.logs.041|                           y a en général rien à gagner. EA a retiré Origin,
+::X|FR|cl.origin.logs.042|                           et sur cette machine les dossiers n existent même
+::X|FR|cl.origin.logs.043|                           pas. Passer l étape garde aussi les dossiers Logs
+::X|FR|cl.origin.logs.044|                           par utilisateur.
 ::X|FR|cl.origin.logs.045|    ASK                  : Injustifié ici. Poser la question suppose un
 ::X|FR|cl.origin.logs.046|                           vrai arbitrage ; supprimer un journal qu Origin
 ::X|FR|cl.origin.logs.047|                           réécrit tout seul n en est pas un.
@@ -36162,21 +36245,20 @@ goto :eof
 ::X|FR|cl.origin.logs.054|                         a ici aucun état d origine Windows.
 ::X|FR|cl.origin.logs.055|
 ::X|FR|cl.origin.logs.056|  Problemes connus : Aucun actuellement. Les deux chemins utilisateur
-::X|FR|cl.origin.logs.057|                     passaient par un %USERHOME% fixe en dur sur le profil
-::X|FR|cl.origin.logs.058|                     du mainteneur, ratant silencieusement leur cible sur
-::X|FR|cl.origin.logs.059|                     tout autre compte. USERHOME vaut desormais simplement
-::X|FR|cl.origin.logs.060|                     %USERPROFILE% (voir le commentaire au-dessus de
-::X|FR|cl.origin.logs.061|                     set "USERHOME=..." dans le bloc de configuration), et
-::X|FR|cl.origin.logs.062|                     les deux etapes par utilisateur sont passees dans
-::X|FR|cl.origin.logs.063|                     :userclean, qui boucle sur chaque profil de la machine.
-::X|FR|cl.origin.logs.064|
-::X|FR|cl.origin.logs.065|  Cible           : del /F /S /Q sur %ProgramData%\Origin\Logs\* - dans
-::X|FR|cl.origin.logs.066|                    :dl_origin_go. Les deux chemins par utilisateur,
-::X|FR|cl.origin.logs.067|                    AppData\Local\Origin\Logs\* et
-::X|FR|cl.origin.logs.068|                    AppData\Roaming\Origin\Logs\* de chaque profil trouve,
-::X|FR|cl.origin.logs.069|                    sont separes : ils tournent une fois par profil
-::X|FR|cl.origin.logs.070|                    Windows depuis :userclean, que :dl_browsers_go appelle
-::X|FR|cl.origin.logs.071|                    pour chaque dossier de %SystemDrive%\Users.
+::X|FR|cl.origin.logs.057|                     passaient par un %USERHOME% fixe en dur sur le profil du
+::X|FR|cl.origin.logs.058|                     mainteneur, ratant silencieusement leur cible sur tout
+::X|FR|cl.origin.logs.059|                     autre compte. USERHOME vaut desormais simplement
+::X|FR|cl.origin.logs.060|                     %USERPROFILE% (voir le commentaire au-dessus de set
+::X|FR|cl.origin.logs.061|                     "USERHOME=..." dans le bloc de configuration), et les
+::X|FR|cl.origin.logs.062|                     deux suppressions par utilisateur sont dans :userclean
+::X|FR|cl.origin.logs.063|                     (sa partie :uc_origin), qui boucle sur chaque profil de
+::X|FR|cl.origin.logs.064|                     la machine et est appele depuis l etape de cette fiche.
+::X|FR|cl.origin.logs.065|
+::X|FR|cl.origin.logs.066|  Cible           : del /F /S /Q sur %ProgramData%\Origin\Logs\* - dans
+::X|FR|cl.origin.logs.067|                    :dl_origin_go, qui appelle ensuite :userclean "<profil>"
+::X|FR|cl.origin.logs.068|                    origin pour chaque dossier de %SystemDrive%\Users ; sa
+::X|FR|cl.origin.logs.069|                    partie :uc_origin supprime AppData\Local\Origin\Logs\* et
+::X|FR|cl.origin.logs.070|                    AppData\Roaming\Origin\Logs\* de ce profil.
 ::
 :: ---- cl.epic.webcache (cleanup) ----------------------------------
 ::P|cl.epic.webcache|DELETE|DELETE|DELETE|DELETE|KEEP|
@@ -36191,70 +36273,73 @@ goto :eof
 ::X|EN|cl.epic.webcache.005|                    folders whole, and empties the launcher's Logs folder.
 ::X|EN|cl.epic.webcache.006|
 ::X|EN|cl.epic.webcache.007|  Actual effect   : rd /S /Q on each Saved\webcache* directory - so the
-::X|EN|cl.epic.webcache.008|                    folders go, not just their contents - and del /F /S /Q
-::X|EN|cl.epic.webcache.009|                    on Saved\Logs. Both lines sit in :userclean, which
-::X|EN|cl.epic.webcache.010|                    runs once for every profile folder under
-::X|EN|cl.epic.webcache.011|                    %SystemDrive%\Users, so every Windows account is
-::X|EN|cl.epic.webcache.012|                    swept. There is no separate question: it runs under
-::X|EN|cl.epic.webcache.013|                    the browser-caches answer (cl.browser.caches). If
-::X|EN|cl.epic.webcache.014|                    EpicGamesLauncher.exe is running, both lines are
-::X|EN|cl.epic.webcache.015|                    skipped: the launcher is probed once at the top of
-::X|EN|cl.epic.webcache.016|                    :delete (RUNEPIC) and a warning says its caches will
-::X|EN|cl.epic.webcache.017|                    be skipped. Saved\Config, Saved\Data and Saved\Saves
-::X|EN|cl.epic.webcache.018|                    are outside the pattern and survive.
-::X|EN|cl.epic.webcache.019|
-::X|EN|cl.epic.webcache.020|  Gain            : Measured here: there is no webcache folder at all, and
-::X|EN|cl.epic.webcache.021|                    the entire Saved tree is 0.1 MB - so this step frees 0
-::X|EN|cl.epic.webcache.022|                    bytes on this machine. On a launcher in daily use each
-::X|EN|cl.epic.webcache.023|                    webcache version runs roughly 50 to 300 MB and two or
-::X|EN|cl.epic.webcache.024|                    three versions coexist, so 100 MB to about 1 GB.
-::X|EN|cl.epic.webcache.025|
-::X|EN|cl.epic.webcache.026|  Cost            : Rebuilt on the next launch, seconds to a minute of
-::X|EN|cl.epic.webcache.027|                    refetching the store interface. Installed games, their
-::X|EN|cl.epic.webcache.028|                    data and your saves are untouched. The one thing that
-::X|EN|cl.epic.webcache.029|                    can annoy: the store view keeps its cookies in
-::X|EN|cl.epic.webcache.030|                    webcache, so it may ask you to sign in again inside
-::X|EN|cl.epic.webcache.031|                    the store.
-::X|EN|cl.epic.webcache.032|
-::X|EN|cl.epic.webcache.033|  Windows default : Not applicable - third-party application cache.
-::X|EN|cl.epic.webcache.034|                    Windows neither creates nor prunes it.
-::X|EN|cl.epic.webcache.035|
-::X|EN|cl.epic.webcache.036|  Possible values:
-::X|EN|cl.epic.webcache.037|    DELETE               : Remove the versioned webcache folders and the
-::X|EN|cl.epic.webcache.038|                           launcher logs. This is the standard fix for an
-::X|EN|cl.epic.webcache.039|                           Epic store page that opens completely blank,
-::X|EN|cl.epic.webcache.040|                           and installed games are not in the path.
-::X|EN|cl.epic.webcache.041|    KEEP                 : Leave it if the store renders fine and disk
-::X|EN|cl.epic.webcache.042|                           space is not tight: the webcache is what makes
-::X|EN|cl.epic.webcache.043|                           the store open instantly instead of refetching
-::X|EN|cl.epic.webcache.044|                           its whole interface.
-::X|EN|cl.epic.webcache.045|    ASK                  : Only worth asking if you are mid-download: rd
-::X|EN|cl.epic.webcache.046|                           /S /Q on a webcache folder while a game install
-::X|EN|cl.epic.webcache.047|                           is queued is untested, which is exactly why the
-::X|EN|cl.epic.webcache.048|                           running-launcher guard exists.
-::X|EN|cl.epic.webcache.049|
-::X|EN|cl.epic.webcache.050|  Why these profiles : Identical for the four real profiles. A launcher
-::X|EN|cl.epic.webcache.051|                       webcache has no bearing on frame times, throughput
-::X|EN|cl.epic.webcache.052|                       or battery; it is either bloated and broken, or
-::X|EN|cl.epic.webcache.053|                       fine. Profile 5 is KEEP because leaving Windows as
-::X|EN|cl.epic.webcache.054|                       shipped says nothing about a folder Windows does
-::X|EN|cl.epic.webcache.055|                       not own.
-::X|EN|cl.epic.webcache.056|
-::X|EN|cl.epic.webcache.057|  Unverified      : Whether clearing webcache forces a fresh sign-in could
-::X|EN|cl.epic.webcache.058|                    not be reproduced here, because no webcache folder
-::X|EN|cl.epic.webcache.059|                    exists on this machine. The launcher's own saved
-::X|EN|cl.epic.webcache.060|                    credential is in
-::X|EN|cl.epic.webcache.061|                    Saved\Config\Windows\GameUserSettings.ini, which this
-::X|EN|cl.epic.webcache.062|                    step does not touch; the embedded browser's cookies do
-::X|EN|cl.epic.webcache.063|                    live in webcache, so the store view may re-prompt even
-::X|EN|cl.epic.webcache.064|                    while the launcher stays signed in.
-::X|EN|cl.epic.webcache.065|
-::X|EN|cl.epic.webcache.066|  Target          : for /d %%W in ("%UL%\EpicGamesLauncher\Saved\webcach
-::X|EN|cl.epic.webcache.067|                    e*") do rd /S /Q, plus del /F /S /Q on
-::X|EN|cl.epic.webcache.068|                    ...\Saved\Logs\*, both skipped when RUNEPIC is set -
-::X|EN|cl.epic.webcache.069|                    in :userclean, where %UL% is each profile's
-::X|EN|cl.epic.webcache.070|                    AppData\Local. RUNEPIC comes from call :isrunning
-::X|EN|cl.epic.webcache.071|                    "EpicGamesLauncher.exe" at the top of :delete.
+::X|EN|cl.epic.webcache.008|                    folders go, not just their contents - and del /F /S /Q on
+::X|EN|cl.epic.webcache.009|                    Saved\Logs. Both lines sit in :userclean (its :uc_browsers
+::X|EN|cl.epic.webcache.010|                    part), which runs once for every profile folder under
+::X|EN|cl.epic.webcache.011|                    %SystemDrive%\Users, so every Windows account is swept.
+::X|EN|cl.epic.webcache.012|                    Epic has no step of its own, so they still run under the
+::X|EN|cl.epic.webcache.013|                    browser-caches answer (cl.browser.caches, :userclean
+::X|EN|cl.epic.webcache.014|                    "<profile>" browsers); the WER, launcher and Discord parts
+::X|EN|cl.epic.webcache.015|                    moved to their own cards, Epic is the one that stayed. If
+::X|EN|cl.epic.webcache.016|                    EpicGamesLauncher.exe is running, both lines are skipped:
+::X|EN|cl.epic.webcache.017|                    the launcher is probed once at the top of :delete
+::X|EN|cl.epic.webcache.018|                    (RUNEPIC) and a warning says its caches will be skipped.
+::X|EN|cl.epic.webcache.019|                    Saved\Config, Saved\Data and Saved\Saves are outside the
+::X|EN|cl.epic.webcache.020|                    pattern and survive.
+::X|EN|cl.epic.webcache.021|
+::X|EN|cl.epic.webcache.022|  Gain            : Measured here: there is no webcache folder at all, and
+::X|EN|cl.epic.webcache.023|                    the entire Saved tree is 0.1 MB - so this step frees 0
+::X|EN|cl.epic.webcache.024|                    bytes on this machine. On a launcher in daily use each
+::X|EN|cl.epic.webcache.025|                    webcache version runs roughly 50 to 300 MB and two or
+::X|EN|cl.epic.webcache.026|                    three versions coexist, so 100 MB to about 1 GB.
+::X|EN|cl.epic.webcache.027|
+::X|EN|cl.epic.webcache.028|  Cost            : Rebuilt on the next launch, seconds to a minute of
+::X|EN|cl.epic.webcache.029|                    refetching the store interface. Installed games, their
+::X|EN|cl.epic.webcache.030|                    data and your saves are untouched. The one thing that
+::X|EN|cl.epic.webcache.031|                    can annoy: the store view keeps its cookies in
+::X|EN|cl.epic.webcache.032|                    webcache, so it may ask you to sign in again inside
+::X|EN|cl.epic.webcache.033|                    the store.
+::X|EN|cl.epic.webcache.034|
+::X|EN|cl.epic.webcache.035|  Windows default : Not applicable - third-party application cache.
+::X|EN|cl.epic.webcache.036|                    Windows neither creates nor prunes it.
+::X|EN|cl.epic.webcache.037|
+::X|EN|cl.epic.webcache.038|  Possible values:
+::X|EN|cl.epic.webcache.039|    DELETE               : Remove the versioned webcache folders and the
+::X|EN|cl.epic.webcache.040|                           launcher logs. This is the standard fix for an
+::X|EN|cl.epic.webcache.041|                           Epic store page that opens completely blank,
+::X|EN|cl.epic.webcache.042|                           and installed games are not in the path.
+::X|EN|cl.epic.webcache.043|    KEEP                 : Leave it if the store renders fine and disk
+::X|EN|cl.epic.webcache.044|                           space is not tight: the webcache is what makes
+::X|EN|cl.epic.webcache.045|                           the store open instantly instead of refetching
+::X|EN|cl.epic.webcache.046|                           its whole interface.
+::X|EN|cl.epic.webcache.047|    ASK                  : Only worth asking if you are mid-download: rd
+::X|EN|cl.epic.webcache.048|                           /S /Q on a webcache folder while a game install
+::X|EN|cl.epic.webcache.049|                           is queued is untested, which is exactly why the
+::X|EN|cl.epic.webcache.050|                           running-launcher guard exists.
+::X|EN|cl.epic.webcache.051|
+::X|EN|cl.epic.webcache.052|  Why these profiles : Identical for the four real profiles. A launcher
+::X|EN|cl.epic.webcache.053|                       webcache has no bearing on frame times, throughput
+::X|EN|cl.epic.webcache.054|                       or battery; it is either bloated and broken, or
+::X|EN|cl.epic.webcache.055|                       fine. Profile 5 is KEEP because leaving Windows as
+::X|EN|cl.epic.webcache.056|                       shipped says nothing about a folder Windows does
+::X|EN|cl.epic.webcache.057|                       not own.
+::X|EN|cl.epic.webcache.058|
+::X|EN|cl.epic.webcache.059|  Unverified      : Whether clearing webcache forces a fresh sign-in could
+::X|EN|cl.epic.webcache.060|                    not be reproduced here, because no webcache folder
+::X|EN|cl.epic.webcache.061|                    exists on this machine. The launcher's own saved
+::X|EN|cl.epic.webcache.062|                    credential is in
+::X|EN|cl.epic.webcache.063|                    Saved\Config\Windows\GameUserSettings.ini, which this
+::X|EN|cl.epic.webcache.064|                    step does not touch; the embedded browser's cookies do
+::X|EN|cl.epic.webcache.065|                    live in webcache, so the store view may re-prompt even
+::X|EN|cl.epic.webcache.066|                    while the launcher stays signed in.
+::X|EN|cl.epic.webcache.067|
+::X|EN|cl.epic.webcache.068|  Target          : for /d %%W in ("%UL%\EpicGamesLauncher\Saved\webcache*")
+::X|EN|cl.epic.webcache.069|                    do rd /S /Q, plus del /F /S /Q on ...\Saved\Logs\*, both
+::X|EN|cl.epic.webcache.070|                    skipped when RUNEPIC is set - in the :uc_browsers part of
+::X|EN|cl.epic.webcache.071|                    :userclean, called with browsers from :dl_browsers_go,
+::X|EN|cl.epic.webcache.072|                    where %UL% is each profile's AppData\Local. RUNEPIC comes
+::X|EN|cl.epic.webcache.073|                    from call :isrunning "EpicGamesLauncher.exe" at the top of
+::X|EN|cl.epic.webcache.074|                    :delete.
 ::X|FR|cl.epic.webcache.001|  Ce que c est    : Le launcher Epic affiche sa boutique et sa
 ::X|FR|cl.epic.webcache.002|                    bibliothèque dans un navigateur intégré dont le cache
 ::X|FR|cl.epic.webcache.003|                    réside dans des dossiers webcache versionnés sous
@@ -36263,76 +36348,78 @@ goto :eof
 ::X|FR|cl.epic.webcache.006|                    entiers et vide le dossier Logs du launcher.
 ::X|FR|cl.epic.webcache.007|
 ::X|FR|cl.epic.webcache.008|  Effet reel      : rd /S /Q sur chaque répertoire Saved\webcache* - les
-::X|FR|cl.epic.webcache.009|                    dossiers disparaissent, pas seulement leur contenu -
-::X|FR|cl.epic.webcache.010|                    et del /F /S /Q sur Saved\Logs. Les deux lignes sont
-::X|FR|cl.epic.webcache.011|                    dans :userclean, qui tourne une fois pour chaque
-::X|FR|cl.epic.webcache.012|                    dossier de profil sous %SystemDrive%\Users : tous les
-::X|FR|cl.epic.webcache.013|                    comptes Windows sont donc traités. Il n y a pas de
-::X|FR|cl.epic.webcache.014|                    question séparée : l étape suit la réponse sur les
-::X|FR|cl.epic.webcache.015|                    caches de navigateurs (cl.browser.caches). Si
-::X|FR|cl.epic.webcache.016|                    EpicGamesLauncher.exe tourne, les deux lignes sont
-::X|FR|cl.epic.webcache.017|                    sautées : le launcher est détecté une seule fois en
-::X|FR|cl.epic.webcache.018|                    tête de :delete (RUNEPIC) et un avertissement indique
-::X|FR|cl.epic.webcache.019|                    que ses caches seront ignorés. Saved\Config,
-::X|FR|cl.epic.webcache.020|                    Saved\Data et Saved\Saves sont hors du motif et
-::X|FR|cl.epic.webcache.021|                    survivent.
-::X|FR|cl.epic.webcache.022|
-::X|FR|cl.epic.webcache.023|  Gain            : Mesuré ici : aucun dossier webcache n existe, et tout
-::X|FR|cl.epic.webcache.024|                    l arbre Saved pèse 0,1 Mo - cette étape libère donc 0
-::X|FR|cl.epic.webcache.025|                    octet sur cette machine. Sur un launcher utilisé
-::X|FR|cl.epic.webcache.026|                    quotidiennement, chaque version de webcache fait
-::X|FR|cl.epic.webcache.027|                    environ 50 à 300 Mo et deux ou trois versions
-::X|FR|cl.epic.webcache.028|                    coexistent, soit 100 Mo à environ 1 Go.
-::X|FR|cl.epic.webcache.029|
-::X|FR|cl.epic.webcache.030|  Cout            : Reconstruit au lancement suivant : quelques secondes à
-::X|FR|cl.epic.webcache.031|                    une minute pour retélécharger l interface de la
-::X|FR|cl.epic.webcache.032|                    boutique. Les jeux installés, leurs données et vos
-::X|FR|cl.epic.webcache.033|                    sauvegardes ne sont pas touchés. Seul désagrément
-::X|FR|cl.epic.webcache.034|                    possible : la vue boutique garde ses cookies dans le
-::X|FR|cl.epic.webcache.035|                    webcache, elle peut donc redemander une connexion.
-::X|FR|cl.epic.webcache.036|
-::X|FR|cl.epic.webcache.037|  Defaut Windows  : Sans objet - cache d une application tierce. Windows
-::X|FR|cl.epic.webcache.038|                    ne le crée ni ne le purge.
-::X|FR|cl.epic.webcache.039|
-::X|FR|cl.epic.webcache.040|  Valeurs possibles :
-::X|FR|cl.epic.webcache.041|    DELETE               : Supprimer les dossiers webcache versionnés et
-::X|FR|cl.epic.webcache.042|                           les journaux du launcher. C est le remède
-::X|FR|cl.epic.webcache.043|                           standard à une boutique Epic qui s ouvre
-::X|FR|cl.epic.webcache.044|                           entièrement blanche, et les jeux installés ne
-::X|FR|cl.epic.webcache.045|                           sont pas sur ce chemin.
-::X|FR|cl.epic.webcache.046|    KEEP                 : À laisser si la boutique s affiche bien et que
-::X|FR|cl.epic.webcache.047|                           la place ne manque pas : c est le webcache qui
-::X|FR|cl.epic.webcache.048|                           fait que la boutique s ouvre tout de suite au
-::X|FR|cl.epic.webcache.049|                           lieu de retélécharger toute son interface.
-::X|FR|cl.epic.webcache.050|    ASK                  : À ne demander que si un téléchargement est en
-::X|FR|cl.epic.webcache.051|                           cours : un rd /S /Q sur un dossier webcache
-::X|FR|cl.epic.webcache.052|                           pendant une installation en file d attente n a
-::X|FR|cl.epic.webcache.053|                           pas été testé - c est précisément la raison
-::X|FR|cl.epic.webcache.054|                           d être du garde-fou sur le launcher.
-::X|FR|cl.epic.webcache.055|
-::X|FR|cl.epic.webcache.056|  Pourquoi ces profils : Identique pour les quatre profils réels. Un
-::X|FR|cl.epic.webcache.057|                         webcache de launcher n influe ni sur les temps
-::X|FR|cl.epic.webcache.058|                         d image, ni sur le débit, ni sur l autonomie :
-::X|FR|cl.epic.webcache.059|                         soit il est gonflé et cassé, soit il va bien. La
-::X|FR|cl.epic.webcache.060|                         colonne 5 dit KEEP parce que « laisser Windows
-::X|FR|cl.epic.webcache.061|                         tel qu il est livré » ne dit rien d un dossier
-::X|FR|cl.epic.webcache.062|                         qui n appartient pas à Windows.
-::X|FR|cl.epic.webcache.063|
-::X|FR|cl.epic.webcache.064|  Non verifie (en)  : Whether clearing webcache forces a fresh sign-in
-::X|FR|cl.epic.webcache.065|                      could not be reproduced here, because no webcache
-::X|FR|cl.epic.webcache.066|                      folder exists on this machine. The launcher s own
-::X|FR|cl.epic.webcache.067|                      saved credential is in
-::X|FR|cl.epic.webcache.068|                      Saved\Config\Windows\GameUserSettings.ini, which
-::X|FR|cl.epic.webcache.069|                      this step does not touch; the embedded browser s
-::X|FR|cl.epic.webcache.070|                      cookies do live in webcache, so the store view may
-::X|FR|cl.epic.webcache.071|                      re-prompt even while the launcher stays signed in.
-::X|FR|cl.epic.webcache.072|
-::X|FR|cl.epic.webcache.073|  Cible           : for /d %%W in ("%UL%\EpicGamesLauncher\Saved\webcach
-::X|FR|cl.epic.webcache.074|                    e*") do rd /S /Q, plus del /F /S /Q sur
-::X|FR|cl.epic.webcache.075|                    ...\Saved\Logs\*, tous deux sautés quand RUNEPIC est
-::X|FR|cl.epic.webcache.076|                    défini - dans :userclean, où %UL% est le
-::X|FR|cl.epic.webcache.077|                    AppData\Local de chaque profil. RUNEPIC vient du call
-::X|FR|cl.epic.webcache.078|                    :isrunning "EpicGamesLauncher.exe" en tête de :delete.
+::X|FR|cl.epic.webcache.009|                    dossiers disparaissent, pas seulement leur contenu - et
+::X|FR|cl.epic.webcache.010|                    del /F /S /Q sur Saved\Logs. Les deux lignes sont dans
+::X|FR|cl.epic.webcache.011|                    :userclean (sa partie :uc_browsers), qui tourne une fois
+::X|FR|cl.epic.webcache.012|                    pour chaque dossier de profil sous %SystemDrive%\Users :
+::X|FR|cl.epic.webcache.013|                    tous les comptes Windows sont donc traités. Epic n a pas d
+::X|FR|cl.epic.webcache.014|                    étape à lui, donc elles suivent toujours la réponse sur
+::X|FR|cl.epic.webcache.015|                    les caches de navigateurs (cl.browser.caches, :userclean
+::X|FR|cl.epic.webcache.016|                    "<profil>" browsers) ; les parties WER, lanceurs et
+::X|FR|cl.epic.webcache.017|                    Discord sont passées sous leurs propres fiches, Epic est
+::X|FR|cl.epic.webcache.018|                    la seule restée. Si EpicGamesLauncher.exe tourne, les deux
+::X|FR|cl.epic.webcache.019|                    lignes sont sautées : le launcher est détecté une seule
+::X|FR|cl.epic.webcache.020|                    fois en tête de :delete (RUNEPIC) et un avertissement
+::X|FR|cl.epic.webcache.021|                    indique que ses caches seront ignorés. Saved\Config,
+::X|FR|cl.epic.webcache.022|                    Saved\Data et Saved\Saves sont hors du motif et survivent.
+::X|FR|cl.epic.webcache.023|
+::X|FR|cl.epic.webcache.024|  Gain            : Mesuré ici : aucun dossier webcache n existe, et tout
+::X|FR|cl.epic.webcache.025|                    l arbre Saved pèse 0,1 Mo - cette étape libère donc 0
+::X|FR|cl.epic.webcache.026|                    octet sur cette machine. Sur un launcher utilisé
+::X|FR|cl.epic.webcache.027|                    quotidiennement, chaque version de webcache fait
+::X|FR|cl.epic.webcache.028|                    environ 50 à 300 Mo et deux ou trois versions
+::X|FR|cl.epic.webcache.029|                    coexistent, soit 100 Mo à environ 1 Go.
+::X|FR|cl.epic.webcache.030|
+::X|FR|cl.epic.webcache.031|  Cout            : Reconstruit au lancement suivant : quelques secondes à
+::X|FR|cl.epic.webcache.032|                    une minute pour retélécharger l interface de la
+::X|FR|cl.epic.webcache.033|                    boutique. Les jeux installés, leurs données et vos
+::X|FR|cl.epic.webcache.034|                    sauvegardes ne sont pas touchés. Seul désagrément
+::X|FR|cl.epic.webcache.035|                    possible : la vue boutique garde ses cookies dans le
+::X|FR|cl.epic.webcache.036|                    webcache, elle peut donc redemander une connexion.
+::X|FR|cl.epic.webcache.037|
+::X|FR|cl.epic.webcache.038|  Defaut Windows  : Sans objet - cache d une application tierce. Windows
+::X|FR|cl.epic.webcache.039|                    ne le crée ni ne le purge.
+::X|FR|cl.epic.webcache.040|
+::X|FR|cl.epic.webcache.041|  Valeurs possibles :
+::X|FR|cl.epic.webcache.042|    DELETE               : Supprimer les dossiers webcache versionnés et
+::X|FR|cl.epic.webcache.043|                           les journaux du launcher. C est le remède
+::X|FR|cl.epic.webcache.044|                           standard à une boutique Epic qui s ouvre
+::X|FR|cl.epic.webcache.045|                           entièrement blanche, et les jeux installés ne
+::X|FR|cl.epic.webcache.046|                           sont pas sur ce chemin.
+::X|FR|cl.epic.webcache.047|    KEEP                 : À laisser si la boutique s affiche bien et que
+::X|FR|cl.epic.webcache.048|                           la place ne manque pas : c est le webcache qui
+::X|FR|cl.epic.webcache.049|                           fait que la boutique s ouvre tout de suite au
+::X|FR|cl.epic.webcache.050|                           lieu de retélécharger toute son interface.
+::X|FR|cl.epic.webcache.051|    ASK                  : À ne demander que si un téléchargement est en
+::X|FR|cl.epic.webcache.052|                           cours : un rd /S /Q sur un dossier webcache
+::X|FR|cl.epic.webcache.053|                           pendant une installation en file d attente n a
+::X|FR|cl.epic.webcache.054|                           pas été testé - c est précisément la raison
+::X|FR|cl.epic.webcache.055|                           d être du garde-fou sur le launcher.
+::X|FR|cl.epic.webcache.056|
+::X|FR|cl.epic.webcache.057|  Pourquoi ces profils : Identique pour les quatre profils réels. Un
+::X|FR|cl.epic.webcache.058|                         webcache de launcher n influe ni sur les temps
+::X|FR|cl.epic.webcache.059|                         d image, ni sur le débit, ni sur l autonomie :
+::X|FR|cl.epic.webcache.060|                         soit il est gonflé et cassé, soit il va bien. La
+::X|FR|cl.epic.webcache.061|                         colonne 5 dit KEEP parce que « laisser Windows
+::X|FR|cl.epic.webcache.062|                         tel qu il est livré » ne dit rien d un dossier
+::X|FR|cl.epic.webcache.063|                         qui n appartient pas à Windows.
+::X|FR|cl.epic.webcache.064|
+::X|FR|cl.epic.webcache.065|  Non verifie (en)  : Whether clearing webcache forces a fresh sign-in
+::X|FR|cl.epic.webcache.066|                      could not be reproduced here, because no webcache
+::X|FR|cl.epic.webcache.067|                      folder exists on this machine. The launcher s own
+::X|FR|cl.epic.webcache.068|                      saved credential is in
+::X|FR|cl.epic.webcache.069|                      Saved\Config\Windows\GameUserSettings.ini, which
+::X|FR|cl.epic.webcache.070|                      this step does not touch; the embedded browser s
+::X|FR|cl.epic.webcache.071|                      cookies do live in webcache, so the store view may
+::X|FR|cl.epic.webcache.072|                      re-prompt even while the launcher stays signed in.
+::X|FR|cl.epic.webcache.073|
+::X|FR|cl.epic.webcache.074|  Cible           : for /d %%W in ("%UL%\EpicGamesLauncher\Saved\webcache*")
+::X|FR|cl.epic.webcache.075|                    do rd /S /Q, plus del /F /S /Q sur ...\Saved\Logs\*, tous
+::X|FR|cl.epic.webcache.076|                    deux sautés quand RUNEPIC est défini - dans la partie
+::X|FR|cl.epic.webcache.077|                    :uc_browsers de :userclean, appelée avec browsers depuis
+::X|FR|cl.epic.webcache.078|                    :dl_browsers_go, où %UL% est le AppData\Local de chaque
+::X|FR|cl.epic.webcache.079|                    profil. RUNEPIC vient du call :isrunning
+::X|FR|cl.epic.webcache.080|                    "EpicGamesLauncher.exe" en tête de :delete.
 ::
 :: ---- cl.fontcache.rebuild (cleanup) ------------------------------
 ::P|cl.fontcache.rebuild|DELETE|DELETE|DELETE|DELETE|KEEP|
@@ -37531,168 +37618,194 @@ goto :eof
 :: ---- cl.allusers.fanout (cleanup) --------------------------------
 ::P|cl.allusers.fanout|DELETE|DELETE|DELETE|DELETE|KEEP|
 ::T|EN|cl.allusers.fanout.001|APPLY THE CACHE CLEANUP TO EVERY ACCOUNT
-::T|EN|cl.allusers.fanout.002|Clears browser, launcher and Discord caches plus crash reports for every account on this PC, not just yours - meaningful space back on a shared or family machine, nothing gained on a single-user one, and it never touches logins, bookmarks or history.
+::T|EN|cl.allusers.fanout.002|Explains how crash reports, launcher, Discord and browser caches are cleared for every account on this PC, not just yours, each part following its own card - meaningful space back on a shared or family machine, nothing gained on a single-user one, and it never touches logins, bookmarks or history.
 ::T|FR|cl.allusers.fanout.001|APPLIQUER LE NETTOYAGE DES CACHES A TOUS LES COMPTES
-::T|FR|cl.allusers.fanout.002|Nettoie les caches navigateur, lanceurs et Discord ainsi que les rapports de plantage de tous les comptes de ce PC, pas seulement le votre - gain reel sur une machine familiale partagee, aucun gain sur une machine a un seul compte, et cela ne touche jamais les connexions, favoris ou historiques.
-::X|EN|cl.allusers.fanout.001|  What it is      : The step that walks every user profile folder on the
-::X|EN|cl.allusers.fanout.002|                    machine, not just the account running OPTY, and runs
-::X|EN|cl.allusers.fanout.003|                    the per-user sweep :userclean for each of them: crash
-::X|EN|cl.allusers.fanout.004|                    reports, launcher caches, Discord caches, the nine
-::X|EN|cl.allusers.fanout.005|                    Chromium sweeps and the Firefox sweep.
-::X|EN|cl.allusers.fanout.006|
-::X|EN|cl.allusers.fanout.007|  Actual effect   : For every folder under C:\Users it checks
-::X|EN|cl.allusers.fanout.008|                    AppData\Local and then, for that account, deletes
-::X|EN|cl.allusers.fanout.009|                    the WER reports (AppData\Local\Microsoft\Windows\WER)
-::X|EN|cl.allusers.fanout.010|                    and CrashDumps, the Ubisoft launcher cache (http2,
-::X|EN|cl.allusers.fanout.011|                    club, ulcf), the EA Desktop Cache, Code Cache and
-::X|EN|cl.allusers.fanout.012|                    GPUCache, the Origin logs (Local and Roaming), the
-::X|EN|cl.allusers.fanout.013|                    Epic webcache folders and Saved\Logs, and the Cache,
-::X|EN|cl.allusers.fanout.014|                    Code Cache and GPUCache of Discord stable, PTB and
-::X|EN|cl.allusers.fanout.015|                    Canary; then it calls the browser cache helpers.
-::X|EN|cl.allusers.fanout.016|                    Profiles without a given program fall out at the
-::X|EN|cl.allusers.fanout.017|                    first existence test, so the calls cost nothing on a
-::X|EN|cl.allusers.fanout.018|                    machine with one browser. Measured here, C:\Users
-::X|EN|cl.allusers.fanout.019|                    holds compt, Public, Default and the two legacy
-::X|EN|cl.allusers.fanout.020|                    junctions All Users and Default User; Public, Default
-::X|EN|cl.allusers.fanout.021|                    and both junctions drop out at the AppData\Local test
-::X|EN|cl.allusers.fanout.022|                    with no error and no delay. The loop is hardcoded to
-::X|EN|cl.allusers.fanout.023|                    %SystemDrive%\Users, so a profile relocated to
-::X|EN|cl.allusers.fanout.024|                    another drive is never visited.
-::X|EN|cl.allusers.fanout.025|
-::X|EN|cl.allusers.fanout.026|  Gain            : On a family or shared machine this is where most of
-::X|EN|cl.allusers.fanout.027|                    the space is - the other accounts' caches are
-::X|EN|cl.allusers.fanout.028|                    invisible to a per-user cleanup and are frequently
-::X|EN|cl.allusers.fanout.029|                    larger than yours, on the order of the 2.6 GB measured
-::X|EN|cl.allusers.fanout.030|                    in this one profile. On this machine it adds exactly 0
-::X|EN|cl.allusers.fanout.031|                    bytes, because there is only one real profile under
-::X|EN|cl.allusers.fanout.032|                    C:\Users.
+::T|FR|cl.allusers.fanout.002|Explique comment les rapports de plantage et les caches des lanceurs, de Discord et des navigateurs sont vides pour tous les comptes de ce PC, pas seulement le votre, chaque partie suivant sa propre fiche - gain reel sur une machine familiale partagee, aucun gain sur une machine a un seul compte, et cela ne touche jamais les connexions, favoris ou historiques.
+::X|EN|cl.allusers.fanout.001|  What it is      : How OPTY walks every user profile folder on the machine,
+::X|EN|cl.allusers.fanout.002|                    not just the account running OPTY, with the per-user
+::X|EN|cl.allusers.fanout.003|                    routine :userclean. :userclean takes a second argument
+::X|EN|cl.allusers.fanout.004|                    naming the part to run (wer, ubi, ea, origin, discord or
+::X|EN|cl.allusers.fanout.005|                    browsers), and each part is called from its own card's
+::X|EN|cl.allusers.fanout.006|                    step: crash reports, the Ubisoft, EA and Origin launcher
+::X|EN|cl.allusers.fanout.007|                    caches, the Discord caches, and - under the browser-caches
+::X|EN|cl.allusers.fanout.008|                    answer - the nine Chromium sweeps, the Firefox sweep and
+::X|EN|cl.allusers.fanout.009|                    the Epic web cache.
+::X|EN|cl.allusers.fanout.010|
+::X|EN|cl.allusers.fanout.011|  Actual effect   : For every folder under C:\Users it checks AppData\Local
+::X|EN|cl.allusers.fanout.012|                    and then runs only the part it was called for: wer
+::X|EN|cl.allusers.fanout.013|                    (cl.wer.dumps) deletes the WER reports
+::X|EN|cl.allusers.fanout.014|                    (AppData\Local\Microsoft\Windows\WER) and CrashDumps; ubi
+::X|EN|cl.allusers.fanout.015|                    (cl.ubisoft.cache) the Ubisoft launcher cache (http2,
+::X|EN|cl.allusers.fanout.016|                    club, ulcf); ea (cl.ea.cache) the EA Desktop Cache, Code
+::X|EN|cl.allusers.fanout.017|                    Cache and GPUCache; origin (cl.origin.logs) the Origin
+::X|EN|cl.allusers.fanout.018|                    logs (Local and Roaming); discord (cl.discord.cache) the
+::X|EN|cl.allusers.fanout.019|                    Cache, Code Cache and GPUCache of Discord stable, PTB and
+::X|EN|cl.allusers.fanout.020|                    Canary; browsers (cl.browser.caches) the Epic webcache
+::X|EN|cl.allusers.fanout.021|                    folders and Saved\Logs - Epic has no card of its own -
+::X|EN|cl.allusers.fanout.022|                    then the browser cache helpers. Skipping any of those
+::X|EN|cl.allusers.fanout.023|                    cards now stops its part for every profile; the whole
+::X|EN|cl.allusers.fanout.024|                    sweep used to run under the browser card. Profiles without
+::X|EN|cl.allusers.fanout.025|                    a given program fall out at the first existence test, so
+::X|EN|cl.allusers.fanout.026|                    the calls cost nothing on a machine with one browser.
+::X|EN|cl.allusers.fanout.027|                    Measured here, C:\Users holds compt, Public, Default and
+::X|EN|cl.allusers.fanout.028|                    the two legacy junctions All Users and Default User;
+::X|EN|cl.allusers.fanout.029|                    Public, Default and both junctions drop out at the
+::X|EN|cl.allusers.fanout.030|                    AppData\Local test with no error and no delay. The loop is
+::X|EN|cl.allusers.fanout.031|                    hardcoded to %SystemDrive%\Users, so a profile relocated
+::X|EN|cl.allusers.fanout.032|                    to another drive is never visited.
 ::X|EN|cl.allusers.fanout.033|
-::X|EN|cl.allusers.fanout.034|  Cost            : One nuance worth knowing: the is-it-running checks
-::X|EN|cl.allusers.fanout.035|                    are machine-wide, not per user. If any account has
-::X|EN|cl.allusers.fanout.036|                    Chrome open, including a switched-out session, then
-::X|EN|cl.allusers.fanout.037|                    no account's Chrome cache is cleaned and the step
-::X|EN|cl.allusers.fanout.038|                    reports it as skipped. The same holds for the
-::X|EN|cl.allusers.fanout.039|                    launchers and Discord: while Ubisoft Connect, EA
-::X|EN|cl.allusers.fanout.040|                    Desktop, the Epic launcher or any Discord build
-::X|EN|cl.allusers.fanout.041|                    (stable, PTB, Canary) runs, that program's caches are
-::X|EN|cl.allusers.fanout.042|                    skipped for every account. Nothing is deleted
-::X|EN|cl.allusers.fanout.043|                    unsafely, you simply get less than you expected.
-::X|EN|cl.allusers.fanout.044|                    Other users' logins, cookies, bookmarks, history and
-::X|EN|cl.allusers.fanout.045|                    launcher entitlements are never in the paths.
-::X|EN|cl.allusers.fanout.046|
-::X|EN|cl.allusers.fanout.047|  Windows default : Not applicable - third-party regenerable caches.
-::X|EN|cl.allusers.fanout.048|
-::X|EN|cl.allusers.fanout.049|  Possible values:
-::X|EN|cl.allusers.fanout.050|    DELETE               : Sweep every account, not just yours. On a
-::X|EN|cl.allusers.fanout.051|                           shared or family PC this is where most of the
-::X|EN|cl.allusers.fanout.052|                           space actually is, and other users' logins,
-::X|EN|cl.allusers.fanout.053|                           cookies and bookmarks are never in the paths.
-::X|EN|cl.allusers.fanout.054|    KEEP                 : Reasonable if you administer a machine whose
-::X|EN|cl.allusers.fanout.055|                           other accounts are not yours to touch. It
-::X|EN|cl.allusers.fanout.056|                           deletes only caches, but it does so in folders
-::X|EN|cl.allusers.fanout.057|                           belonging to people who were not asked.
-::X|EN|cl.allusers.fanout.058|    ASK                  : Worth asking on a workplace PC, where clearing
-::X|EN|cl.allusers.fanout.059|                           another account's browser cache is a decision
-::X|EN|cl.allusers.fanout.060|                           about somebody else's machine time, not about
-::X|EN|cl.allusers.fanout.061|                           disk space.
-::X|EN|cl.allusers.fanout.062|
-::X|EN|cl.allusers.fanout.063|  Why these profiles : The four columns match the Chromium card because
-::X|EN|cl.allusers.fanout.064|                       this step is the Chromium card applied more widely
-::X|EN|cl.allusers.fanout.065|                       - it adds reach, not risk. Profile 5 is KEEP for
-::X|EN|cl.allusers.fanout.066|                       the same narrow reason: Windows has no shipped
-::X|EN|cl.allusers.fanout.067|                       opinion about another user's browser cache.
-::X|EN|cl.allusers.fanout.068|
-::X|EN|cl.allusers.fanout.069|  Target          : for /d %%U in ("%SystemDrive%\Users\*") do call
-::X|EN|cl.allusers.fanout.070|                    :userclean "%%~fU" - under :dl_browsers_go, so it
-::X|EN|cl.allusers.fanout.071|                    runs whenever the browser caches step
-::X|EN|cl.allusers.fanout.072|                    (cl.browser.caches) runs; this card is not asked on
-::X|EN|cl.allusers.fanout.073|                    its own. The per-user sweep is the :userclean
-::X|EN|cl.allusers.fanout.074|                    routine; the running-program flags (RUNUBI, RUNEA,
-::X|EN|cl.allusers.fanout.075|                    RUNEPIC, RUNDISC) are set at the top of :delete.
-::X|FR|cl.allusers.fanout.001|  Ce que c est    : L etape qui parcourt tous les dossiers de profil
-::X|FR|cl.allusers.fanout.002|                    utilisateur de la machine, et pas seulement le compte
-::X|FR|cl.allusers.fanout.003|                    qui lance OPTY, puis lance pour chacun le nettoyage
-::X|FR|cl.allusers.fanout.004|                    par utilisateur :userclean : rapports de plantage,
-::X|FR|cl.allusers.fanout.005|                    caches des lanceurs, caches Discord, les neuf passes
-::X|FR|cl.allusers.fanout.006|                    Chromium et la passe Firefox.
-::X|FR|cl.allusers.fanout.007|
-::X|FR|cl.allusers.fanout.008|  Effet reel      : Pour chaque dossier sous C:\Users, elle verifie
-::X|FR|cl.allusers.fanout.009|                    AppData\Local puis, pour ce compte, supprime les
-::X|FR|cl.allusers.fanout.010|                    rapports WER (AppData\Local\Microsoft\Windows\WER) et
-::X|FR|cl.allusers.fanout.011|                    CrashDumps, le cache du lanceur Ubisoft (http2, club,
-::X|FR|cl.allusers.fanout.012|                    ulcf), les dossiers Cache, Code Cache et GPUCache
-::X|FR|cl.allusers.fanout.013|                    d EA Desktop, les journaux Origin (Local et Roaming),
-::X|FR|cl.allusers.fanout.014|                    les dossiers webcache et Saved\Logs d Epic, et les
-::X|FR|cl.allusers.fanout.015|                    dossiers Cache, Code Cache et GPUCache de Discord
-::X|FR|cl.allusers.fanout.016|                    stable, PTB et Canary ; puis elle appelle les
-::X|FR|cl.allusers.fanout.017|                    fonctions de nettoyage des navigateurs. Les profils
-::X|FR|cl.allusers.fanout.018|                    depourvus d un programme donne ressortent au premier
-::X|FR|cl.allusers.fanout.019|                    test d existence : ces appels ne coutent donc rien
-::X|FR|cl.allusers.fanout.020|                    sur une machine a un seul navigateur. Mesure ici,
-::X|FR|cl.allusers.fanout.021|                    C:\Users contient compt, Public, Default et les deux
-::X|FR|cl.allusers.fanout.022|                    jonctions heritees All Users et Default User ;
-::X|FR|cl.allusers.fanout.023|                    Public, Default et les deux jonctions ressortent au
-::X|FR|cl.allusers.fanout.024|                    test AppData\Local sans erreur ni attente. La boucle
-::X|FR|cl.allusers.fanout.025|                    est figee sur %SystemDrive%\Users : un profil deplace
-::X|FR|cl.allusers.fanout.026|                    sur un autre disque n est jamais visite.
-::X|FR|cl.allusers.fanout.027|
-::X|FR|cl.allusers.fanout.028|  Gain            : Sur une machine familiale ou partagee, c est la que se
-::X|FR|cl.allusers.fanout.029|                    trouve l essentiel de la place : les caches des autres
-::X|FR|cl.allusers.fanout.030|                    comptes sont invisibles pour un nettoyage limite a
-::X|FR|cl.allusers.fanout.031|                    votre profil et depassent souvent le votre, de l ordre
-::X|FR|cl.allusers.fanout.032|                    des 2,6 Go mesures sur ce seul profil. Sur cette
-::X|FR|cl.allusers.fanout.033|                    machine, l apport est exactement de 0 octet, puisqu il
-::X|FR|cl.allusers.fanout.034|                    n y a qu un profil reel sous C:\Users.
-::X|FR|cl.allusers.fanout.035|
-::X|FR|cl.allusers.fanout.036|  Cout            : Une nuance a connaitre : les tests « le programme
-::X|FR|cl.allusers.fanout.037|                    tourne-t-il » portent sur toute la machine, pas sur
-::X|FR|cl.allusers.fanout.038|                    chaque utilisateur. Si un compte quelconque a Chrome
-::X|FR|cl.allusers.fanout.039|                    ouvert, y compris une session laissee en arriere-plan,
-::X|FR|cl.allusers.fanout.040|                    le cache Chrome d aucun compte n est nettoye et
-::X|FR|cl.allusers.fanout.041|                    l etape le signale comme ignoree. Il en va de meme
-::X|FR|cl.allusers.fanout.042|                    pour les lanceurs et Discord : tant qu Ubisoft
-::X|FR|cl.allusers.fanout.043|                    Connect, EA Desktop, le lanceur Epic ou une version
-::X|FR|cl.allusers.fanout.044|                    de Discord (stable, PTB, Canary) tourne, les caches
-::X|FR|cl.allusers.fanout.045|                    de ce programme sont ignores pour tous les comptes.
-::X|FR|cl.allusers.fanout.046|                    Rien n est supprime dangereusement, vous recuperez
-::X|FR|cl.allusers.fanout.047|                    simplement moins que prevu. Les connexions, cookies,
-::X|FR|cl.allusers.fanout.048|                    favoris, historiques et droits de jeux des autres ne
-::X|FR|cl.allusers.fanout.049|                    figurent jamais sur ces chemins.
-::X|FR|cl.allusers.fanout.050|
-::X|FR|cl.allusers.fanout.051|  Defaut Windows  : Sans objet - caches tiers regenerables.
-::X|FR|cl.allusers.fanout.052|
-::X|FR|cl.allusers.fanout.053|  Valeurs possibles :
-::X|FR|cl.allusers.fanout.054|    DELETE               : Balayer tous les comptes, pas seulement le
-::X|FR|cl.allusers.fanout.055|                           votre. Sur un PC partage ou familial, c est la
-::X|FR|cl.allusers.fanout.056|                           que se trouve l essentiel de la place, et les
-::X|FR|cl.allusers.fanout.057|                           connexions, cookies et favoris des autres ne
-::X|FR|cl.allusers.fanout.058|                           sont jamais sur ces chemins.
-::X|FR|cl.allusers.fanout.059|    KEEP                 : Raisonnable si vous administrez une machine
-::X|FR|cl.allusers.fanout.060|                           dont les autres comptes ne vous appartiennent
-::X|FR|cl.allusers.fanout.061|                           pas. L etape ne supprime que des caches, mais
-::X|FR|cl.allusers.fanout.062|                           dans des dossiers appartenant a des gens a qui
-::X|FR|cl.allusers.fanout.063|                           on n a rien demande.
-::X|FR|cl.allusers.fanout.064|    ASK                  : A demander sur un poste professionnel : vider
-::X|FR|cl.allusers.fanout.065|                           le cache navigateur d un autre compte engage le
-::X|FR|cl.allusers.fanout.066|                           temps de travail de quelqu un d autre, pas
-::X|FR|cl.allusers.fanout.067|                           seulement de l espace disque.
-::X|FR|cl.allusers.fanout.068|
-::X|FR|cl.allusers.fanout.069|  Pourquoi ces profils : Les quatre colonnes reprennent celles de la fiche
-::X|FR|cl.allusers.fanout.070|                         Chromium, car cette etape n est que la fiche
-::X|FR|cl.allusers.fanout.071|                         Chromium appliquee plus largement : elle ajoute
-::X|FR|cl.allusers.fanout.072|                         de la portee, pas du risque. La colonne 5 dit
-::X|FR|cl.allusers.fanout.073|                         KEEP pour la meme raison etroite : Windows n a
-::X|FR|cl.allusers.fanout.074|                         aucun avis d origine sur le cache navigateur d un
-::X|FR|cl.allusers.fanout.075|                         autre utilisateur.
-::X|FR|cl.allusers.fanout.076|
-::X|FR|cl.allusers.fanout.077|  Cible           : for /d %%U in ("%SystemDrive%\Users\*") do call
-::X|FR|cl.allusers.fanout.078|                    :userclean "%%~fU" - sous :dl_browsers_go, donc elle
-::X|FR|cl.allusers.fanout.079|                    s execute chaque fois que l etape des caches
-::X|FR|cl.allusers.fanout.080|                    navigateur (cl.browser.caches) s execute ; cette
-::X|FR|cl.allusers.fanout.081|                    fiche n est pas demandee a part. Le nettoyage par
-::X|FR|cl.allusers.fanout.082|                    utilisateur est la routine :userclean ; les
-::X|FR|cl.allusers.fanout.083|                    indicateurs de programme en cours (RUNUBI, RUNEA,
-::X|FR|cl.allusers.fanout.084|                    RUNEPIC, RUNDISC) sont poses en tete de :delete.
+::X|EN|cl.allusers.fanout.034|  Gain            : On a family or shared machine this is where most of
+::X|EN|cl.allusers.fanout.035|                    the space is - the other accounts' caches are
+::X|EN|cl.allusers.fanout.036|                    invisible to a per-user cleanup and are frequently
+::X|EN|cl.allusers.fanout.037|                    larger than yours, on the order of the 2.6 GB measured
+::X|EN|cl.allusers.fanout.038|                    in this one profile. On this machine it adds exactly 0
+::X|EN|cl.allusers.fanout.039|                    bytes, because there is only one real profile under
+::X|EN|cl.allusers.fanout.040|                    C:\Users.
+::X|EN|cl.allusers.fanout.041|
+::X|EN|cl.allusers.fanout.042|  Cost            : One nuance worth knowing: the is-it-running checks
+::X|EN|cl.allusers.fanout.043|                    are machine-wide, not per user. If any account has
+::X|EN|cl.allusers.fanout.044|                    Chrome open, including a switched-out session, then
+::X|EN|cl.allusers.fanout.045|                    no account's Chrome cache is cleaned and the step
+::X|EN|cl.allusers.fanout.046|                    reports it as skipped. The same holds for the
+::X|EN|cl.allusers.fanout.047|                    launchers and Discord: while Ubisoft Connect, EA
+::X|EN|cl.allusers.fanout.048|                    Desktop, the Epic launcher or any Discord build
+::X|EN|cl.allusers.fanout.049|                    (stable, PTB, Canary) runs, that program's caches are
+::X|EN|cl.allusers.fanout.050|                    skipped for every account. Nothing is deleted
+::X|EN|cl.allusers.fanout.051|                    unsafely, you simply get less than you expected.
+::X|EN|cl.allusers.fanout.052|                    Other users' logins, cookies, bookmarks, history and
+::X|EN|cl.allusers.fanout.053|                    launcher entitlements are never in the paths.
+::X|EN|cl.allusers.fanout.054|
+::X|EN|cl.allusers.fanout.055|  Windows default : Not applicable - third-party regenerable caches.
+::X|EN|cl.allusers.fanout.056|
+::X|EN|cl.allusers.fanout.057|  Possible values:
+::X|EN|cl.allusers.fanout.058|    DELETE               : Sweep every account, not just yours. On a
+::X|EN|cl.allusers.fanout.059|                           shared or family PC this is where most of the
+::X|EN|cl.allusers.fanout.060|                           space actually is, and other users' logins,
+::X|EN|cl.allusers.fanout.061|                           cookies and bookmarks are never in the paths.
+::X|EN|cl.allusers.fanout.062|    KEEP                 : Reasonable if you administer a machine whose
+::X|EN|cl.allusers.fanout.063|                           other accounts are not yours to touch. It
+::X|EN|cl.allusers.fanout.064|                           deletes only caches, but it does so in folders
+::X|EN|cl.allusers.fanout.065|                           belonging to people who were not asked.
+::X|EN|cl.allusers.fanout.066|    ASK                  : Worth asking on a workplace PC, where clearing
+::X|EN|cl.allusers.fanout.067|                           another account's browser cache is a decision
+::X|EN|cl.allusers.fanout.068|                           about somebody else's machine time, not about
+::X|EN|cl.allusers.fanout.069|                           disk space.
+::X|EN|cl.allusers.fanout.070|
+::X|EN|cl.allusers.fanout.071|  Why these profiles : The row is display-only: no code asks this card, and
+::X|EN|cl.allusers.fanout.072|                       each part follows the answer of its own card. Its four
+::X|EN|cl.allusers.fanout.073|                       columns match the Chromium card because the sweep
+::X|EN|cl.allusers.fanout.074|                       started as the Chromium card applied more widely - it
+::X|EN|cl.allusers.fanout.075|                       adds reach, not risk. Profile 5 is KEEP for the same
+::X|EN|cl.allusers.fanout.076|                       narrow reason: Windows has no shipped opinion about
+::X|EN|cl.allusers.fanout.077|                       another user's browser cache.
+::X|EN|cl.allusers.fanout.078|
+::X|EN|cl.allusers.fanout.079|  Target          : for /d %%U in ("%SystemDrive%\Users\*") do call :userclean
+::X|EN|cl.allusers.fanout.080|                    "%%~fU" <part> - once in each of :dl_wer_go (wer),
+::X|EN|cl.allusers.fanout.081|                    :dl_browsers_go (browsers), :dl_discord_go (discord),
+::X|EN|cl.allusers.fanout.082|                    :dl_ubi_go (ubi), :dl_ea_go (ea) and :dl_origin_go
+::X|EN|cl.allusers.fanout.083|                    (origin), so each part runs whenever its own card's step
+::X|EN|cl.allusers.fanout.084|                    runs; this card is not asked on its own. :userclean jumps
+::X|EN|cl.allusers.fanout.085|                    to :uc_wer, :uc_ubi, :uc_ea, :uc_origin, :uc_discord or
+::X|EN|cl.allusers.fanout.086|                    :uc_browsers; the running-program flags (RUNUBI, RUNEA,
+::X|EN|cl.allusers.fanout.087|                    RUNEPIC, RUNDISC) are set at the top of :delete.
+::X|FR|cl.allusers.fanout.001|  Ce que c est    : La facon dont OPTY parcourt tous les dossiers de profil
+::X|FR|cl.allusers.fanout.002|                    utilisateur de la machine, et pas seulement le compte qui
+::X|FR|cl.allusers.fanout.003|                    lance OPTY, avec la routine par utilisateur :userclean.
+::X|FR|cl.allusers.fanout.004|                    :userclean recoit un second argument qui nomme la partie a
+::X|FR|cl.allusers.fanout.005|                    executer (wer, ubi, ea, origin, discord ou browsers), et
+::X|FR|cl.allusers.fanout.006|                    chaque partie est appelee depuis l etape de sa propre
+::X|FR|cl.allusers.fanout.007|                    fiche : rapports de plantage, caches des lanceurs Ubisoft,
+::X|FR|cl.allusers.fanout.008|                    EA et Origin, caches Discord et - sous la reponse des
+::X|FR|cl.allusers.fanout.009|                    caches navigateur - les neuf passes Chromium, la passe
+::X|FR|cl.allusers.fanout.010|                    Firefox et le cache web d Epic.
+::X|FR|cl.allusers.fanout.011|
+::X|FR|cl.allusers.fanout.012|  Effet reel      : Pour chaque dossier sous C:\Users, elle verifie
+::X|FR|cl.allusers.fanout.013|                    AppData\Local puis n execute que la partie demandee : wer
+::X|FR|cl.allusers.fanout.014|                    (cl.wer.dumps) supprime les rapports WER
+::X|FR|cl.allusers.fanout.015|                    (AppData\Local\Microsoft\Windows\WER) et CrashDumps ; ubi
+::X|FR|cl.allusers.fanout.016|                    (cl.ubisoft.cache) le cache du lanceur Ubisoft (http2,
+::X|FR|cl.allusers.fanout.017|                    club, ulcf) ; ea (cl.ea.cache) les dossiers Cache, Code
+::X|FR|cl.allusers.fanout.018|                    Cache et GPUCache d EA Desktop ; origin (cl.origin.logs)
+::X|FR|cl.allusers.fanout.019|                    les journaux Origin (Local et Roaming) ; discord
+::X|FR|cl.allusers.fanout.020|                    (cl.discord.cache) les dossiers Cache, Code Cache et
+::X|FR|cl.allusers.fanout.021|                    GPUCache de Discord stable, PTB et Canary ; browsers
+::X|FR|cl.allusers.fanout.022|                    (cl.browser.caches) les dossiers webcache et Saved\Logs d
+::X|FR|cl.allusers.fanout.023|                    Epic - Epic n a pas de fiche a lui - puis les fonctions de
+::X|FR|cl.allusers.fanout.024|                    nettoyage des navigateurs. Passer l une de ces fiches
+::X|FR|cl.allusers.fanout.025|                    arrete desormais sa partie pour tous les profils ; tout le
+::X|FR|cl.allusers.fanout.026|                    balayage dependait autrefois de la fiche navigateur. Les
+::X|FR|cl.allusers.fanout.027|                    profils depourvus d un programme donne ressortent au
+::X|FR|cl.allusers.fanout.028|                    premier test d existence : ces appels ne coutent donc rien
+::X|FR|cl.allusers.fanout.029|                    sur une machine a un seul navigateur. Mesure ici, C:\Users
+::X|FR|cl.allusers.fanout.030|                    contient compt, Public, Default et les deux jonctions
+::X|FR|cl.allusers.fanout.031|                    heritees All Users et Default User ; Public, Default et
+::X|FR|cl.allusers.fanout.032|                    les deux jonctions ressortent au test AppData\Local sans
+::X|FR|cl.allusers.fanout.033|                    erreur ni attente. La boucle est figee sur
+::X|FR|cl.allusers.fanout.034|                    %SystemDrive%\Users : un profil deplace sur un autre
+::X|FR|cl.allusers.fanout.035|                    disque n est jamais visite.
+::X|FR|cl.allusers.fanout.036|
+::X|FR|cl.allusers.fanout.037|  Gain            : Sur une machine familiale ou partagee, c est la que se
+::X|FR|cl.allusers.fanout.038|                    trouve l essentiel de la place : les caches des autres
+::X|FR|cl.allusers.fanout.039|                    comptes sont invisibles pour un nettoyage limite a
+::X|FR|cl.allusers.fanout.040|                    votre profil et depassent souvent le votre, de l ordre
+::X|FR|cl.allusers.fanout.041|                    des 2,6 Go mesures sur ce seul profil. Sur cette
+::X|FR|cl.allusers.fanout.042|                    machine, l apport est exactement de 0 octet, puisqu il
+::X|FR|cl.allusers.fanout.043|                    n y a qu un profil reel sous C:\Users.
+::X|FR|cl.allusers.fanout.044|
+::X|FR|cl.allusers.fanout.045|  Cout            : Une nuance a connaitre : les tests « le programme
+::X|FR|cl.allusers.fanout.046|                    tourne-t-il » portent sur toute la machine, pas sur
+::X|FR|cl.allusers.fanout.047|                    chaque utilisateur. Si un compte quelconque a Chrome
+::X|FR|cl.allusers.fanout.048|                    ouvert, y compris une session laissee en arriere-plan,
+::X|FR|cl.allusers.fanout.049|                    le cache Chrome d aucun compte n est nettoye et
+::X|FR|cl.allusers.fanout.050|                    l etape le signale comme ignoree. Il en va de meme
+::X|FR|cl.allusers.fanout.051|                    pour les lanceurs et Discord : tant qu Ubisoft
+::X|FR|cl.allusers.fanout.052|                    Connect, EA Desktop, le lanceur Epic ou une version
+::X|FR|cl.allusers.fanout.053|                    de Discord (stable, PTB, Canary) tourne, les caches
+::X|FR|cl.allusers.fanout.054|                    de ce programme sont ignores pour tous les comptes.
+::X|FR|cl.allusers.fanout.055|                    Rien n est supprime dangereusement, vous recuperez
+::X|FR|cl.allusers.fanout.056|                    simplement moins que prevu. Les connexions, cookies,
+::X|FR|cl.allusers.fanout.057|                    favoris, historiques et droits de jeux des autres ne
+::X|FR|cl.allusers.fanout.058|                    figurent jamais sur ces chemins.
+::X|FR|cl.allusers.fanout.059|
+::X|FR|cl.allusers.fanout.060|  Defaut Windows  : Sans objet - caches tiers regenerables.
+::X|FR|cl.allusers.fanout.061|
+::X|FR|cl.allusers.fanout.062|  Valeurs possibles :
+::X|FR|cl.allusers.fanout.063|    DELETE               : Balayer tous les comptes, pas seulement le
+::X|FR|cl.allusers.fanout.064|                           votre. Sur un PC partage ou familial, c est la
+::X|FR|cl.allusers.fanout.065|                           que se trouve l essentiel de la place, et les
+::X|FR|cl.allusers.fanout.066|                           connexions, cookies et favoris des autres ne
+::X|FR|cl.allusers.fanout.067|                           sont jamais sur ces chemins.
+::X|FR|cl.allusers.fanout.068|    KEEP                 : Raisonnable si vous administrez une machine
+::X|FR|cl.allusers.fanout.069|                           dont les autres comptes ne vous appartiennent
+::X|FR|cl.allusers.fanout.070|                           pas. L etape ne supprime que des caches, mais
+::X|FR|cl.allusers.fanout.071|                           dans des dossiers appartenant a des gens a qui
+::X|FR|cl.allusers.fanout.072|                           on n a rien demande.
+::X|FR|cl.allusers.fanout.073|    ASK                  : A demander sur un poste professionnel : vider
+::X|FR|cl.allusers.fanout.074|                           le cache navigateur d un autre compte engage le
+::X|FR|cl.allusers.fanout.075|                           temps de travail de quelqu un d autre, pas
+::X|FR|cl.allusers.fanout.076|                           seulement de l espace disque.
+::X|FR|cl.allusers.fanout.077|
+::X|FR|cl.allusers.fanout.078|  Pourquoi ces profils : La ligne ne sert qu a l affichage : aucun code ne
+::X|FR|cl.allusers.fanout.079|                         pose cette fiche, et chaque partie suit la reponse de
+::X|FR|cl.allusers.fanout.080|                         sa propre fiche. Ses quatre colonnes reprennent
+::X|FR|cl.allusers.fanout.081|                         celles de la fiche Chromium parce que le balayage est
+::X|FR|cl.allusers.fanout.082|                         ne comme la fiche Chromium appliquee plus largement :
+::X|FR|cl.allusers.fanout.083|                         il ajoute de la portee, pas du risque. La colonne 5
+::X|FR|cl.allusers.fanout.084|                         dit KEEP pour la meme raison etroite : Windows n a
+::X|FR|cl.allusers.fanout.085|                         aucun avis d origine sur le cache navigateur d un
+::X|FR|cl.allusers.fanout.086|                         autre utilisateur.
+::X|FR|cl.allusers.fanout.087|
+::X|FR|cl.allusers.fanout.088|  Cible           : for /d %%U in ("%SystemDrive%\Users\*") do call :userclean
+::X|FR|cl.allusers.fanout.089|                    "%%~fU" <partie> - une fois dans chacun de :dl_wer_go
+::X|FR|cl.allusers.fanout.090|                    (wer), :dl_browsers_go (browsers), :dl_discord_go
+::X|FR|cl.allusers.fanout.091|                    (discord), :dl_ubi_go (ubi), :dl_ea_go (ea) et
+::X|FR|cl.allusers.fanout.092|                    :dl_origin_go (origin), donc chaque partie s execute
+::X|FR|cl.allusers.fanout.093|                    chaque fois que l etape de sa propre fiche s execute ;
+::X|FR|cl.allusers.fanout.094|                    cette fiche n est pas demandee a part. :userclean saute a
+::X|FR|cl.allusers.fanout.095|                    :uc_wer, :uc_ubi, :uc_ea, :uc_origin, :uc_discord ou
+::X|FR|cl.allusers.fanout.096|                    :uc_browsers ; les indicateurs de programme en cours
+::X|FR|cl.allusers.fanout.097|                    (RUNUBI, RUNEA, RUNEPIC, RUNDISC) sont poses en tete de
+::X|FR|cl.allusers.fanout.098|                    :delete.
 ::
 :: ---- Wi-Fi keywords. OPTY never touched any of these: :net_apply writes
 :: ---- 17 Ethernet keywords and the AX210 exposes 22 that share none of
