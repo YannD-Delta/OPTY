@@ -55,7 +55,7 @@ if (-not $RepoRoot) { Fail 'Not inside a git repository.' }
 $RepoRoot = $RepoRoot.Trim()
 $Bat = Join-Path $RepoRoot 'OPTY.bat'
 if (-not (Test-Path $Bat)) {
-    Fail "OPTY.bat not found at $Bat. (OPTY relocates itself to C:\OPTY_by-YannD and deletes the original - run 'git restore OPTY.bat'.)"
+    Fail "OPTY.bat not found at $Bat - run 'git restore OPTY.bat'. (Builds before 05.1 relocated themselves to C:\OPTY_by-YannD and deleted the original even from a checkout.)"
 }
 
 # ------------------------------------------------------------ integrity gates
@@ -415,7 +415,7 @@ foreach ($t in $reached) {
 if ($drift.Count) { Fail ("CLEAN membership drift between the ::S| table and the code:`n      " + ($drift -join "`n      ")) }
 Write-Ok "$($tableRows.Count) CLEAN steps, table matches the code"
 
-# 6. version marker
+# 14. version marker
 $vm = [regex]::Match($text, '(?m)^set current_version=([0-9.]+)\s*$')
 if (-not $vm.Success) { Fail 'could not read "set current_version=" from OPTY.bat' }
 $fileVersion = $vm.Groups[1].Value
@@ -470,20 +470,27 @@ if ($DryRun) {
 # ----------------------------------------------------------------- gh token
 Write-Step 'Getting GitHub token from Git Credential Manager'
 $cred = ("protocol=https`nhost=github.com`n`n" | & git credential fill) 2>$null
-$token = ($cred | Select-String '^password=').ToString() -replace '^password=', ''
+$pw = $cred | Select-String '^password='
+$token = if ($pw) { $pw.Line -replace '^password=', '' }
 if (-not $token) { Fail 'no GitHub token available from git credential fill. Run a `git push` once to prime the credential manager.' }
 Write-Ok 'token acquired (never printed)'
 $hdr = @{ Authorization = "Bearer $token"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
 
 # --------------------------------------------------------------- tag + push
 Write-Step "Creating and pushing tag $Tag"
+# Both exit codes are checked. Unchecked, a failed push still printed "pushed"
+# and the release POST went ahead, letting GitHub create the tag itself on the
+# remote default branch - not necessarily the commit whose bytes are uploaded.
 & git tag -a $Tag -m "OPTY $Tag"
+if ($LASTEXITCODE) { Fail "git tag $Tag failed" }
 & git push origin $Tag 2>&1 | Out-Null
+if ($LASTEXITCODE) { & git tag -d $Tag | Out-Null; Fail "git push of $Tag failed - nothing published" }
 Write-Ok "tag $Tag pushed"
 
 # ----------------------------------------------------------------- release
 Write-Step "Creating GitHub release $Tag"
-$body = @{ tag_name = $Tag; name = $Tag; body = $Notes; draft = $false; prerelease = $false } | ConvertTo-Json -Depth 3
+$head = (& git rev-parse HEAD).Trim()
+$body = @{ tag_name = $Tag; target_commitish = $head; name = $Tag; body = $Notes; draft = $false; prerelease = $false } | ConvertTo-Json -Depth 3
 $rel = Invoke-RestMethod -Method Post -Uri "https://api.github.com/repos/$Repo/releases" -Headers $hdr -Body $body -ContentType 'application/json'
 Write-Ok "release created: $($rel.html_url)"
 
@@ -497,15 +504,20 @@ Write-Ok "asset uploaded ($($asset.size) bytes)"
 # --------------------------------------------------- verify what users get
 Write-Step 'Verifying the published asset (this is what OPTY self-update downloads)'
 $tmp = Join-Path $env:TEMP "opty_asset_check_$Tag.bat"
-Invoke-WebRequest -Uri "https://github.com/$Repo/releases/latest/download/OPTY.bat" -OutFile $tmp -UseBasicParsing
+# This release's own asset URL: releases/latest can still serve the previous
+# release for a while after publishing.
+Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $tmp -UseBasicParsing
 $dl = [IO.File]::ReadAllBytes($tmp)
 $dlLoneLf = 0
 for ($i = 0; $i -lt $dl.Length; $i++) {
     if ($dl[$i] -eq 10 -and ($i -eq 0 -or $dl[$i - 1] -ne 13)) { $dlLoneLf++ }
 }
 Remove-Item $tmp -Force -ErrorAction SilentlyContinue
-if ($dl.Length -ne $bytes.Length) { Write-Warn "size differs: local $($bytes.Length) vs published $($dl.Length)" }
 if ($dlLoneLf -gt 0) { Fail "PUBLISHED ASSET HAS $dlLoneLf LF-only endings - self-update would corrupt. Delete the release and investigate." }
+# "Byte-identical" is now checked, not assumed: only lone LFs used to be counted.
+if ($dl.Length -ne $bytes.Length -or [Convert]::ToBase64String($dl) -ne [Convert]::ToBase64String($bytes)) {
+    Fail "published asset differs from local OPTY.bat ($($dl.Length) vs $($bytes.Length) bytes). Delete the release and investigate."
+}
 Write-Ok 'published asset is byte-identical CRLF - self-update is safe'
 
 Write-Host ''
