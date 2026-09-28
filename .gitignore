@@ -10,3 +10,4 @@ netinfo_*.txt
 netprops_*.json
 crash_*.txt
 opty_nic_list.txt
+precheck_*.txt
