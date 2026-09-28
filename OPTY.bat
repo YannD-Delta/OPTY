@@ -175,6 +175,12 @@ echo %date% %time% : Entered :shortcut label                      >> %logs%
 :: before anything runs), and the wait-loop below needs exactly that kind of
 :: loop. So this only ever wraps a single non-looping `if`, never a block.
 if /i "%~dp0" == "%OPTY_HOME%\" goto shortcut_done
+:: A git checkout is where OPTY is developed, not where it is installed. Run
+:: from one, the relocation below did exactly what it was built to do - copy,
+:: confirm, delete the original - and the original was the working-tree
+:: OPTY.bat. Measured 2026-09-04: git status showed OPTY.bat deleted and the
+:: repository no longer held its own script. From a checkout it runs in place.
+if exist "%~dp0.git" goto shortcut_checkout
 
 echo %date% %time% : Relocating to %OPTY_HOME%                  >> %logs%
 if not exist "%OPTY_HOME%" md "%OPTY_HOME%" >nul 2>&1
@@ -243,6 +249,10 @@ echo.
 echo  Could not copy OPTY.bat to %OPTY_HOME% - running from here instead.
 echo.
 timeout /t 5
+goto shortcut_done
+
+:shortcut_checkout
+echo %date% %time% : Running from a git checkout - not relocating, nothing deleted >> %logs%
 goto shortcut_done
 
 :shortcut_done
