@@ -453,7 +453,7 @@ echo(         %cInfo%Most of it can be undone from menu 4.%cR%
 echo(
 call :rule
 echo(   %cInfo%Secondary%cR%
-echo(     %cVal%3.%cR%  Reports         %cInfo%network report, diagnose, open the log folder%cR%
+echo(     %cVal%3.%cR%  Reports         %cInfo%network, crashes and freezes, open the log folder%cR%
 echo(     %cVal%4.%cR%  Restore         %cInfo%undo everything OPTY changed / re-assert defaults%cR%
 echo(     %cVal%5.%cR%  Repair Windows  %cInfo%guided DISM, SFC, disk check%cR%
 echo(     %cVal%6.%cR%  Maintenance     %cInfo%driver store, clean OPTY's own files%cR%
@@ -763,6 +763,10 @@ for %%H in (
  "User file versions"
  "Windows ESD installation files"
 ) do reg query "%VC%\%%~H" >nul 2>&1 && reg add "%VC%\%%~H" /v StateFlags0064 /t REG_DWORD /d 0 /f >nul 2>&1
+:: Same rule as :dl_dumps_go - with freeze capture on, the two dump handlers
+:: are switched back off so cleanmgr cannot delete the evidence either.
+reg query "HKLM\SYSTEM\CurrentControlSet\Services\kbdhid\crashdump" /v Dump2Key >nul 2>&1 && for %%H in ("System error memory dump files" "System error minidump files") do reg query "%VC%\%%~H" >nul 2>&1 && reg add "%VC%\%%~H" /v StateFlags0064 /t REG_DWORD /d 0 /f >nul 2>&1
+reg query "HKLM\SYSTEM\CurrentControlSet\Services\kbdhid\crashdump" /v Dump2Key >nul 2>&1 && echo %date% %time% : Freeze capture on - Disk Cleanup dump handlers left off >> %logs%
 echo %date% %time% : Wrote StateFlags0064 allow-list (14 on / 15 off) >> %logs%
 
 :: /sagerun walks every drive, so a dead SMB mapping can stall it. Hard 10 min cap.
@@ -1052,13 +1056,20 @@ if "%STEPYES%"=="REDRAW" goto dl_dumps
 if not defined STEPYES goto dl_bin
 :dl_dumps_go
 :: --- Dumps (facultatif mais sans impact sur réglages) ---
-echo %date% %time% : MiniDump kept (crash forensics)                     >> %logs%
+:: Freeze capture on (Reports -> Crashes / freezes) means a crash is being
+:: hunted and the dump is the evidence: deleting it in the very next CLEAN
+:: would throw away the one thing the capture exists to produce. The old line
+:: here logged "MiniDump kept" and then deleted it two lines later.
+reg query "HKLM\SYSTEM\CurrentControlSet\Services\kbdhid\crashdump" /v Dump2Key >nul 2>&1 && goto dl_dumps_kept
 :: Crash dumps: deleted on the maintainer's explicit instruction. Note this
 :: loses the only forensic record of a BSOD or GPU driver crash.
 call :L "%cInfo%" "Deleting crash dumps"
 del /F /S /Q "%SystemRoot%\Minidump\*" >nul 2>&1
 echo %date% %time% : Deleting Memory Dump file                           >> %logs%
 del /F /S /Q "%SystemRoot%\MEMORY.DMP"
+goto dl_bin
+:dl_dumps_kept
+call :L "%cWarn%" "Crash dumps KEPT - freeze capture is on (Reports -> Crashes / freezes -> 2 turns it off)"
 
 :: --- REMOVED: Edge WebView2 caches ---
 :: Same class as a browser cache. Every WebView2-hosted app (new Teams, Office
@@ -2846,6 +2857,7 @@ echo(
 echo(     %cVal%1.%cR%  Network diagnose   %cInfo%what differs from your driver defaults%cR%
 echo(     %cVal%2.%cR%  Network report     %cInfo%every setting + limits to a .txt and .json%cR%
 echo(     %cVal%3.%cR%  Open OPTY folder   %cInfo%logs and reports in %OPTY_HOME_D%%cR%
+echo(     %cVal%4.%cR%  Crashes / freezes  %cInfo%capture a freeze, memory test, crash report%cR%
 echo(
 echo(     %cVal%0.%cR%  Menu
 echo(
@@ -2856,11 +2868,219 @@ echo %date% %time% : mreports "%choice%"                          >> %logs%
 if "%choice%"=="1" goto net_diag
 if "%choice%"=="2" goto netinfo_report
 if "%choice%"=="3" (start "" "%OPTY_HOME%" & goto mreports)
+if "%choice%"=="4" goto mcrash
 if "%choice%"=="0" goto menu
 color 0C
 echo This is not a valid action
 timeout /t 3 >nul
 goto mreports
+
+
+:mcrash
+echo.                                                           >> %logs%
+echo ====================== :MCRASH =========================== >> %logs%
+echo %date% %time% : Entered :mcrash label                       >> %logs%
+:: Everything a hard freeze needs to become diagnosable, in the order it is
+:: used: arm the capture, rule out the RAM, then read what was caught. Built
+:: from a real hunt on the reference machine, where month after month of
+:: Kernel-Power 41 events with BugcheckCode 0 had left nothing to analyse.
+set "CRK=HKLM\SYSTEM\CurrentControlSet\Services"
+color 0B
+cls
+call :banner "CRASHES AND FREEZES"
+call :crashstate
+echo(
+if defined CRKEYS call :ti "Freeze capture : ON - Right Ctrl + Space twice (needs one reboot after turning on)" "Capture de gel : ACTIVE - Ctrl droit + Espace deux fois (un redemarrage apres activation)"
+if not defined CRKEYS call :ti "Freeze capture : off" "Capture de gel : desactivee"
+call :ti "Dump type      : %CRDUMP%" "Type de vidage : %CRDUMP%"
+echo(
+call :mopt 1 "Freeze capture ON" "Activer la capture de gel" "keyboard crash key + kernel memory dump" "touche de crash clavier + vidage noyau"
+call :mopt 2 "Back to Windows defaults" "Remettre les defauts Windows" "capture off, automatic dump, standard memory test" "capture coupee, vidage auto, test memoire standard"
+call :mopt 3 "Memory test at next reboot" "Test memoire au prochain demarrage" "Windows Memory Diagnostic, extended, one pass" "diagnostic memoire Windows, etendu, une passe"
+call :mopt 4 "Crash report" "Rapport de crash" "freezes, blue screens, WHEA, dumps + analysis" "gels, ecrans bleus, WHEA, vidages + analyse"
+echo(
+call :mopt 0 "Back" "Retour" "" ""
+echo(
+call :rule
+set "choice="
+set /p choice= ^> 
+echo %date% %time% : mcrash "%choice%"                            >> %logs%
+if "%choice%"=="1" goto crash_capture
+if "%choice%"=="2" goto crash_defaults
+if "%choice%"=="3" goto crash_memtest
+if "%choice%"=="4" goto crash_report
+if "%choice%"=="0" goto mreports
+goto mcrash
+
+:crash_capture
+echo %date% %time% : Entered :crash_capture label                >> %logs%
+call :step "diag.freeze.capture" "diag.freeze" "FREEZE CAPTURE"
+if "%STEPYES%"=="REDRAW" goto crash_capture
+if not defined STEPYES goto mcrash
+call :restore_point
+echo(
+call :L "%cStep%" "Freeze capture: Right Ctrl + Space twice, kernel memory dump"
+call :regset "%CRK%\kbdhid\crashdump" "Dump1Keys" REG_DWORD 0x2 "USB keyboard - key to hold: Right Ctrl"
+call :regset "%CRK%\kbdhid\crashdump" "Dump2Key" REG_DWORD 0x3d "USB keyboard - key to press twice: Space"
+call :regset "%CRK%\kbdhid\Parameters" "CrashOnCtrlScroll" REG_DWORD 0 "USB keyboard - legacy Ctrl + Scroll Lock trigger"
+:: Only when the PS/2 driver is installed. Writing under a service key that
+:: does not exist would CREATE a half service entry with no ImagePath.
+reg query "%CRK%\i8042prt" /v Start >nul 2>&1 || goto crash_capture_dump
+call :regset "%CRK%\i8042prt\crashdump" "Dump1Keys" REG_DWORD 0x2 "PS/2 keyboard - key to hold: Right Ctrl"
+call :regset "%CRK%\i8042prt\crashdump" "Dump2Key" REG_DWORD 0x3d "PS/2 keyboard - key to press twice: Space"
+call :regset "%CRK%\i8042prt\Parameters" "CrashOnCtrlScroll" REG_DWORD 0 "PS/2 keyboard - legacy Ctrl + Scroll Lock trigger"
+:crash_capture_dump
+call :regset "HKLM\SYSTEM\CurrentControlSet\Control\CrashControl" "CrashDumpEnabled" REG_DWORD 2 "Dump type: kernel memory dump"
+call :pagefilecheck
+echo(
+call :ti "Active after the next reboot. Test it once, with nothing unsaved open:" "Actif apres le prochain redemarrage. Testez-le une fois, sans rien de non enregistre :"
+call :ti "hold Right Ctrl and press Space twice. A blue screen MANUALLY_INITIATED_CRASH" "maintenez Ctrl droit et appuyez deux fois sur Espace. Un ecran bleu MANUALLY_INITIATED_CRASH"
+call :ti "then a restart is the expected result - option 4 then reads the dump." "puis un redemarrage est le resultat attendu - l'option 4 lit ensuite le vidage."
+call :ti "While capture is on, CLEAN keeps the crash dumps instead of deleting them." "Tant que la capture est active, CLEAN garde les vidages au lieu de les supprimer."
+echo(
+pause
+goto mcrash
+
+:crash_defaults
+echo %date% %time% : Entered :crash_defaults label               >> %logs%
+call :step "diag.freeze.restore" "diag.freeze" "CRASH SETTINGS - WINDOWS DEFAULTS"
+if "%STEPYES%"=="REDRAW" goto crash_defaults
+if not defined STEPYES goto mcrash
+call :restore_point
+echo(
+call :L "%cStep%" "Crash settings back to the Windows defaults"
+call :crregdel "%CRK%\kbdhid\crashdump" "" "USB keyboard crash key"
+call :crregdel "%CRK%\kbdhid\Parameters" "CrashOnCtrlScroll" "USB keyboard - legacy Ctrl + Scroll Lock trigger"
+call :crregdel "%CRK%\i8042prt\crashdump" "" "PS/2 keyboard crash key"
+call :crregdel "%CRK%\i8042prt\Parameters" "CrashOnCtrlScroll" "PS/2 keyboard - legacy Ctrl + Scroll Lock trigger"
+call :regset "HKLM\SYSTEM\CurrentControlSet\Control\CrashControl" "CrashDumpEnabled" REG_DWORD 7 "Dump type: automatic memory dump (Windows default)"
+call :crbcddel "testmix" "memory test mix"
+call :crbcddel "passcount" "memory test pass count"
+call :crbcddel "cacheenable" "memory test CPU cache setting"
+echo(
+call :ti "The keyboard change is undone at the next reboot. Dumps already on disk are kept." "Le changement clavier est annule au prochain redemarrage. Les vidages deja presents restent."
+echo(
+pause
+goto mcrash
+
+:crash_memtest
+echo %date% %time% : Entered :crash_memtest label                >> %logs%
+call :step "diag.memtest" "diag.memtest" "MEMORY TEST"
+if "%STEPYES%"=="REDRAW" goto crash_memtest
+if not defined STEPYES goto mcrash
+echo(
+call :L "%cStep%" "Scheduling the Windows Memory Diagnostic for the next boot only"
+bcdedit /set {memdiag} testmix extended >nul 2>&1
+if errorlevel 1 goto crash_memtest_fail
+bcdedit /set {memdiag} passcount 1 >nul 2>&1
+if errorlevel 1 goto crash_memtest_fail
+:: Absent = the test's own default. Forcing the cache OFF is what made the
+:: reference machine's 32 GB run show no progress for a whole night.
+bcdedit /deletevalue {memdiag} cacheenable >nul 2>&1
+bcdedit /bootsequence {memdiag} >nul 2>&1
+if errorlevel 1 goto crash_memtest_fail
+call :L "%cOK%" "  SET      extended mix, 1 pass, cache left at its default - next boot only"
+echo(
+call :ti "Do not press Esc while it runs: Esc cancels the test. The result shows" "N'appuyez pas sur Echap pendant le test : Echap l'annule. Le resultat s'affiche"
+call :ti "after you log in, and in option 4 (Crash report)." "apres l'ouverture de session, et dans l'option 4 (Rapport de crash)."
+echo(
+call :t "  R = reboot now      anything else = later" "  R = redemarrer maintenant      autre touche = plus tard"
+set "choice="
+set /p choice= ^> 
+echo %date% %time% : crash_memtest reboot "%choice%"               >> %logs%
+if /i "%choice%"=="R" goto reboot
+goto mcrash
+:crash_memtest_fail
+call :L "%cErr%" "  FAILED   bcdedit refused - the memory test was NOT scheduled"
+pause
+goto mcrash
+
+:crash_report
+echo %date% %time% : Entered :crash_report label                 >> %logs%
+color 0B
+cls
+call :banner "CRASH REPORT"
+echo(
+:: The report is a PowerShell script stored as ::PS| data lines at the bottom
+:: of this file - the same read-myself trick as the card table. FOR substitution
+:: is never re-parsed, so its pipes, quotes and brackets reach the .ps1 verbatim.
+if not exist "%OPTY_HOME%" md "%OPTY_HOME%" >nul 2>&1
+set "CRTXT=%OPTY_HOME%\crash_%current_date%_%current_time%.txt"
+set "CRPS=%TEMP%\OPTY_crashreport.ps1"
+if exist "%CRPS%" del "%CRPS%" >nul 2>&1
+for /f "usebackq tokens=2,* delims=|" %%A in (`findstr /b /l /c:"::PS|crashreport|" "%SELF%"`) do >>"%CRPS%" echo(%%B
+if not exist "%CRPS%" goto crash_report_fail
+powershell -NoProfile -ExecutionPolicy Bypass -File "%CRPS%"
+del "%CRPS%" >nul 2>&1
+echo %date% %time% : Crash report written to %CRTXT%            >> %logs%
+echo(
+call :rule
+call :ti "Saved to %CRTXT%" "Enregistre dans %CRTXT%"
+echo(
+pause
+goto mcrash
+:crash_report_fail
+call :L "%cErr%" "Could not extract the report script to %CRPS%"
+pause
+goto mcrash
+
+:crashstate
+:: -> CRKEYS=1 when the keyboard crash key is set, CRDUMP = the dump type in
+:: words. Read from the registry, never from a localised tool's output.
+set "CRKEYS="
+reg query "%CRK%\kbdhid\crashdump" /v Dump2Key >nul 2>&1 && set "CRKEYS=1"
+set "CRDV="
+for /f "tokens=3" %%A in ('reg query "HKLM\SYSTEM\CurrentControlSet\Control\CrashControl" /v CrashDumpEnabled 2^>nul ^| findstr /i /c:"    CrashDumpEnabled    REG_"') do set "CRDV=%%A"
+set "CRDUMP=%CRDV%"
+if /i "%UILANG%"=="FR" goto crashstate_fr
+if "%CRDV%"=="0x0" set "CRDUMP=none - a crash writes nothing"
+if "%CRDV%"=="0x1" set "CRDUMP=complete memory dump"
+if "%CRDV%"=="0x2" set "CRDUMP=kernel memory dump"
+if "%CRDV%"=="0x3" set "CRDUMP=small memory dump - minidump only"
+if "%CRDV%"=="0x7" set "CRDUMP=automatic memory dump - Windows default"
+goto :eof
+:crashstate_fr
+if "%CRDV%"=="0x0" set "CRDUMP=aucun - un crash n'ecrit rien"
+if "%CRDV%"=="0x1" set "CRDUMP=vidage memoire complet"
+if "%CRDV%"=="0x2" set "CRDUMP=vidage memoire noyau"
+if "%CRDV%"=="0x3" set "CRDUMP=petit vidage - minidump seulement"
+if "%CRDV%"=="0x7" set "CRDUMP=vidage memoire automatique - defaut Windows"
+goto :eof
+
+:pagefilecheck
+:: A kernel dump is written through the page file of the system drive; with
+:: none there, the capture fires and saves nothing.
+powershell -NoProfile -Command "$p = @(Get-CimInstance Win32_PageFileUsage -ErrorAction SilentlyContinue | Where-Object { $_.Name -like ($env:SystemDrive + '*') }); if ($p.Count) { exit 0 } else { exit 1 }" >nul 2>&1
+if errorlevel 1 (call :L "%cWarn%" "  WARNING  no page file on %SystemDrive% - Windows cannot write a kernel dump without one") else (call :L "%cOK%" "  OK       page file present on %SystemDrive% - a kernel dump can be written")
+goto :eof
+
+:crregdel
+:: %~1 key  %~2 value name ("" = the whole key)  %~3 label
+:: Same report shape as :regset. The Windows default for every value this
+:: section writes is the value NOT existing, so undo means delete, never 0.
+if "%~2"=="" goto crregdel_key
+reg query "%~1" /v "%~2" >nul 2>&1 || goto crregdel_absent
+reg delete "%~1" /v "%~2" /f >nul 2>&1 || goto crregdel_fail
+call :L "%cOK%" "  DELETED  %~3   (Windows default: absent)"
+goto :eof
+:crregdel_key
+reg query "%~1" >nul 2>&1 || goto crregdel_absent
+reg delete "%~1" /f >nul 2>&1 || goto crregdel_fail
+call :L "%cOK%" "  DELETED  %~3   (Windows default: absent)"
+goto :eof
+:crregdel_absent
+call :L "%cInfo%" "  absent   %~3   (already the Windows default)"
+goto :eof
+:crregdel_fail
+call :L "%cErr%" "  FAILED   %~3 (delete refused)"
+goto :eof
+
+:crbcddel
+:: %~1 = {memdiag} element, %~2 = label. Deleting an absent BCD value fails,
+:: which is how "was absent" is told apart from "removed".
+bcdedit /deletevalue {memdiag} %~1 >nul 2>&1
+if errorlevel 1 (call :L "%cInfo%" "  absent   %~2   (already the Windows default)") else (call :L "%cOK%" "  DELETED  %~2   (Windows default: absent)")
+goto :eof
 
 
 :mmaint
@@ -37520,6 +37740,359 @@ goto :eof
 ::X|FR|net.wifi.chwidth6.073|                    e325-11ce-bfc1-08002be10318}\<NNNN> /v ChannelWidth6
 ::X|FR|net.wifi.chwidth6.074|                    /t REG_SZ, written by :nicset after an Enum check.
 ::X|FR|net.wifi.chwidth6.075|                    Live only after :nicrestart or a reboot.
+::
+:: ---- diag.freeze.capture (diagnostic) -------------------------------
+::T|EN|diag.freeze.capture.001|FREEZE CAPTURE (KEYBOARD CRASH KEY + KERNEL DUMP)
+::T|EN|diag.freeze.capture.002|Turns a frozen PC into a readable crash report: during a freeze, hold Right Ctrl and press Space twice, Windows stops on a deliberate blue screen and saves what every processor was doing. Active after one reboot, undone by option 2.
+::T|FR|diag.freeze.capture.001|CAPTURE DE GEL (TOUCHE DE CRASH CLAVIER + VIDAGE NOYAU)
+::T|FR|diag.freeze.capture.002|Transforme un PC gele en rapport de crash lisible : pendant un gel, maintenez Ctrl droit et appuyez deux fois sur Espace, Windows s arrete sur un ecran bleu volontaire et enregistre ce que faisait chaque processeur. Actif apres un redemarrage, annule par l option 2.
+::X|EN|diag.freeze.capture.001|  What it is      : A hard freeze with no blue screen is logged afterwards
+::X|EN|diag.freeze.capture.002|                    as Kernel-Power 41 with BugcheckCode 0: Windows never
+::X|EN|diag.freeze.capture.003|                    got the chance to write anything, so there is nothing
+::X|EN|diag.freeze.capture.004|                    to analyse. The keyboard drivers (kbdhid for USB,
+::X|EN|diag.freeze.capture.005|                    i8042prt for PS/2) carry a built-in emergency trigger:
+::X|EN|diag.freeze.capture.006|                    when a configured key combination arrives they raise
+::X|EN|diag.freeze.capture.007|                    bugcheck 0xE2 MANUALLY_INITIATED_CRASH, and Windows
+::X|EN|diag.freeze.capture.008|                    writes a dump of the frozen state.
+::X|EN|diag.freeze.capture.009|
+::X|EN|diag.freeze.capture.010|  Actual effect   : Dump1Keys=0x02 (Right Ctrl) and Dump2Key=0x3d (Space)
+::X|EN|diag.freeze.capture.011|                    under Services\kbdhid\crashdump, and under
+::X|EN|diag.freeze.capture.012|                    Services\i8042prt\crashdump when the PS/2 driver is
+::X|EN|diag.freeze.capture.013|                    installed. CrashOnCtrlScroll=0 so only this
+::X|EN|diag.freeze.capture.014|                    combination fires. CrashDumpEnabled=2 (kernel memory
+::X|EN|diag.freeze.capture.015|                    dump), then a check that the system drive has a page
+::X|EN|diag.freeze.capture.016|                    file - without one no kernel dump can be written.
+::X|EN|diag.freeze.capture.017|
+::X|EN|diag.freeze.capture.018|  Why this key    : The documented combination is Right Ctrl + Scroll Lock,
+::X|EN|diag.freeze.capture.019|                    and tenkeyless keyboards have no Scroll Lock. Right
+::X|EN|diag.freeze.capture.020|                    Ctrl + Space twice exists on every layout and is hard
+::X|EN|diag.freeze.capture.021|                    to press by accident.
+::X|EN|diag.freeze.capture.022|
+::X|EN|diag.freeze.capture.023|  Gain            : The next freeze becomes a dump that names the stuck
+::X|EN|diag.freeze.capture.024|                    driver, and option 4 analyses it. Nothing changes in
+::X|EN|diag.freeze.capture.025|                    daily use. If the combination does NOT work during a
+::X|EN|diag.freeze.capture.026|                    freeze, that is a clue too: the processor no longer
+::X|EN|diag.freeze.capture.027|                    services interrupts, which points at hardware (CPU,
+::X|EN|diag.freeze.capture.028|                    RAM, power) rather than at a driver.
+::X|EN|diag.freeze.capture.029|
+::X|EN|diag.freeze.capture.030|  Cost            : Pressing it is a real crash: anything unsaved is lost
+::X|EN|diag.freeze.capture.031|                    and the PC restarts. The kernel dump is roughly the
+::X|EN|diag.freeze.capture.032|                    kernel memory in use - a few GB on a busy machine -
+::X|EN|diag.freeze.capture.033|                    in C:\Windows\MEMORY.DMP, overwritten at each crash.
+::X|EN|diag.freeze.capture.034|                    While capture is on, CLEAN keeps the crash dumps
+::X|EN|diag.freeze.capture.035|                    (both its own delete and the Disk Cleanup handlers),
+::X|EN|diag.freeze.capture.036|                    so they accumulate until option 2 turns it off.
+::X|EN|diag.freeze.capture.037|
+::X|EN|diag.freeze.capture.038|  Windows default : No crash key - the values are absent - and
+::X|EN|diag.freeze.capture.039|                    CrashDumpEnabled=7 (automatic memory dump). Option 2
+::X|EN|diag.freeze.capture.040|                    deletes the first and writes 7 back.
+::X|EN|diag.freeze.capture.041|
+::X|EN|diag.freeze.capture.042|  Measured        : On the reference machine (Windows 11, USB tenkeyless
+::X|EN|diag.freeze.capture.043|                    keyboard) Right Ctrl + Space twice raised 0xE2 from
+::X|EN|diag.freeze.capture.044|                    kbdhid and left a complete MEMORY.DMP plus a minidump,
+::X|EN|diag.freeze.capture.045|                    both readable by cdb.
+::X|EN|diag.freeze.capture.046|
+::X|EN|diag.freeze.capture.047|  Not verified    : Never tested on a PS/2 keyboard. And a dump can still
+::X|EN|diag.freeze.capture.048|                    be lost: the same machine once logged a real 0x133
+::X|EN|diag.freeze.capture.049|                    blue screen with volmgr event 161 (dump creation
+::X|EN|diag.freeze.capture.050|                    failed, BugCheckProgress 0x81) and no file, cause
+::X|EN|diag.freeze.capture.051|                    unknown. Option 4 lists those events so a lost dump
+::X|EN|diag.freeze.capture.052|                    is visible instead of silent.
+::X|EN|diag.freeze.capture.053|
+::X|EN|diag.freeze.capture.054|  Target          : :crash_capture - HKLM\SYSTEM\CurrentControlSet\Services
+::X|EN|diag.freeze.capture.055|                    \kbdhid and \i8042prt (crashdump, Parameters), and
+::X|EN|diag.freeze.capture.056|                    HKLM\SYSTEM\CurrentControlSet\Control\CrashControl.
+::X|FR|diag.freeze.capture.001|  Ce que c est    : Un gel complet sans ecran bleu est journalise ensuite
+::X|FR|diag.freeze.capture.002|                    en Kernel-Power 41 avec BugcheckCode 0 : Windows n a
+::X|FR|diag.freeze.capture.003|                    rien pu ecrire, il n y a donc rien a analyser. Les
+::X|FR|diag.freeze.capture.004|                    pilotes clavier (kbdhid pour l USB, i8042prt pour le
+::X|FR|diag.freeze.capture.005|                    PS/2) ont un declencheur d urgence integre : quand une
+::X|FR|diag.freeze.capture.006|                    combinaison configuree arrive, ils levent le bugcheck
+::X|FR|diag.freeze.capture.007|                    0xE2 MANUALLY_INITIATED_CRASH, et Windows ecrit un
+::X|FR|diag.freeze.capture.008|                    vidage de l etat gele.
+::X|FR|diag.freeze.capture.009|
+::X|FR|diag.freeze.capture.010|  Effet reel      : Dump1Keys=0x02 (Ctrl droit) et Dump2Key=0x3d (Espace)
+::X|FR|diag.freeze.capture.011|                    sous Services\kbdhid\crashdump, et sous
+::X|FR|diag.freeze.capture.012|                    Services\i8042prt\crashdump si le pilote PS/2 est
+::X|FR|diag.freeze.capture.013|                    installe. CrashOnCtrlScroll=0 pour que seule cette
+::X|FR|diag.freeze.capture.014|                    combinaison declenche. CrashDumpEnabled=2 (vidage
+::X|FR|diag.freeze.capture.015|                    memoire noyau), puis verification qu un fichier d
+::X|FR|diag.freeze.capture.016|                    echange existe sur le disque systeme - sans lui aucun
+::X|FR|diag.freeze.capture.017|                    vidage noyau ne peut etre ecrit.
+::X|FR|diag.freeze.capture.018|
+::X|FR|diag.freeze.capture.019|  Pourquoi ces touches : La combinaison documentee est Ctrl droit + Arret
+::X|FR|diag.freeze.capture.020|                    defil, et les claviers sans pave numerique (TKL) n ont
+::X|FR|diag.freeze.capture.021|                    pas d Arret defil. Ctrl droit + Espace deux fois
+::X|FR|diag.freeze.capture.022|                    existe sur toutes les dispositions et se declenche
+::X|FR|diag.freeze.capture.023|                    difficilement par accident.
+::X|FR|diag.freeze.capture.024|
+::X|FR|diag.freeze.capture.025|  Gain            : Le prochain gel devient un vidage qui nomme le pilote
+::X|FR|diag.freeze.capture.026|                    bloque, et l option 4 l analyse. Rien ne change au
+::X|FR|diag.freeze.capture.027|                    quotidien. Si la combinaison ne fonctionne PAS pendant
+::X|FR|diag.freeze.capture.028|                    un gel, c est aussi un indice : le processeur ne
+::X|FR|diag.freeze.capture.029|                    traite plus les interruptions, ce qui designe le
+::X|FR|diag.freeze.capture.030|                    materiel (CPU, RAM, alimentation) plutot qu un pilote.
+::X|FR|diag.freeze.capture.031|
+::X|FR|diag.freeze.capture.032|  Cout            : L appui est un vrai crash : tout ce qui n est pas
+::X|FR|diag.freeze.capture.033|                    enregistre est perdu et le PC redemarre. Le vidage
+::X|FR|diag.freeze.capture.034|                    noyau fait a peu pres la memoire noyau utilisee -
+::X|FR|diag.freeze.capture.035|                    quelques Go sur une machine chargee - dans
+::X|FR|diag.freeze.capture.036|                    C:\Windows\MEMORY.DMP, ecrase a chaque crash. Tant que
+::X|FR|diag.freeze.capture.037|                    la capture est active, CLEAN garde les vidages (sa
+::X|FR|diag.freeze.capture.038|                    propre suppression comme les gestionnaires du
+::X|FR|diag.freeze.capture.039|                    Nettoyage de disque) : ils s accumulent jusqu a ce que
+::X|FR|diag.freeze.capture.040|                    l option 2 la coupe.
+::X|FR|diag.freeze.capture.041|
+::X|FR|diag.freeze.capture.042|  Defaut Windows  : Aucune touche de crash - les valeurs sont absentes - et
+::X|FR|diag.freeze.capture.043|                    CrashDumpEnabled=7 (vidage memoire automatique).
+::X|FR|diag.freeze.capture.044|                    L option 2 supprime les premieres et remet 7.
+::X|FR|diag.freeze.capture.045|
+::X|FR|diag.freeze.capture.046|  Mesure          : Sur la machine de reference (Windows 11, clavier USB
+::X|FR|diag.freeze.capture.047|                    TKL), Ctrl droit + Espace deux fois a leve 0xE2 depuis
+::X|FR|diag.freeze.capture.048|                    kbdhid et laisse un MEMORY.DMP complet plus un
+::X|FR|diag.freeze.capture.049|                    minidump, tous deux lisibles par cdb.
+::X|FR|diag.freeze.capture.050|
+::X|FR|diag.freeze.capture.051|  Non verifie     : Jamais teste sur un clavier PS/2. Et un vidage peut
+::X|FR|diag.freeze.capture.052|                    quand meme se perdre : la meme machine a journalise un
+::X|FR|diag.freeze.capture.053|                    vrai ecran bleu 0x133 avec l evenement volmgr 161
+::X|FR|diag.freeze.capture.054|                    (creation du vidage echouee, BugCheckProgress 0x81) et
+::X|FR|diag.freeze.capture.055|                    aucun fichier, cause inconnue. L option 4 liste ces
+::X|FR|diag.freeze.capture.056|                    evenements pour qu un vidage perdu se voie.
+::X|FR|diag.freeze.capture.057|
+::X|FR|diag.freeze.capture.058|  Cible           : :crash_capture - HKLM\SYSTEM\CurrentControlSet\Services
+::X|FR|diag.freeze.capture.059|                    \kbdhid et \i8042prt (crashdump, Parameters), et
+::X|FR|diag.freeze.capture.060|                    HKLM\SYSTEM\CurrentControlSet\Control\CrashControl.
+::
+:: ---- diag.freeze.restore (restore) ----------------------------------
+::T|EN|diag.freeze.restore.001|CRASH SETTINGS BACK TO THE WINDOWS DEFAULTS
+::T|EN|diag.freeze.restore.002|Removes the keyboard crash key, puts the dump type back to automatic and the memory test back to its standard mix. Use it once the crashes are solved. Dumps already on disk are kept.
+::T|FR|diag.freeze.restore.001|REGLAGES DE CRASH REMIS AUX DEFAUTS WINDOWS
+::T|FR|diag.freeze.restore.002|Retire la touche de crash clavier, remet le type de vidage en automatique et le test memoire en mode standard. A faire une fois les crashs resolus. Les vidages deja presents sont conserves.
+::X|EN|diag.freeze.restore.001|  Actual effect   : Deletes Services\kbdhid\crashdump and
+::X|EN|diag.freeze.restore.002|                    Services\i8042prt\crashdump, deletes the two
+::X|EN|diag.freeze.restore.003|                    CrashOnCtrlScroll values, writes CrashDumpEnabled=7 and
+::X|EN|diag.freeze.restore.004|                    deletes testmix, passcount and cacheenable from the
+::X|EN|diag.freeze.restore.005|                    {memdiag} boot entry, so a memory test started later
+::X|EN|diag.freeze.restore.006|                    from mdsched runs the standard mix again.
+::X|EN|diag.freeze.restore.007|
+::X|EN|diag.freeze.restore.008|  Windows default : Every one of those values absent, except
+::X|EN|diag.freeze.restore.009|                    CrashDumpEnabled, which ships as 7. Deleting is the
+::X|EN|diag.freeze.restore.010|                    default, so undo never writes 0.
+::X|EN|diag.freeze.restore.011|
+::X|EN|diag.freeze.restore.012|  Cost            : The next freeze is silent again. The keyboard drivers
+::X|EN|diag.freeze.restore.013|                    read their crash key at startup, so the key keeps
+::X|EN|diag.freeze.restore.014|                    working until the next reboot.
+::X|EN|diag.freeze.restore.015|
+::X|EN|diag.freeze.restore.016|  Target          : :crash_defaults, through :crregdel, :regset and
+::X|EN|diag.freeze.restore.017|                    :crbcddel.
+::X|FR|diag.freeze.restore.001|  Effet reel      : Supprime Services\kbdhid\crashdump et
+::X|FR|diag.freeze.restore.002|                    Services\i8042prt\crashdump, supprime les deux valeurs
+::X|FR|diag.freeze.restore.003|                    CrashOnCtrlScroll, ecrit CrashDumpEnabled=7 et supprime
+::X|FR|diag.freeze.restore.004|                    testmix, passcount et cacheenable de l entree de
+::X|FR|diag.freeze.restore.005|                    demarrage {memdiag}, pour qu un test memoire lance plus
+::X|FR|diag.freeze.restore.006|                    tard depuis mdsched reprenne le mode standard.
+::X|FR|diag.freeze.restore.007|
+::X|FR|diag.freeze.restore.008|  Defaut Windows  : Toutes ces valeurs absentes, sauf CrashDumpEnabled,
+::X|FR|diag.freeze.restore.009|                    livre a 7. Supprimer est le defaut, l annulation n
+::X|FR|diag.freeze.restore.010|                    ecrit donc jamais 0.
+::X|FR|diag.freeze.restore.011|
+::X|FR|diag.freeze.restore.012|  Cout            : Le prochain gel redevient muet. Les pilotes clavier
+::X|FR|diag.freeze.restore.013|                    lisent leur touche de crash au demarrage : elle
+::X|FR|diag.freeze.restore.014|                    fonctionne donc jusqu au prochain redemarrage.
+::X|FR|diag.freeze.restore.015|
+::X|FR|diag.freeze.restore.016|  Cible           : :crash_defaults, via :crregdel, :regset et :crbcddel.
+::
+:: ---- diag.memtest (diagnostic) --------------------------------------
+::T|EN|diag.memtest.001|MEMORY TEST AT THE NEXT REBOOT (EXTENDED, ONE PASS)
+::T|EN|diag.memtest.002|Restarts once into the Windows Memory Diagnostic with the extended test mix and a single pass. It can take hours with a lot of RAM, and pressing Esc cancels it. The result appears after you log in and in option 4.
+::T|FR|diag.memtest.001|TEST MEMOIRE AU PROCHAIN DEMARRAGE (ETENDU, UNE PASSE)
+::T|FR|diag.memtest.002|Redemarre une fois dans le diagnostic memoire Windows, mode etendu, une seule passe. Cela peut durer des heures avec beaucoup de RAM, et Echap l annule. Le resultat s affiche apres l ouverture de session et dans l option 4.
+::X|EN|diag.memtest.001|  What it is      : bcdedit /set {memdiag} testmix extended, passcount 1,
+::X|EN|diag.memtest.002|                    cacheenable deleted, then bcdedit /bootsequence
+::X|EN|diag.memtest.003|                    {memdiag}. The boot sequence is one-shot: the next
+::X|EN|diag.memtest.004|                    boot runs the test, the one after it is normal.
+::X|EN|diag.memtest.005|
+::X|EN|diag.memtest.006|  Why the cache   : Measured on the reference machine (32 GB): with
+::X|EN|diag.memtest.007|                    cacheenable forced to no, the extended test showed no
+::X|EN|diag.memtest.008|                    visible progress after a whole night and had to be
+::X|EN|diag.memtest.009|                    cancelled. OPTY leaves the cache at the test default.
+::X|EN|diag.memtest.010|
+::X|EN|diag.memtest.011|  Gain            : Catches failing RAM and unstable memory overclocks
+::X|EN|diag.memtest.012|                    (EXPO/XMP) - both classic causes of random freezes.
+::X|EN|diag.memtest.013|                    A clean pass does not prove the RAM is perfect:
+::X|EN|diag.memtest.014|                    several passes of Memtest86 from a USB key go further.
+::X|EN|diag.memtest.015|
+::X|EN|diag.memtest.016|  Cost            : The PC is unusable while it runs. Esc cancels it
+::X|EN|diag.memtest.017|                    without a result. testmix and passcount stay in the
+::X|EN|diag.memtest.018|                    boot entry for any later mdsched run; option 2
+::X|EN|diag.memtest.019|                    removes them.
+::X|EN|diag.memtest.020|
+::X|EN|diag.memtest.021|  Windows default : testmix, passcount and cacheenable absent - the
+::X|EN|diag.memtest.022|                    standard mix - and no test is scheduled.
+::X|EN|diag.memtest.023|
+::X|EN|diag.memtest.024|  Not verified    : How long one extended pass takes with the cache on.
+::X|EN|diag.memtest.025|                    It was never timed here.
+::X|EN|diag.memtest.026|
+::X|EN|diag.memtest.027|  Target          : :crash_memtest, the {memdiag} entry of the BCD store.
+::X|FR|diag.memtest.001|  Ce que c est    : bcdedit /set {memdiag} testmix extended, passcount 1,
+::X|FR|diag.memtest.002|                    cacheenable supprime, puis bcdedit /bootsequence
+::X|FR|diag.memtest.003|                    {memdiag}. La sequence de demarrage ne sert qu une
+::X|FR|diag.memtest.004|                    fois : le prochain demarrage lance le test, le suivant
+::X|FR|diag.memtest.005|                    est normal.
+::X|FR|diag.memtest.006|
+::X|FR|diag.memtest.007|  Pourquoi le cache : Mesure sur la machine de reference (32 Go) : avec
+::X|FR|diag.memtest.008|                    cacheenable force a no, le test etendu n affichait
+::X|FR|diag.memtest.009|                    aucune progression visible apres toute une nuit et a
+::X|FR|diag.memtest.010|                    du etre annule. OPTY laisse le cache au defaut du test.
+::X|FR|diag.memtest.011|
+::X|FR|diag.memtest.012|  Gain            : Detecte la RAM defaillante et les overclocks memoire
+::X|FR|diag.memtest.013|                    instables (EXPO/XMP) - deux causes classiques de gels
+::X|FR|diag.memtest.014|                    aleatoires. Une passe propre ne prouve pas que la RAM
+::X|FR|diag.memtest.015|                    est parfaite : plusieurs passes de Memtest86 depuis
+::X|FR|diag.memtest.016|                    une cle USB vont plus loin.
+::X|FR|diag.memtest.017|
+::X|FR|diag.memtest.018|  Cout            : Le PC est inutilisable pendant le test. Echap l annule
+::X|FR|diag.memtest.019|                    sans resultat. testmix et passcount restent dans l
+::X|FR|diag.memtest.020|                    entree de demarrage pour un futur lancement de
+::X|FR|diag.memtest.021|                    mdsched ; l option 2 les retire.
+::X|FR|diag.memtest.022|
+::X|FR|diag.memtest.023|  Defaut Windows  : testmix, passcount et cacheenable absents - le mode
+::X|FR|diag.memtest.024|                    standard - et aucun test programme.
+::X|FR|diag.memtest.025|
+::X|FR|diag.memtest.026|  Non verifie     : La duree d une passe etendue avec le cache actif. Elle
+::X|FR|diag.memtest.027|                    n a jamais ete chronometree ici.
+::X|FR|diag.memtest.028|
+::X|FR|diag.memtest.029|  Cible           : :crash_memtest, l entree {memdiag} du magasin BCD.
+::
+:: ============================================================
+:: ==================  CRASH REPORT SCRIPT  ===================
+:: ============================================================
+:: Extracted by :crash_report into %TEMP%\OPTY_crashreport.ps1 and run with
+:: powershell -File. ASCII only: Windows PowerShell 5.1 reads a BOM-less
+:: script in the ANSI code page. Every query sits in try/catch because
+:: Get-WinEvent THROWS - even with SilentlyContinue - when a provider has never
+:: logged on this machine, and one missing provider must not kill the report.
+:: Reads UILANG, OPTY_HOME and CRTXT from the environment the batch set.
+::PS|crashreport|$ErrorActionPreference = 'SilentlyContinue'
+::PS|crashreport|$fr = $env:UILANG -eq 'FR'
+::PS|crashreport|$out = New-Object System.Collections.Generic.List[string]
+::PS|crashreport|# No one-letter name that is also a built-in alias: a function called H lost
+::PS|crashreport|# to the h alias (Get-History) and every section title silently vanished.
+::PS|crashreport|function T([string]$en, [string]$frt) { if ($fr) { $frt } else { $en } }
+::PS|crashreport|function W([string]$s, [string]$c = 'Gray') { Write-Host $s -ForegroundColor $c; $out.Add($s) }
+::PS|crashreport|function Section([string]$en, [string]$frt) { W ''; W ('==== ' + (T $en $frt)) 'Cyan' }
+::PS|crashreport|function First([string]$m) { ($m -split "`r?`n") | Where-Object { $_.Trim() } | Select-Object -First 1 }
+::PS|crashreport|function Events([hashtable]$f, [int]$max) { try { Get-WinEvent -FilterHashtable $f -MaxEvents $max -ErrorAction Stop } catch { } }
+::PS|crashreport|$names = @{ 'E2' = 'MANUALLY_INITIATED_CRASH - the keyboard capture'; '133' = 'DPC_WATCHDOG_VIOLATION - a driver held a CPU too long'; '124' = 'WHEA_UNCORRECTABLE_ERROR - the hardware reported a fatal error'; '101' = 'CLOCK_WATCHDOG_TIMEOUT - a CPU core stopped answering'; '116' = 'VIDEO_TDR_FAILURE - the GPU driver stopped responding'; '119' = 'VIDEO_SCHEDULER_INTERNAL_ERROR' }
+::PS|crashreport|$names += @{ '1A' = 'MEMORY_MANAGEMENT'; '50' = 'PAGE_FAULT_IN_NONPAGED_AREA'; '3B' = 'SYSTEM_SERVICE_EXCEPTION'; '7E' = 'SYSTEM_THREAD_EXCEPTION_NOT_HANDLED'; '7F' = 'UNEXPECTED_KERNEL_MODE_TRAP'; 'A' = 'IRQL_NOT_LESS_OR_EQUAL'; 'D1' = 'DRIVER_IRQL_NOT_LESS_OR_EQUAL'; '9F' = 'DRIVER_POWER_STATE_FAILURE' }
+::PS|crashreport|$names += @{ 'EF' = 'CRITICAL_PROCESS_DIED'; '139' = 'KERNEL_SECURITY_CHECK_FAILURE'; '1E' = 'KMODE_EXCEPTION_NOT_HANDLED'; '19' = 'BAD_POOL_HEADER'; 'C2' = 'BAD_POOL_CALLER'; '154' = 'UNEXPECTED_STORE_EXCEPTION' }
+::PS|crashreport|W ('OPTY crash report - ' + (Get-Date -Format 'yyyy-MM-dd HH:mm') + ' - ' + $env:COMPUTERNAME) 'Cyan'
+::PS|crashreport|
+::PS|crashreport|Section 'Unexpected restarts (Kernel-Power 41), newest first' 'Redemarrages inattendus (Kernel-Power 41), du plus recent'
+::PS|crashreport|$k41 = @(Events @{ LogName = 'System'; Id = 41 } 60 | Where-Object { $_.ProviderName -eq 'Microsoft-Windows-Kernel-Power' } | Select-Object -First 20)
+::PS|crashreport|$nFreeze = 0; $nBsod = 0
+::PS|crashreport|if ($k41.Count -eq 0) { W (T '  none recorded' '  aucun enregistre') 'Green' }
+::PS|crashreport|foreach ($e in $k41) {
+::PS|crashreport|    $d = ([xml]$e.ToXml()).Event.EventData.Data
+::PS|crashreport|    $b = [int64](($d | Where-Object { $_.Name -eq 'BugcheckCode' }).'#text')
+::PS|crashreport|    $hex = '{0:X}' -f $b
+::PS|crashreport|    if ($b -eq 0) {
+::PS|crashreport|        $nFreeze++; $col = 'Yellow'
+::PS|crashreport|        $what = T 'no code: hard freeze, power cut or reset button' 'aucun code : gel complet, coupure de courant ou bouton reset'
+::PS|crashreport|    } else {
+::PS|crashreport|        if ($hex -ne 'E2') { $nBsod++ }
+::PS|crashreport|        $col = 'Red'; $what = $names[$hex]
+::PS|crashreport|        if (-not $what) { $what = T 'blue screen - look this code up' 'ecran bleu - code a rechercher' }
+::PS|crashreport|    }
+::PS|crashreport|    W ('  {0:yyyy-MM-dd HH:mm}   0x{1,-5} {2}' -f $e.TimeCreated, $hex, $what) $col
+::PS|crashreport|}
+::PS|crashreport|if ($k41.Count) { W ''; W ((T '  {0} freeze(s) with no code, {1} real blue screen(s).' '  {0} gel(s) sans code, {1} vrai(s) ecran(s) bleu(s).') -f $nFreeze, $nBsod) 'White' }
+::PS|crashreport|if ($nFreeze) {
+::PS|crashreport|    W (T '  A freeze with no code leaves nothing to analyse: turn on Freeze capture' '  Un gel sans code ne laisse rien a analyser : activez la capture de gel') 'Yellow'
+::PS|crashreport|    W (T '  (option 1) and press Right Ctrl + Space twice during the next one.' '  (option 1) et appuyez sur Ctrl droit + Espace deux fois au prochain.') 'Yellow'
+::PS|crashreport|}
+::PS|crashreport|
+::PS|crashreport|Section 'Blue screens saved by Windows (BugCheck 1001)' 'Ecrans bleus enregistres par Windows (BugCheck 1001)'
+::PS|crashreport|$bc = @(Events @{ LogName = 'System'; Id = 1001 } 50 | Where-Object { $_.ProviderName -match 'WER-SystemErrorReporting' } | Select-Object -First 5)
+::PS|crashreport|if ($bc.Count -eq 0) { W (T '  none recorded' '  aucun enregistre') 'Green' }
+::PS|crashreport|foreach ($e in $bc) { W ('  {0:yyyy-MM-dd HH:mm}   {1}' -f $e.TimeCreated, (First $e.Message)) }
+::PS|crashreport|
+::PS|crashreport|Section 'Dumps Windows could NOT write (volmgr 161)' 'Vidages que Windows n a PAS pu ecrire (volmgr 161)'
+::PS|crashreport|$vf = @(Events @{ LogName = 'System'; Id = 161 } 20 | Where-Object { $_.ProviderName -eq 'volmgr' } | Select-Object -First 5)
+::PS|crashreport|if ($vf.Count -eq 0) { W (T '  none recorded' '  aucun enregistre') 'Green' }
+::PS|crashreport|foreach ($e in $vf) { W ('  {0:yyyy-MM-dd HH:mm}   {1}' -f $e.TimeCreated, (First $e.Message)) 'Yellow' }
+::PS|crashreport|
+::PS|crashreport|Section 'Hardware errors reported by CPU / PCIe (WHEA, last 90 days)' 'Erreurs materiel signalees par le CPU / PCIe (WHEA, 90 derniers jours)'
+::PS|crashreport|$wh = @(Events @{ LogName = 'System'; ProviderName = 'Microsoft-Windows-WHEA-Logger'; StartTime = (Get-Date).AddDays(-90) } 200)
+::PS|crashreport|if ($wh.Count -eq 0) { W (T '  none' '  aucune') 'Green' } else { W ((T '  {0} event(s), newest first:' '  {0} evenement(s), du plus recent :') -f $wh.Count) 'Yellow' }
+::PS|crashreport|foreach ($e in ($wh | Select-Object -First 5)) { W ('  {0:yyyy-MM-dd HH:mm}   Id {1}   {2}' -f $e.TimeCreated, $e.Id, (First $e.Message)) 'Yellow' }
+::PS|crashreport|
+::PS|crashreport|Section 'Windows Memory Diagnostic results' 'Resultats du diagnostic memoire Windows'
+::PS|crashreport|$md = @(Events @{ LogName = 'System'; ProviderName = 'Microsoft-Windows-MemoryDiagnostics-Results' } 3)
+::PS|crashreport|if ($md.Count -eq 0) { W (T '  no result on record - option 3 schedules a test' '  aucun resultat - l option 3 programme un test') }
+::PS|crashreport|foreach ($e in $md) { W ('  {0:yyyy-MM-dd HH:mm}   {1}' -f $e.TimeCreated, (First $e.Message)) 'White' }
+::PS|crashreport|
+::PS|crashreport|Section 'Dump files on disk' 'Fichiers de vidage sur le disque'
+::PS|crashreport|$mini = @(Get-ChildItem (Join-Path $env:SystemRoot 'Minidump') -Filter *.dmp | Sort-Object LastWriteTime -Descending)
+::PS|crashreport|$full = Get-Item (Join-Path $env:SystemRoot 'MEMORY.DMP')
+::PS|crashreport|if ($full) { W ('  {0:yyyy-MM-dd HH:mm}   MEMORY.DMP   {1:N0} MB' -f $full.LastWriteTime, ($full.Length / 1MB)) }
+::PS|crashreport|foreach ($f in ($mini | Select-Object -First 5)) { W ('  {0:yyyy-MM-dd HH:mm}   Minidump\{1}' -f $f.LastWriteTime, $f.Name) }
+::PS|crashreport|if (-not $full -and $mini.Count -eq 0) { W (T '  none' '  aucun') }
+::PS|crashreport|
+::PS|crashreport|Section 'Capture configuration' 'Configuration de la capture'
+::PS|crashreport|$kb = Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\kbdhid\crashdump'
+::PS|crashreport|if ($kb.Dump2Key -eq 0x3d -and $kb.Dump1Keys -eq 2) { W (T '  keyboard crash key : Right Ctrl + Space twice' '  touche de crash    : Ctrl droit + Espace deux fois') 'Green' } else { W (T '  keyboard crash key : not set (option 1)' '  touche de crash    : non configuree (option 1)') 'Yellow' }
+::PS|crashreport|$cde = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\CrashControl').CrashDumpEnabled
+::PS|crashreport|W ((T '  CrashDumpEnabled   : {0}   (0 none, 1 complete, 2 kernel, 3 small, 7 automatic)' '  CrashDumpEnabled   : {0}   (0 aucun, 1 complet, 2 noyau, 3 minidump, 7 automatique)') -f $cde)
+::PS|crashreport|$pf = @(Get-CimInstance Win32_PageFileUsage | Where-Object { $_.Name -like ($env:SystemDrive + '*') })
+::PS|crashreport|if ($pf.Count) { W ((T '  page file on {0}    : yes' '  fichier d echange sur {0} : oui') -f $env:SystemDrive) 'Green' } else { W ((T '  page file on {0}    : NO - a kernel dump cannot be written' '  fichier d echange sur {0} : NON - aucun vidage noyau possible') -f $env:SystemDrive) 'Red' }
+::PS|crashreport|
+::PS|crashreport|Section 'Automatic analysis of the newest dump' 'Analyse automatique du vidage le plus recent'
+::PS|crashreport|$cdb = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\Debuggers\x64\cdb.exe'
+::PS|crashreport|# MEMORY.DMP wins unless a minidump is clearly newer: both are written by the
+::PS|crashreport|# same crash, and only the kernel dump can show every processor.
+::PS|crashreport|$target = $full
+::PS|crashreport|if ($mini.Count -and (-not $target -or $mini[0].LastWriteTime -gt $target.LastWriteTime.AddMinutes(10))) { $target = $mini[0] }
+::PS|crashreport|if (-not $target) {
+::PS|crashreport|    W (T '  no dump to analyse' '  aucun vidage a analyser')
+::PS|crashreport|} elseif (-not (Test-Path $cdb)) {
+::PS|crashreport|    W (T '  cdb.exe not found. Install "Debugging Tools for Windows" (Windows SDK)' '  cdb.exe introuvable. Installez "Debugging Tools for Windows" (Windows SDK)') 'Yellow'
+::PS|crashreport|    W (T '  to get this analysis automatically - the dumps are listed above.' '  pour obtenir cette analyse automatiquement - les vidages sont listes plus haut.') 'Yellow'
+::PS|crashreport|} else {
+::PS|crashreport|    $sym = 'srv*' + (Join-Path $env:OPTY_HOME 'symbols') + '*https://msdl.microsoft.com/download/symbols'
+::PS|crashreport|    $log = $env:CRTXT -replace '\.txt$', '_cdb.txt'
+::PS|crashreport|    # [char]33 is the debugger's command prefix, spelled out so this line can
+::PS|crashreport|    # never be eaten by a delayed-expansion context on the batch side.
+::PS|crashreport|    $bang = [char]33
+::PS|crashreport|    $cmds = $bang + 'analyze -v; lmtn; q'
+::PS|crashreport|    if ($target.Name -eq 'MEMORY.DMP') { $cmds = $bang + 'analyze -v; ' + $bang + 'running -it; lmtn; q' }
+::PS|crashreport|    W ('  ' + $target.FullName) 'White'
+::PS|crashreport|    W (T '  the first run downloads symbols and can take several minutes...' '  le premier passage telecharge les symboles, cela peut prendre plusieurs minutes...')
+::PS|crashreport|    & $cdb -z $target.FullName -y $sym -logo $log -c $cmds | Out-Null
+::PS|crashreport|    $txt = @(Get-Content $log)
+::PS|crashreport|    foreach ($k in 'BUGCHECK_CODE:', 'PROCESS_NAME:', 'MODULE_NAME:', 'IMAGE_NAME:', 'SYMBOL_NAME:', 'FAILURE_BUCKET_ID:') {
+::PS|crashreport|        $l = $txt | Where-Object { $_.StartsWith($k) } | Select-Object -First 1
+::PS|crashreport|        if ($l) { W ('  ' + $l.Trim()) 'White' }
+::PS|crashreport|    }
+::PS|crashreport|    if (-not ($txt | Where-Object { $_.StartsWith('BUGCHECK_CODE:') })) { W (T '  cdb could not read this dump - the full debugger output below says why.' '  cdb n a pas pu lire ce vidage - la sortie complete du debogueur ci-dessous dit pourquoi.') 'Yellow' }
+::PS|crashreport|    # Microsoft now ships reproducible builds whose timestamp field is a hash,
+::PS|crashreport|    # so a driver that still carries a real build date is almost always
+::PS|crashreport|    # third-party. A heuristic, labelled as one.
+::PS|crashreport|    $mods = @($txt | Where-Object { $_ -match '^[0-9a-f]{8}`[0-9a-f]{8}\s' -and $_ -notmatch 'reproducible build' -and $_ -match '\s(19|20)[0-9]{2} \([0-9A-F]{8}\)\s*$' })
+::PS|crashreport|    if ($mods.Count) { W ''; W (T '  Drivers with a vendor build date (almost always third-party):' '  Pilotes avec une date de compilation fabricant (presque toujours tiers) :') }
+::PS|crashreport|    foreach ($m in $mods) { $p = $m -split '\s+'; W ('    {0,-34} {1} {2} {3}' -f $p[2], $p[5], $p[6], $p[8]) }
+::PS|crashreport|    # Tools that read sensors, fans and RGB through their own kernel driver.
+::PS|crashreport|    # Several of them polling the same SMBus at once is a common suspect for
+::PS|crashreport|    # freezes at idle - worth testing with all of them closed for a while.
+::PS|crashreport|    $hw = @($mods | Where-Object { $_ -match '(?i)\s(gdrv\w*|CorsairLLAccess\w*|AMDRyzenMasterDriver\w*|HWiNFO\w*|WinRing0\w*|RTCore\w*|inpoutx64|AsIO\w*|GLCKIO\w*|EneIo\w*|cpuz\w*)\s' } | ForEach-Object { ($_ -split '\s+')[2] })
+::PS|crashreport|    if ($hw.Count -ge 2) {
+::PS|crashreport|        W ''; W ((T '  {0} low-level hardware access drivers loaded at once: {1}' '  {0} pilotes d acces materiel bas niveau charges en meme temps : {1}') -f $hw.Count, ($hw -join ', ')) 'Yellow'
+::PS|crashreport|        W (T '  (monitoring / RGB / overclocking tools). Several polling the same sensors is a common' '  (outils de monitoring / RGB / overclocking). Plusieurs qui interrogent les memes capteurs') 'Yellow'
+::PS|crashreport|        W (T '  suspect for freezes at idle: close them for a while and see if the freezes stop.' '  sont un suspect courant des gels au repos : fermez-les un temps et voyez si les gels cessent.') 'Yellow'
+::PS|crashreport|    }
+::PS|crashreport|    W ''; W ((T '  Full debugger output: {0}' '  Sortie complete du debogueur : {0}') -f $log)
+::PS|crashreport|}
+::PS|crashreport|$out | Set-Content -Path $env:CRTXT -Encoding UTF8
 :: ============================================================
 :: ==================  CLEAN STEP MEMBERSHIP  =================
 :: ============================================================

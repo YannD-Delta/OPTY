@@ -27,7 +27,7 @@ Two menus do the work. Everything else is reporting, repair or undo.
 |-----|------|-----------------|
 | `1` | **CLEAN** | Regularly. Deletes only what regenerates on its own. |
 | `2` | **SETUP** | Once, on a new PC. Registry, services, power, network. |
-| `3` | Reports | Network report, diagnose, open the log folder |
+| `3` | Reports | Network report, diagnose, crashes and freezes, open the log folder |
 | `4` | Restore | Undo everything OPTY changed, re-assert Windows defaults |
 | `5` | Repair Windows | Guided DISM, SFC, disk check |
 | `6` | Maintenance | Driver store, prune OPTY's own files |
@@ -94,9 +94,22 @@ Manual only          CHKDSK
 
 The rule is **regeneration time, not file type**: anything that comes back on its own in well under 30 minutes and loses no user data.
 
-Temp files, GPU and shader caches, browser caches (**never** cookies, history, saved logins or bookmarks), game-launcher caches, Windows Update cache, Delivery Optimization, crash dumps, logs, thumbnails, `Windows.old`, upgrade rollback folders, Recycle Bin.
+Temp files, GPU and shader caches, browser caches (**never** cookies, history, saved logins or bookmarks), game-launcher caches, Windows Update cache, Delivery Optimization, crash dumps, logs, thumbnails, `Windows.old`, upgrade rollback folders, Recycle Bin. Crash dumps are the exception while **freeze capture** is on: then they are kept, because they are the evidence.
 
 Development caches are **in scope** — npm, pip, Gradle, Cargo and friends refetch. A cache big enough that refetching is measured in hours gets its size reported before it goes.
+
+---
+
+## 🧊 Crashes and freezes
+
+`3` Reports → `4` Crashes / freezes. Built from a real hunt for a PC that froze on the desktop and on wake, with nothing in the logs but *Kernel-Power 41, BugcheckCode 0*.
+
+| Key | What it does |
+|-----|--------------|
+| `1` | **Freeze capture** — during a freeze, hold **Right Ctrl** and press **Space twice**: Windows stops on a deliberate blue screen (`0xE2`) and writes a kernel dump of the frozen state. Works on tenkeyless keyboards, which have no Scroll Lock for the documented combination. Active after one reboot. |
+| `2` | **Back to Windows defaults** — removes the crash key, dump type back to automatic, memory test back to standard. |
+| `3` | **Memory test at next reboot** — Windows Memory Diagnostic, extended mix, one pass, cache left at its default (forcing it off made a 32 GB run show no progress for a whole night). |
+| `4` | **Crash report** — unexpected restarts with their decoded bugcheck, blue screens, dumps Windows *failed* to write, WHEA hardware errors, memory test results, dumps on disk. If `cdb.exe` (Debugging Tools for Windows) is installed, the newest dump is analysed automatically and the third-party drivers it loaded are listed, with a warning when several low-level hardware-access drivers (monitoring / RGB / overclocking tools) run at once. |
 
 ---
 
@@ -114,6 +127,7 @@ Written down because most of these were mistakes it *used to* make:
 ## 🔧 Reliability
 
 - **CRLF self-heal.** GitHub's release asset is served with LF line endings while the raw file is CRLF. CMD computes `call`/`goto :eof` return addresses as byte offsets assuming CRLF, so an LF copy drifts into the wrong section partway through a long run. OPTY detects this at startup and repairs itself before doing anything.
+- **Runs in place from a git checkout.** Launched from a folder that holds `.git`, OPTY no longer relocates itself to `C:\OPTY_by-YannD` — the relocation deletes the original, and in a checkout the original is the working-tree `OPTY.bat`.
 - **Automatic restore point** before any change.
 - **Complete timestamped logs**, the 5 most recent kept.
 - **Disk-space report** — free space before and after every run.
