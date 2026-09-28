@@ -27,7 +27,7 @@ Two menus do the work. Everything else is reporting, repair or undo.
 |-----|------|-----------------|
 | `1` | **CLEAN** | Regularly. Deletes only what regenerates on its own. |
 | `2` | **SETUP** | Once, on a new PC. Registry, services, power, network. |
-| `3` | Reports | Network report, diagnose, crashes and freezes, open the log folder |
+| `3` | Reports | Network report, diagnose, crashes and freezes, pre-check, open the log folder |
 | `4` | Restore | Undo everything OPTY changed, re-assert Windows defaults |
 | `5` | Repair Windows | Guided DISM, SFC, disk check |
 | `6` | Maintenance | Driver store, prune OPTY's own files |
@@ -35,18 +35,34 @@ Two menus do the work. Everything else is reporting, repair or undo.
 
 ---
 
+## 🩺 Pre-check at startup
+
+Before the first menu, OPTY reads the machine (registry, event logs, CIM - **nothing is changed**) and lists what is seriously wrong, each finding with the menu that repairs it:
+
+- **Stability** — unexpected restarts, WHEA hardware errors and GPU driver timeouts in the last 30 days
+- **Disk and dumps** — low free space, pending restart, no page file, crash dumps off, TRIM off
+- **Security switches a tweak turned off** — UAC, firewall, Defender by policy, automatic maintenance
+- **Windows Update** — blocking policies, Delivery Optimization in the deprecated Bypass mode
+- **Disabled core services** and **tweak-guide leftovers** (memory management, TDR, MPO, timer flags…)
+- **Performance** — Memory Integrity running, HAGS off, High/Ultimate plan on a Ryzen, CPU capped
+- **Drivers** — GPU driver over a year old, several monitoring / RGB kernel drivers at once
+
+A clean machine goes straight to the menu. Run it again any time from `3` Reports → `5`.
+
+---
+
 ## 📇 Every setting is explained before it is applied
 
 This is the part that makes OPTY different from a list of `reg add` lines.
 
-**208 cards** (205 of them settings with a profile row) each carry a card, in French and English, that tells you:
+**209 cards** (206 of them settings with a profile row) each carry a card, in French and English, that tells you:
 
 - **what the setting is** — not the marketing name, the mechanism
 - **what changing it actually does** — and what *each possible value* does, one by one
 - **the gain** — and where there is none, the card says *"no measurable gain"* rather than inventing one
 - **the cost** — what breaks, what slows down, what you lose permanently
 - **the Windows default** — including when that default is *the value not existing at all*
-- **what is not verified** — 121 of the 208 cards carry an explicit "unverified" note
+- **what is not verified** — 120 of the 209 cards carry an explicit "unverified" note
 
 Press `?` on any question for the long version: the reasoning behind the profile table, known bugs, and the exact registry path or command it will run.
 
@@ -64,7 +80,7 @@ Every question in the whole script uses the same five answers, so one digit mean
 
 Press `P` in the SETUP menu to answer every question with one profile in about two minutes. Anything that can lose data still stops and asks.
 
-> **Four identical columns is a normal answer.** About three quarters of the settings (158 of 205) recommend the same value for all four real profiles, because the setting genuinely does not vary by use case. Inventing a difference to fill the table would be worse than admitting there is none.
+> **Four identical columns is a normal answer.** About three quarters of the settings (160 of 206) recommend the same value for all four real profiles, because the setting genuinely does not vary by use case. Inventing a difference to fill the table would be worse than admitting there is none.
 
 ### Once you answer, the value is written
 
