@@ -753,8 +753,10 @@ set "VC=HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches"
 ::  - cleanmgr profile numbers are 4 digits. 65535 silently became 6553, and
 ::    that profile ended up with Recycle Bin, User file versions (File History),
 ::    both dump handlers and Update Cleanup ENABLED. So every run emptied the
-::    bin on every drive and shredded BSOD dumps - the exact things the manual
-::    cleanup above deliberately refuses to touch.
+::    bin on every drive and shredded BSOD dumps without anyone choosing it.
+::    The maintainer has since decided the bin and the dumps DO go (see the
+::    recycle.bin.all.drives card), so the allow-list below arms them on
+::    purpose - except the dumps while freeze capture is on.
 ::  - /verylowdisk runs EVERY registered handler, third-party ones included,
 ::    with no prompt and no record of what it removed.
 :: Now: wipe the legacy profiles, write an explicit allow-list, run that.
@@ -764,7 +766,7 @@ for /f "delims=" %%K in ('reg query "%VC%" 2^>nul') do (
     reg delete "%%K" /v StateFlags65535 /f >nul 2>&1
 )
 
-:: ENABLE - caches, temp, shaders and logs only.
+:: ENABLE - caches, temp, shaders, logs, the Recycle Bin and crash dumps.
 :: Explicit literals, never a loop over the key: enumerating and setting 2 would
 :: also arm DownloadsFolder, which deletes the user's Downloads with no age gate.
 for %%H in (
@@ -778,6 +780,7 @@ for %%H in (
  "RetailDemo Offline Content"
  "Setup Log Files"
  "Temporary Files"
+ "Thumbnail Cache"
  "Windows Defender"
  "Windows Error Reporting Files"
  "Windows Upgrade Log Files"
@@ -787,9 +790,6 @@ for %%H in (
 ) do reg query "%VC%\%%~H" >nul 2>&1 && reg add "%VC%\%%~H" /v StateFlags0064 /t REG_DWORD /d 2 /f >nul 2>&1
 
 :: DISABLE - re-asserted explicitly rather than left to chance.
-:: Thumbnail Cache is here, not above: the manual pass keeps thumbcache on
-:: purpose (Explorer re-renders every thumbnail, painful in footage folders),
-:: and arming it here deleted exactly what that pass was careful to keep.
 for %%H in (
  "BranchCache"
  "Content Indexer Cleaner"
@@ -799,7 +799,6 @@ for %%H in (
  "Old ChkDsk Files"
  "Previous Installations"
  "Temporary Setup Files"
- "Thumbnail Cache"
  "Update Cleanup"
  "Upgrade Discarded Files"
  "User file versions"
@@ -809,7 +808,7 @@ for %%H in (
 :: are switched back off so cleanmgr cannot delete the evidence either.
 reg query "HKLM\SYSTEM\CurrentControlSet\Services\kbdhid\crashdump" /v Dump2Key >nul 2>&1 && for %%H in ("System error memory dump files" "System error minidump files") do reg query "%VC%\%%~H" >nul 2>&1 && reg add "%VC%\%%~H" /v StateFlags0064 /t REG_DWORD /d 0 /f >nul 2>&1
 reg query "HKLM\SYSTEM\CurrentControlSet\Services\kbdhid\crashdump" /v Dump2Key >nul 2>&1 && echo %date% %time% : Freeze capture on - Disk Cleanup dump handlers left off >> %logs%
-echo %date% %time% : Wrote StateFlags0064 allow-list (16 on / 13 off) >> %logs%
+echo %date% %time% : Wrote StateFlags0064 allow-list (17 on / 12 off) >> %logs%
 
 :: /sagerun walks every drive, so a dead SMB mapping can stall it. Hard 10 min cap.
 start "" cleanmgr /sagerun:64
@@ -1137,7 +1136,7 @@ if not defined FIXEDLIST call :fixeddrives
 for %%D in (%FIXEDLIST%) do if exist "%%D:\$Recycle.Bin" rd /S /Q "%%D:\$Recycle.Bin" >nul 2>&1
 
 :: --- Thumbnail & icon cache (rebuilt automatically; locked files are skipped) ---
-echo %date% %time% : Thumbnail and icon caches deliberately left alone, see comment below >> %logs%
+echo %date% %time% : Thumbnail and icon caches not touched by this pass, see comment below >> %logs%
 :: thumbcache kept: Explorer visibly re-generates every thumbnail afterwards,
 :: painful in large footage folders. iconcache is cheap so it stays.
 :: REMOVED: del of iconcache_*.db. Measured on a live machine: the five files
@@ -5023,7 +5022,7 @@ goto :eof
 ::X|FR|gpu.ulps.005|
 ::X|FR|gpu.ulps.006|  1 active : defaut AMD. Consommation au repos plus basse, moins de chaleur et
 ::X|FR|gpu.ulps.007|             de bruit de ventilateur.
-::X|FR|gpu.ulps.008|  0 desactive : la carte garde ses horloges. Plus de latence de reveil, mais
+::X|FR|gpu.ulps.008|  0 desactive : la carte garde ses horloges. Moins de latence de reveil, mais
 ::X|FR|gpu.ulps.009|                la consommation au repos remonte.
 ::X|FR|gpu.ulps.010|
 ::X|FR|gpu.ulps.011|  Defaut Windows : sans objet, c est un reglage du pilote AMD. Il est remis a
@@ -7517,38 +7516,37 @@ goto :eof
 ::X|EN|db.cdm.suggestions.off.051|    DELETE : Absent behaves as enabled for all eight - so deleting is only
 ::X|EN|db.cdm.suggestions.off.052|             ever a restore, never a way to switch something off.
 ::X|EN|db.cdm.suggestions.off.053|
-::X|EN|db.cdm.suggestions.off.054|  Why these profiles : Gaming, server and laptop take all eight to 0 - none of
-::X|EN|db.cdm.suggestions.off.055|                       them wants a banner, a toast or an unrequested
-::X|EN|db.cdm.suggestions.off.056|                       download, and none of them pays anything for the
-::X|EN|db.cdm.suggestions.off.057|                       change. Office is split on purpose rather than answered
-::X|EN|db.cdm.suggestions.off.058|                       all-or-nothing: a family PC should still block
-::X|EN|db.cdm.suggestions.off.059|                       unrequested installs, so the two delivery values go to
-::X|EN|db.cdm.suggestions.off.060|                       0 there, but it is also the machine where a new user
-::X|EN|db.cdm.suggestions.off.061|                       gets real value from the built-in hints, so the six
-::X|EN|db.cdm.suggestions.off.062|                       cosmetic ones stay at their default. Windows writes 1
-::X|EN|db.cdm.suggestions.off.063|                       across the board, which is where they ship.
-::X|EN|db.cdm.suggestions.off.064|
-::X|EN|db.cdm.suggestions.off.065|  Unverified         : The mapping of the numeric SubscribedContent IDs to
-::X|EN|db.cdm.suggestions.off.066|                       specific Settings surfaces comes from community
-::X|EN|db.cdm.suggestions.off.067|                       documentation rather than Microsoft, and the IDs have
-::X|EN|db.cdm.suggestions.off.068|                       been observed to change between builds - so a card that
-::X|EN|db.cdm.suggestions.off.069|                       names an exact page for each number is claiming more
-::X|EN|db.cdm.suggestions.off.070|                       than is known. On a fresh profile some of the eight may
-::X|EN|db.cdm.suggestions.off.071|                       not exist until the surface is first rendered; absent
-::X|EN|db.cdm.suggestions.off.072|                       behaves as enabled, so this changes nothing
-::X|EN|db.cdm.suggestions.off.073|                       functionally but the report should not say it restored
-::X|EN|db.cdm.suggestions.off.074|                       something that was never there.
-::X|EN|db.cdm.suggestions.off.075|
-::X|EN|db.cdm.suggestions.off.076|  Target             : reg add on HKCU\Software\Microsoft\Windows\CurrentVersi
-::X|EN|db.cdm.suggestions.off.077|                       on\ContentDeliveryManager, REG_DWORD 0, for
-::X|EN|db.cdm.suggestions.off.078|                       SubscribedContent-338393Enabled,
-::X|EN|db.cdm.suggestions.off.079|                       SubscribedContent-353694Enabled,
-::X|EN|db.cdm.suggestions.off.080|                       SubscribedContent-353696Enabled,
-::X|EN|db.cdm.suggestions.off.081|                       SystemPaneSuggestionsEnabled,
-::X|EN|db.cdm.suggestions.off.082|                       SubscribedContent-338389Enabled,
-::X|EN|db.cdm.suggestions.off.083|                       SilentInstalledAppsEnabled, PreInstalledAppsEnabled,
-::X|EN|db.cdm.suggestions.off.084|                       RotatingLockScreenOverlayEnabled (OPTY.bat lines
-::X|EN|db.cdm.suggestions.off.085|                       1730-1737)
+::X|EN|db.cdm.suggestions.off.054|  Why these profiles : Gaming, server, office and laptop take all eight to
+::X|EN|db.cdm.suggestions.off.055|                       0 - none of them wants a banner, a toast or an
+::X|EN|db.cdm.suggestions.off.056|                       unrequested download, and none pays anything for the
+::X|EN|db.cdm.suggestions.off.057|                       change. One answer drives all eight values, so the
+::X|EN|db.cdm.suggestions.off.058|                       card cannot split them: a family PC should still
+::X|EN|db.cdm.suggestions.off.059|                       block unrequested installs, and the cosmetic hints
+::X|EN|db.cdm.suggestions.off.060|                       go with them. Turn the hints back on in Settings if
+::X|EN|db.cdm.suggestions.off.061|                       you want them. Windows writes 1 across the board,
+::X|EN|db.cdm.suggestions.off.062|                       which is where they ship.
+::X|EN|db.cdm.suggestions.off.063|
+::X|EN|db.cdm.suggestions.off.064|  Unverified         : The mapping of the numeric SubscribedContent IDs to
+::X|EN|db.cdm.suggestions.off.065|                       specific Settings surfaces comes from community
+::X|EN|db.cdm.suggestions.off.066|                       documentation rather than Microsoft, and the IDs have
+::X|EN|db.cdm.suggestions.off.067|                       been observed to change between builds - so a card that
+::X|EN|db.cdm.suggestions.off.068|                       names an exact page for each number is claiming more
+::X|EN|db.cdm.suggestions.off.069|                       than is known. On a fresh profile some of the eight may
+::X|EN|db.cdm.suggestions.off.070|                       not exist until the surface is first rendered; absent
+::X|EN|db.cdm.suggestions.off.071|                       behaves as enabled, so this changes nothing
+::X|EN|db.cdm.suggestions.off.072|                       functionally but the report should not say it restored
+::X|EN|db.cdm.suggestions.off.073|                       something that was never there.
+::X|EN|db.cdm.suggestions.off.074|
+::X|EN|db.cdm.suggestions.off.075|  Target             : reg add on HKCU\Software\Microsoft\Windows\CurrentVersi
+::X|EN|db.cdm.suggestions.off.076|                       on\ContentDeliveryManager, REG_DWORD 0, for
+::X|EN|db.cdm.suggestions.off.077|                       SubscribedContent-338393Enabled,
+::X|EN|db.cdm.suggestions.off.078|                       SubscribedContent-353694Enabled,
+::X|EN|db.cdm.suggestions.off.079|                       SubscribedContent-353696Enabled,
+::X|EN|db.cdm.suggestions.off.080|                       SystemPaneSuggestionsEnabled,
+::X|EN|db.cdm.suggestions.off.081|                       SubscribedContent-338389Enabled,
+::X|EN|db.cdm.suggestions.off.082|                       SilentInstalledAppsEnabled, PreInstalledAppsEnabled,
+::X|EN|db.cdm.suggestions.off.083|                       RotatingLockScreenOverlayEnabled (OPTY.bat lines
+::X|EN|db.cdm.suggestions.off.084|                       1730-1737)
 ::X|FR|db.cdm.suggestions.off.001|  Ce que c est   : Huit valeurs de ContentDeliveryManager pour l utilisateur
 ::X|FR|db.cdm.suggestions.off.002|                   courant : trois surfaces de suggestion dans Parametres, les
 ::X|FR|db.cdm.suggestions.off.003|                   suggestions du menu Demarrer, les notifications de
@@ -7609,43 +7607,41 @@ goto :eof
 ::X|FR|db.cdm.suggestions.off.058|             suppression n est donc qu une restauration, jamais un moyen de
 ::X|FR|db.cdm.suggestions.off.059|             desactiver quoi que ce soit.
 ::X|FR|db.cdm.suggestions.off.060|
-::X|FR|db.cdm.suggestions.off.061|  Pourquoi ces profils : Gaming, serveur et portable passent les huit a 0 :
-::X|FR|db.cdm.suggestions.off.062|                         aucun des trois ne veut de banniere, de notification
-::X|FR|db.cdm.suggestions.off.063|                         ou de telechargement non sollicite, et aucun ne paie
-::X|FR|db.cdm.suggestions.off.064|                         quoi que ce soit pour ce changement. La bureautique
-::X|FR|db.cdm.suggestions.off.065|                         est volontairement coupee en deux plutot que traitee
-::X|FR|db.cdm.suggestions.off.066|                         en tout ou rien : un PC familial doit quand meme
-::X|FR|db.cdm.suggestions.off.067|                         bloquer les installations non demandees, donc les
-::X|FR|db.cdm.suggestions.off.068|                         deux valeurs de livraison y passent a 0, mais c est
-::X|FR|db.cdm.suggestions.off.069|                         aussi la machine ou un utilisateur debutant tire un
-::X|FR|db.cdm.suggestions.off.070|                         vrai benefice des conseils integres, donc les six
-::X|FR|db.cdm.suggestions.off.071|                         valeurs cosmetiques y restent au defaut. Windows
-::X|FR|db.cdm.suggestions.off.072|                         ecrit 1 partout, puisque c est l etat livre.
-::X|FR|db.cdm.suggestions.off.073|
-::X|FR|db.cdm.suggestions.off.074|  Non verifie          : La correspondance entre les identifiants numeriques
-::X|FR|db.cdm.suggestions.off.075|                         SubscribedContent et les surfaces exactes de
-::X|FR|db.cdm.suggestions.off.076|                         Parametres vient de la documentation communautaire
-::X|FR|db.cdm.suggestions.off.077|                         plutot que de Microsoft, et ces identifiants ont deja
-::X|FR|db.cdm.suggestions.off.078|                         change d une version a l autre - une fiche qui nomme
-::X|FR|db.cdm.suggestions.off.079|                         une page precise pour chaque numero affirme donc plus
-::X|FR|db.cdm.suggestions.off.080|                         qu on ne sait vraiment. Sur un profil neuf, certaines
-::X|FR|db.cdm.suggestions.off.081|                         des huit valeurs peuvent ne pas exister avant que la
-::X|FR|db.cdm.suggestions.off.082|                         surface correspondante ne s affiche une premiere fois
-::X|FR|db.cdm.suggestions.off.083|                         ; absente, une valeur se comporte comme activee, ce
-::X|FR|db.cdm.suggestions.off.084|                         qui ne change rien concretement, mais le rapport ne
-::X|FR|db.cdm.suggestions.off.085|                         devrait pas dire qu il a restaure quelque chose qui n
-::X|FR|db.cdm.suggestions.off.086|                         a jamais existe.
-::X|FR|db.cdm.suggestions.off.087|
-::X|FR|db.cdm.suggestions.off.088|  Cible                : reg add sur HKCU\Software\Microsoft\Windows\CurrentVe
-::X|FR|db.cdm.suggestions.off.089|                         rsion\ContentDeliveryManager, REG_DWORD 0, pour
-::X|FR|db.cdm.suggestions.off.090|                         SubscribedContent-338393Enabled,
-::X|FR|db.cdm.suggestions.off.091|                         SubscribedContent-353694Enabled,
-::X|FR|db.cdm.suggestions.off.092|                         SubscribedContent-353696Enabled,
-::X|FR|db.cdm.suggestions.off.093|                         SystemPaneSuggestionsEnabled,
-::X|FR|db.cdm.suggestions.off.094|                         SubscribedContent-338389Enabled,
-::X|FR|db.cdm.suggestions.off.095|                         SilentInstalledAppsEnabled, PreInstalledAppsEnabled,
-::X|FR|db.cdm.suggestions.off.096|                         RotatingLockScreenOverlayEnabled (OPTY.bat lignes
-::X|FR|db.cdm.suggestions.off.097|                         1730-1737)
+::X|FR|db.cdm.suggestions.off.061|  Pourquoi ces profils : Gaming, serveur, bureautique et portable passent
+::X|FR|db.cdm.suggestions.off.062|                         les huit a 0 : aucun ne veut de banniere, de
+::X|FR|db.cdm.suggestions.off.063|                         notification ou de telechargement non sollicite,
+::X|FR|db.cdm.suggestions.off.064|                         et aucun ne paie quoi que ce soit pour ce
+::X|FR|db.cdm.suggestions.off.065|                         changement. Une seule reponse pilote les huit
+::X|FR|db.cdm.suggestions.off.066|                         valeurs, la fiche ne peut donc pas les separer : un
+::X|FR|db.cdm.suggestions.off.067|                         PC familial doit quand meme bloquer les
+::X|FR|db.cdm.suggestions.off.068|                         installations non demandees, et les conseils
+::X|FR|db.cdm.suggestions.off.069|                         suivent. Reactivez-les dans Parametres si besoin.
+::X|FR|db.cdm.suggestions.off.070|                         Windows ecrit 1 partout, puisque c est l etat livre.
+::X|FR|db.cdm.suggestions.off.071|
+::X|FR|db.cdm.suggestions.off.072|  Non verifie          : La correspondance entre les identifiants numeriques
+::X|FR|db.cdm.suggestions.off.073|                         SubscribedContent et les surfaces exactes de
+::X|FR|db.cdm.suggestions.off.074|                         Parametres vient de la documentation communautaire
+::X|FR|db.cdm.suggestions.off.075|                         plutot que de Microsoft, et ces identifiants ont deja
+::X|FR|db.cdm.suggestions.off.076|                         change d une version a l autre - une fiche qui nomme
+::X|FR|db.cdm.suggestions.off.077|                         une page precise pour chaque numero affirme donc plus
+::X|FR|db.cdm.suggestions.off.078|                         qu on ne sait vraiment. Sur un profil neuf, certaines
+::X|FR|db.cdm.suggestions.off.079|                         des huit valeurs peuvent ne pas exister avant que la
+::X|FR|db.cdm.suggestions.off.080|                         surface correspondante ne s affiche une premiere fois
+::X|FR|db.cdm.suggestions.off.081|                         ; absente, une valeur se comporte comme activee, ce
+::X|FR|db.cdm.suggestions.off.082|                         qui ne change rien concretement, mais le rapport ne
+::X|FR|db.cdm.suggestions.off.083|                         devrait pas dire qu il a restaure quelque chose qui n
+::X|FR|db.cdm.suggestions.off.084|                         a jamais existe.
+::X|FR|db.cdm.suggestions.off.085|
+::X|FR|db.cdm.suggestions.off.086|  Cible                : reg add sur HKCU\Software\Microsoft\Windows\CurrentVe
+::X|FR|db.cdm.suggestions.off.087|                         rsion\ContentDeliveryManager, REG_DWORD 0, pour
+::X|FR|db.cdm.suggestions.off.088|                         SubscribedContent-338393Enabled,
+::X|FR|db.cdm.suggestions.off.089|                         SubscribedContent-353694Enabled,
+::X|FR|db.cdm.suggestions.off.090|                         SubscribedContent-353696Enabled,
+::X|FR|db.cdm.suggestions.off.091|                         SystemPaneSuggestionsEnabled,
+::X|FR|db.cdm.suggestions.off.092|                         SubscribedContent-338389Enabled,
+::X|FR|db.cdm.suggestions.off.093|                         SilentInstalledAppsEnabled, PreInstalledAppsEnabled,
+::X|FR|db.cdm.suggestions.off.094|                         RotatingLockScreenOverlayEnabled (OPTY.bat lignes
+::X|FR|db.cdm.suggestions.off.095|                         1730-1737)
 ::
 :: ---- db.spotlight.off (preference) ----------------------------------
 ::P|db.spotlight.off|1|1|DELETE|1|DELETE|
@@ -22340,34 +22336,31 @@ goto :eof
 ::X|EN|cleanmgr.sagerun64.068|                       runs none, so anything other than SKIP would be
 ::X|EN|cleanmgr.sagerun64.069|                       inventing a default that does not exist.
 ::X|EN|cleanmgr.sagerun64.070|
-::X|EN|cleanmgr.sagerun64.071|  Known problems  : Line 778 logs Wrote StateFlags0064 allow-list (14 on /
-::X|EN|cleanmgr.sagerun64.072|                    15 off). Counted in the source, the enable loop covers
-::X|EN|cleanmgr.sagerun64.073|                    17 handlers (lines 744 to 762) and the disable loop 12
-::X|EN|cleanmgr.sagerun64.074|                    (lines 763 to 777). The log line is wrong in both
-::X|EN|cleanmgr.sagerun64.075|                    numbers and understates what is armed. Second, the
-::X|EN|cleanmgr.sagerun64.076|                    manual delete pass deliberately preserves thumbcache
-::X|EN|cleanmgr.sagerun64.077|                    because Explorer visibly regenerates every thumbnail
-::X|EN|cleanmgr.sagerun64.078|                    afterwards, painful in large media folders - but
-::X|EN|cleanmgr.sagerun64.079|                    Thumbnail Cache is armed at 2 in this allow-list, so
-::X|EN|cleanmgr.sagerun64.080|                    cleanmgr deletes exactly what the manual pass was
-::X|EN|cleanmgr.sagerun64.081|                    careful to keep. One of the two decisions is wrong;
-::X|EN|cleanmgr.sagerun64.082|                    they cannot both be right.
-::X|EN|cleanmgr.sagerun64.083|
-::X|EN|cleanmgr.sagerun64.084|  Unverified      : The one-to-ten GB figure is the usual range on a
-::X|EN|cleanmgr.sagerun64.085|                    desktop that has not been cleaned for months, not a
-::X|EN|cleanmgr.sagerun64.086|                    measurement taken on this machine. If the cap fires at
-::X|EN|cleanmgr.sagerun64.087|                    600 seconds, nothing records which handlers had
-::X|EN|cleanmgr.sagerun64.088|                    already completed, so a timed-out run leaves the
-::X|EN|cleanmgr.sagerun64.089|                    machine in a state the log cannot describe.
-::X|EN|cleanmgr.sagerun64.090|
-::X|EN|cleanmgr.sagerun64.091|  Target          : start "" cleanmgr /sagerun:64 - OPTY.bat line 781,
-::X|EN|cleanmgr.sagerun64.092|                    followed by a five-second polling loop (lines 782 to
-::X|EN|cleanmgr.sagerun64.093|                    795) that runs taskkill /f /im cleanmgr.exe once 600
-::X|EN|cleanmgr.sagerun64.094|                    seconds have elapsed. The handler allow-list is
-::X|EN|cleanmgr.sagerun64.095|                    written just above: StateFlags0064=2 on 17 handlers
-::X|EN|cleanmgr.sagerun64.096|                    (lines 744 to 762) and StateFlags0064=0 on 12 handlers
-::X|EN|cleanmgr.sagerun64.097|                    (lines 763 to 777), under HKLM\SOFTWARE\Microsoft\Wind
-::X|EN|cleanmgr.sagerun64.098|                    ows\CurrentVersion\Explorer\VolumeCaches.
+::X|EN|cleanmgr.sagerun64.071|  Known problems  : The log line said 14 on / 15 off while the code arms 17
+::X|EN|cleanmgr.sagerun64.072|                    and disarms 12; fixed in 05.1. Still open: the manual
+::X|EN|cleanmgr.sagerun64.073|                    delete pass deliberately preserves thumbcache because
+::X|EN|cleanmgr.sagerun64.074|                    Explorer visibly regenerates every thumbnail
+::X|EN|cleanmgr.sagerun64.075|                    afterwards, painful in large media folders - but
+::X|EN|cleanmgr.sagerun64.076|                    Thumbnail Cache is armed at 2 in this allow-list, so
+::X|EN|cleanmgr.sagerun64.077|                    cleanmgr deletes exactly what the manual pass was
+::X|EN|cleanmgr.sagerun64.078|                    careful to keep. One of the two decisions is wrong;
+::X|EN|cleanmgr.sagerun64.079|                    they cannot both be right.
+::X|EN|cleanmgr.sagerun64.080|
+::X|EN|cleanmgr.sagerun64.081|  Unverified      : The one-to-ten GB figure is the usual range on a
+::X|EN|cleanmgr.sagerun64.082|                    desktop that has not been cleaned for months, not a
+::X|EN|cleanmgr.sagerun64.083|                    measurement taken on this machine. If the cap fires at
+::X|EN|cleanmgr.sagerun64.084|                    600 seconds, nothing records which handlers had
+::X|EN|cleanmgr.sagerun64.085|                    already completed, so a timed-out run leaves the
+::X|EN|cleanmgr.sagerun64.086|                    machine in a state the log cannot describe.
+::X|EN|cleanmgr.sagerun64.087|
+::X|EN|cleanmgr.sagerun64.088|  Target          : start "" cleanmgr /sagerun:64 - OPTY.bat line 781,
+::X|EN|cleanmgr.sagerun64.089|                    followed by a five-second polling loop (lines 782 to
+::X|EN|cleanmgr.sagerun64.090|                    795) that runs taskkill /f /im cleanmgr.exe once 600
+::X|EN|cleanmgr.sagerun64.091|                    seconds have elapsed. The handler allow-list is
+::X|EN|cleanmgr.sagerun64.092|                    written just above: StateFlags0064=2 on 17 handlers
+::X|EN|cleanmgr.sagerun64.093|                    (lines 744 to 762) and StateFlags0064=0 on 12 handlers
+::X|EN|cleanmgr.sagerun64.094|                    (lines 763 to 777), under HKLM\SOFTWARE\Microsoft\Wind
+::X|EN|cleanmgr.sagerun64.095|                    ows\CurrentVersion\Explorer\VolumeCaches.
 ::X|FR|cleanmgr.sagerun64.001|  Ce que c est    : Lance reellement le Nettoyage de disque, sans
 ::X|FR|cleanmgr.sagerun64.002|                    interface, avec la liste de gestionnaires configuree
 ::X|FR|cleanmgr.sagerun64.003|                    aux deux etapes precedentes, sur tous les disques.
@@ -22446,37 +22439,33 @@ goto :eof
 ::X|FR|cleanmgr.sagerun64.076| sageset et n en execute aucun, donc toute autre
 ::X|FR|cleanmgr.sagerun64.077|                         valeur inventerait un defaut inexistant.
 ::X|FR|cleanmgr.sagerun64.078|
-::X|FR|cleanmgr.sagerun64.079|  Problemes connus : La ligne 778 journalise Wrote StateFlags0064 allow-
-::X|FR|cleanmgr.sagerun64.080|                     list (14 on / 15 off). Comptees dans le source, la
-::X|FR|cleanmgr.sagerun64.081| boucle d activation couvre 17 gestionnaires (lignes
-::X|FR|cleanmgr.sagerun64.082|                     744 a 762) et la boucle de desactivation 12 (lignes
-::X|FR|cleanmgr.sagerun64.083|                     763 a 777). La ligne de journal se trompe sur les
-::X|FR|cleanmgr.sagerun64.084|                     deux nombres et sous-estime ce qui est arme. Ensuite,
-::X|FR|cleanmgr.sagerun64.085|                     la passe de suppression manuelle conserve
-::X|FR|cleanmgr.sagerun64.086| deliberement thumbcache parce que l Explorateur
-::X|FR|cleanmgr.sagerun64.087|                     regenere visiblement chaque miniature ensuite,
-::X|FR|cleanmgr.sagerun64.088|                     penible dans de gros dossiers de medias - mais
-::X|FR|cleanmgr.sagerun64.089|                     Thumbnail Cache est arme a 2 dans cette liste, donc
-::X|FR|cleanmgr.sagerun64.090|                     cleanmgr supprime precisement ce que la passe
-::X|FR|cleanmgr.sagerun64.091| manuelle prenait soin de garder. L une des deux
-::X|FR|cleanmgr.sagerun64.092|                     decisions est fausse ; elles ne peuvent pas etre
-::X|FR|cleanmgr.sagerun64.093|                     justes toutes les deux.
-::X|FR|cleanmgr.sagerun64.094|
-::X|FR|cleanmgr.sagerun64.095|  Non verifie (en)  : The one-to-ten GB figure is the usual range on a
-::X|FR|cleanmgr.sagerun64.096|                      desktop that has not been cleaned for months, not a
-::X|FR|cleanmgr.sagerun64.097|                      measurement taken on this machine. If the cap fires
-::X|FR|cleanmgr.sagerun64.098|                      at 600 seconds, nothing records which handlers had
-::X|FR|cleanmgr.sagerun64.099|                      already completed, so a timed-out run leaves the
-::X|FR|cleanmgr.sagerun64.100|                      machine in a state the log cannot describe.
-::X|FR|cleanmgr.sagerun64.101|
-::X|FR|cleanmgr.sagerun64.102|  Cible           : start "" cleanmgr /sagerun:64 - OPTY.bat line 781,
-::X|FR|cleanmgr.sagerun64.103|                    followed by a five-second polling loop (lines 782 to
-::X|FR|cleanmgr.sagerun64.104|                    795) that runs taskkill /f /im cleanmgr.exe once 600
-::X|FR|cleanmgr.sagerun64.105|                    seconds have elapsed. The handler allow-list is
-::X|FR|cleanmgr.sagerun64.106|                    written just above: StateFlags0064=2 on 17 handlers
-::X|FR|cleanmgr.sagerun64.107|                    (lines 744 to 762) and StateFlags0064=0 on 12 handlers
-::X|FR|cleanmgr.sagerun64.108|                    (lines 763 to 777), under HKLM\SOFTWARE\Microsoft\Wind
-::X|FR|cleanmgr.sagerun64.109|                    ows\CurrentVersion\Explorer\VolumeCaches.
+::X|FR|cleanmgr.sagerun64.079|  Problemes connus : Le journal annoncait 14 on / 15 off alors que le code
+::X|FR|cleanmgr.sagerun64.080|                     en active 17 et en desactive 12 ; corrige en 05.1.
+::X|FR|cleanmgr.sagerun64.081|                     Reste ouvert : la passe de suppression manuelle
+::X|FR|cleanmgr.sagerun64.082|                     conserve deliberement thumbcache parce que
+::X|FR|cleanmgr.sagerun64.083|                     l Explorateur regenere visiblement chaque miniature
+::X|FR|cleanmgr.sagerun64.084|                     ensuite, penible dans de gros dossiers de medias -
+::X|FR|cleanmgr.sagerun64.085|                     mais Thumbnail Cache est arme a 2 dans cette liste,
+::X|FR|cleanmgr.sagerun64.086|                     donc cleanmgr supprime precisement ce que la passe
+::X|FR|cleanmgr.sagerun64.087|                     manuelle prenait soin de garder. L une des deux
+::X|FR|cleanmgr.sagerun64.088|                     decisions est fausse ; elles ne peuvent pas etre
+::X|FR|cleanmgr.sagerun64.089|                     justes toutes les deux.
+::X|FR|cleanmgr.sagerun64.090|
+::X|FR|cleanmgr.sagerun64.091|  Non verifie (en)  : The one-to-ten GB figure is the usual range on a
+::X|FR|cleanmgr.sagerun64.092|                      desktop that has not been cleaned for months, not a
+::X|FR|cleanmgr.sagerun64.093|                      measurement taken on this machine. If the cap fires
+::X|FR|cleanmgr.sagerun64.094|                      at 600 seconds, nothing records which handlers had
+::X|FR|cleanmgr.sagerun64.095|                      already completed, so a timed-out run leaves the
+::X|FR|cleanmgr.sagerun64.096|                      machine in a state the log cannot describe.
+::X|FR|cleanmgr.sagerun64.097|
+::X|FR|cleanmgr.sagerun64.098|  Cible           : start "" cleanmgr /sagerun:64 - OPTY.bat line 781,
+::X|FR|cleanmgr.sagerun64.099|                    followed by a five-second polling loop (lines 782 to
+::X|FR|cleanmgr.sagerun64.100|                    795) that runs taskkill /f /im cleanmgr.exe once 600
+::X|FR|cleanmgr.sagerun64.101|                    seconds have elapsed. The handler allow-list is
+::X|FR|cleanmgr.sagerun64.102|                    written just above: StateFlags0064=2 on 17 handlers
+::X|FR|cleanmgr.sagerun64.103|                    (lines 744 to 762) and StateFlags0064=0 on 12 handlers
+::X|FR|cleanmgr.sagerun64.104|                    (lines 763 to 777), under HKLM\SOFTWARE\Microsoft\Wind
+::X|FR|cleanmgr.sagerun64.105|                    ows\CurrentVersion\Explorer\VolumeCaches.
 ::
 :: ---- recycle.bin.all.drives (risky) ----------------------------
 ::P|recycle.bin.all.drives|DELETE|DELETE|DELETE|DELETE|SKIP|
@@ -23048,30 +23037,15 @@ goto :eof
 ::X|EN|chkdsk.full.repair.067|                       with the symptom takes it deliberately, after a
 ::X|EN|chkdsk.full.repair.068|                       backup, and does not need a profile to tell them.
 ::X|EN|chkdsk.full.repair.069|
-::X|EN|chkdsk.full.repair.070|  Known problems  : Line 1268 is CHKDSK /f /r with no volume argument,
-::X|EN|chkdsk.full.repair.071|                    while the online scan on line 1256 correctly passes
-::X|EN|chkdsk.full.repair.072|                    %SystemDrive%. With no argument chkdsk operates on the
-::X|EN|chkdsk.full.repair.073|                    current directory's drive, which is whatever volume
-::X|EN|chkdsk.full.repair.074|                    OPTY.bat was launched from - on this machine that is
-::X|EN|chkdsk.full.repair.075|                    E:, not C:. Two consequences follow. The card's whole
-::X|EN|chkdsk.full.repair.076|                    premise, that it must schedule itself for the next
-::X|EN|chkdsk.full.repair.077|                    reboot because the system drive cannot be locked, only
-::X|EN|chkdsk.full.repair.078|                    holds for C:; on a data volume chkdsk locks it and
-::X|EN|chkdsk.full.repair.079|                    starts a multi-hour surface scan immediately, with no
-::X|EN|chkdsk.full.repair.080|                    reboot and no second chance to back out. And the user
-::X|EN|chkdsk.full.repair.081|                    who chose this menu item to check their system drive
-::X|EN|chkdsk.full.repair.082|                    did not check their system drive. Line 1268 should
-::X|EN|chkdsk.full.repair.083|                    read: CHKDSK %SystemDrive% /f /r.
-::X|EN|chkdsk.full.repair.084|
-::X|EN|chkdsk.full.repair.085|  Unverified      : The bug above is read directly from the source line,
-::X|EN|chkdsk.full.repair.086|                    not observed at runtime, because running it to find
-::X|EN|chkdsk.full.repair.087|                    out is precisely the thing this card advises against.
-::X|EN|chkdsk.full.repair.088|
-::X|EN|chkdsk.full.repair.089|  Target          : CHKDSK /f /r - OPTY.bat line 1268, inside the
-::X|EN|chkdsk.full.repair.090|                    :chkdsk_full label, reached from the :mchkdsk menu
-::X|EN|chkdsk.full.repair.091|                    option 2. Note there is NO volume argument on that
-::X|EN|chkdsk.full.repair.092|                    line, unlike the online scan at line 1256 which passes
-::X|EN|chkdsk.full.repair.093|                    %SystemDrive%.
+::X|EN|chkdsk.full.repair.070|  Known problems  : Fixed in 05.1. The line used to be CHKDSK /f /r with
+::X|EN|chkdsk.full.repair.071|                    no volume argument, so chkdsk worked on the drive
+::X|EN|chkdsk.full.repair.072|                    OPTY.bat was launched from - on the reference machine
+::X|EN|chkdsk.full.repair.073|                    E:, not C: - and on a data volume it locked the drive
+::X|EN|chkdsk.full.repair.074|                    and started a multi-hour scan at once, with no reboot.
+::X|EN|chkdsk.full.repair.075|                    It now passes %SystemDrive% like the online scan.
+::X|EN|chkdsk.full.repair.076|
+::X|EN|chkdsk.full.repair.077|  Target          : CHKDSK %SystemDrive% /f /r, in the :chkdsk_full
+::X|EN|chkdsk.full.repair.078|                    label, reached from the :mchkdsk menu option 2.
 ::X|FR|chkdsk.full.repair.001|  Ce que c est    : CHKDSK /f corrige les erreurs du systeme de fichiers ;
 ::X|FR|chkdsk.full.repair.002|                    /r lit en plus chaque secteur du disque pour reperer
 ::X|FR|chkdsk.full.repair.003|                    les secteurs defectueux et deplacer les donnees encore
@@ -23149,33 +23123,16 @@ goto :eof
 ::X|FR|chkdsk.full.repair.075|                         lance deliberement, apres sauvegarde, et n a pas
 ::X|FR|chkdsk.full.repair.076|                         besoin d un profil pour le lui dire.
 ::X|FR|chkdsk.full.repair.077|
-::X|FR|chkdsk.full.repair.078|  Problemes connus : La ligne 1268 est CHKDSK /f /r sans argument de
-::X|FR|chkdsk.full.repair.079|                     volume, alors que l analyse en ligne de la ligne 1256
-::X|FR|chkdsk.full.repair.080|                     passe correctement %SystemDrive%. Sans argument,
-::X|FR|chkdsk.full.repair.081|                     chkdsk agit sur le disque du repertoire courant,
-::X|FR|chkdsk.full.repair.082|                     c est-a-dire le volume depuis lequel OPTY.bat a ete
-::X|FR|chkdsk.full.repair.083|                     lance - sur cette machine, E: et non C:. Deux
-::X|FR|chkdsk.full.repair.084|                     consequences. Toute la premisse de la fiche, a savoir
-::X|FR|chkdsk.full.repair.085|                     qu il doit se planifier au prochain redemarrage parce
-::X|FR|chkdsk.full.repair.086|                     que le disque systeme ne peut pas etre verrouille, ne
-::X|FR|chkdsk.full.repair.087|                     vaut que pour C: ; sur un volume de donnees, chkdsk
-::X|FR|chkdsk.full.repair.088|                     le verrouille et demarre immediatement une analyse de
-::X|FR|chkdsk.full.repair.089|                     surface de plusieurs heures, sans redemarrage et sans
-::X|FR|chkdsk.full.repair.090|                     seconde chance de se raviser. Et l utilisateur qui a
-::X|FR|chkdsk.full.repair.091|                     choisi cette entree de menu pour verifier son disque
-::X|FR|chkdsk.full.repair.092|                     systeme n a pas verifie son disque systeme. La ligne
-::X|FR|chkdsk.full.repair.093|                     1268 devrait etre : CHKDSK %SystemDrive% /f /r.
-::X|FR|chkdsk.full.repair.094|
-::X|FR|chkdsk.full.repair.095|  Non verifie (en)  : The bug above is read directly from the source line,
-::X|FR|chkdsk.full.repair.096|                      not observed at runtime, because running it to find
-::X|FR|chkdsk.full.repair.097|                      out is precisely the thing this card advises
-::X|FR|chkdsk.full.repair.098|                      against.
-::X|FR|chkdsk.full.repair.099|
-::X|FR|chkdsk.full.repair.100|  Cible           : CHKDSK /f /r - OPTY.bat line 1268, inside the
-::X|FR|chkdsk.full.repair.101|                    :chkdsk_full label, reached from the :mchkdsk menu
-::X|FR|chkdsk.full.repair.102|                    option 2. Note there is NO volume argument on that
-::X|FR|chkdsk.full.repair.103|                    line, unlike the online scan at line 1256 which passes
-::X|FR|chkdsk.full.repair.104|                    %SystemDrive%.
+::X|FR|chkdsk.full.repair.078|  Problemes connus : Corrige en 05.1. La ligne etait CHKDSK /f /r sans
+::X|FR|chkdsk.full.repair.079|                     argument de volume : chkdsk agissait sur le disque
+::X|FR|chkdsk.full.repair.080|                     d ou OPTY.bat etait lance - E: et non C: sur la
+::X|FR|chkdsk.full.repair.081|                     machine de reference - et sur un volume de donnees il
+::X|FR|chkdsk.full.repair.082|                     le verrouillait et lancait tout de suite des heures
+::X|FR|chkdsk.full.repair.083|                     d analyse, sans redemarrage. Il passe maintenant
+::X|FR|chkdsk.full.repair.084|                     %SystemDrive%, comme l analyse en ligne.
+::X|FR|chkdsk.full.repair.085|
+::X|FR|chkdsk.full.repair.086|  Cible           : CHKDSK %SystemDrive% /f /r, dans le label
+::X|FR|chkdsk.full.repair.087|                    :chkdsk_full, atteint par l option 2 du menu :mchkdsk.
 ::
 :: ---- ssd.trim.on (repair) ---------------------------------------
 ::P|ssd.trim.on|0|0|0|0|0|
@@ -30029,9 +29986,9 @@ goto :eof
 :: ---- cl.optylogs.prune (cleanup) ---------------------------------
 ::P|cl.optylogs.prune|DELETE|DELETE|DELETE|DELETE|DELETE|
 ::T|EN|cl.optylogs.prune.001|PRUNE OPTY'S OWN OLD LOGS AND REPORTS
-::T|EN|cl.optylogs.prune.002|Keeps only the 5 most recent files in each of OPTY's own log and report families and deletes the rest - recovers only a few MB of disk space, and older run logs are gone for good since this is a permanent delete, not the Recycle Bin.
+::T|EN|cl.optylogs.prune.002|Deletes every old OPTY log, network report and crash report, plus leftover update and self-heal files - the current run's log is kept. Recovers only a few MB, and the files are gone for good: a permanent delete, not the Recycle Bin. Separately, startup always keeps only the 5 newest logs.
 ::T|FR|cl.optylogs.prune.001|PURGE DES ANCIENS JOURNAUX ET RAPPORTS D OPTY
-::T|FR|cl.optylogs.prune.002|Garde seulement les 5 fichiers les plus recents de chaque famille de journaux et rapports d OPTY et supprime le reste - recupere seulement quelques Mo d espace disque, et les anciens journaux disparaissent pour de bon puisque c est une suppression definitive, pas la corbeille.
+::T|FR|cl.optylogs.prune.002|Supprime tous les anciens journaux d OPTY, ses rapports reseau et de crash, et les restes de mise a jour et d auto-reparation - le journal en cours est garde. Recupere seulement quelques Mo, et c est definitif : pas de corbeille. Par ailleurs, le demarrage ne garde toujours que les 5 journaux les plus recents.
 ::X|EN|cl.optylogs.prune.001|  What it is      : OPTY writes one log file per run,
 ::X|EN|cl.optylogs.prune.002|                    logs_<date>_<time>.txt, plus netinfo_*.txt and
 ::X|EN|cl.optylogs.prune.003|                    netprops_*.json when you ask for a network report.
@@ -30806,30 +30763,28 @@ goto :eof
 ::X|EN|cl.cleanmgr.arm.082|                       delete in the shipped state - no profile 64 exists
 ::X|EN|cl.cleanmgr.arm.083|                       and nothing runs.
 ::X|EN|cl.cleanmgr.arm.084|
-::X|EN|cl.cleanmgr.arm.085|  Known problems  : The log line at 760 records 14 on and 15 off while the
-::X|EN|cl.cleanmgr.arm.086|                    code writes 17 on and 12 off, so the log is wrong in
-::X|EN|cl.cleanmgr.arm.087|                    both directions. Worse, the comment block just above
-::X|EN|cl.cleanmgr.arm.088|                    claims Recycle Bin, File History and the dump handlers
-::X|EN|cl.cleanmgr.arm.089|                    are the exact things this cleanup deliberately refuses
-::X|EN|cl.cleanmgr.arm.090|                    to touch - and then the list arms Recycle Bin and both
-::X|EN|cl.cleanmgr.arm.091|                    dump handlers. The list is what executes; the comment
-::X|EN|cl.cleanmgr.arm.092|                    is stale and misleading to anyone auditing the file.
-::X|EN|cl.cleanmgr.arm.093|
-::X|EN|cl.cleanmgr.arm.094|  Unverified      : The code comment above the block says the manual
-::X|EN|cl.cleanmgr.arm.095|                    cleanup deliberately refuses to touch the Recycle Bin
-::X|EN|cl.cleanmgr.arm.096|                    and the dump handlers, and the log line claims 14
-::X|EN|cl.cleanmgr.arm.097|                    handlers on. The list actually written contains 17
-::X|EN|cl.cleanmgr.arm.098|                    handlers including all three. The card describes the
-::X|EN|cl.cleanmgr.arm.099|                    code, because the code is what runs - but the intent
-::X|EN|cl.cleanmgr.arm.100|                    behind the block is genuinely unclear, and someone
-::X|EN|cl.cleanmgr.arm.101|                    should decide which of the two is meant to be true.
-::X|EN|cl.cleanmgr.arm.102|
-::X|EN|cl.cleanmgr.arm.103|  Target          : HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explore
-::X|EN|cl.cleanmgr.arm.104|                    r\VolumeCaches\<handler>, value StateFlags0064 = 2, on
-::X|EN|cl.cleanmgr.arm.105|                    17 named handlers - OPTY.bat lines 725 to 743. The
-::X|EN|cl.cleanmgr.arm.106|                    deletion itself happens at line 763, start "" cleanmgr
-::X|EN|cl.cleanmgr.arm.107|                    /sagerun:64, with a 600-second watchdog that taskkills
-::X|EN|cl.cleanmgr.arm.108|                    cleanmgr if it hangs.
+::X|EN|cl.cleanmgr.arm.085|  Known problems  : Fixed in 05.1: the log line recorded 14 on and 15 off
+::X|EN|cl.cleanmgr.arm.086|                    while the code writes 17 on and 12 off, and the comment
+::X|EN|cl.cleanmgr.arm.087|                    above the block still claimed the Recycle Bin and the
+::X|EN|cl.cleanmgr.arm.088|                    dump handlers were the things this cleanup refuses to
+::X|EN|cl.cleanmgr.arm.089|                    touch. Both now match the list, which arms them on
+::X|EN|cl.cleanmgr.arm.090|                    purpose.
+::X|EN|cl.cleanmgr.arm.091|
+::X|EN|cl.cleanmgr.arm.092|  Unverified      : The code comment above the block says the manual
+::X|EN|cl.cleanmgr.arm.093|                    cleanup deliberately refuses to touch the Recycle Bin
+::X|EN|cl.cleanmgr.arm.094|                    and the dump handlers, and the log line claims 14
+::X|EN|cl.cleanmgr.arm.095|                    handlers on. The list actually written contains 17
+::X|EN|cl.cleanmgr.arm.096|                    handlers including all three. The card describes the
+::X|EN|cl.cleanmgr.arm.097|                    code, because the code is what runs - but the intent
+::X|EN|cl.cleanmgr.arm.098|                    behind the block is genuinely unclear, and someone
+::X|EN|cl.cleanmgr.arm.099|                    should decide which of the two is meant to be true.
+::X|EN|cl.cleanmgr.arm.100|
+::X|EN|cl.cleanmgr.arm.101|  Target          : HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explore
+::X|EN|cl.cleanmgr.arm.102|                    r\VolumeCaches\<handler>, value StateFlags0064 = 2, on
+::X|EN|cl.cleanmgr.arm.103|                    17 named handlers - OPTY.bat lines 725 to 743. The
+::X|EN|cl.cleanmgr.arm.104|                    deletion itself happens at line 763, start "" cleanmgr
+::X|EN|cl.cleanmgr.arm.105|                    /sagerun:64, with a 600-second watchdog that taskkills
+::X|EN|cl.cleanmgr.arm.106|                    cleanmgr if it hangs.
 ::X|FR|cl.cleanmgr.arm.001|  Ce que c est    : Écrit StateFlags0064 = 2 sur 17 gestionnaires nommés
 ::X|FR|cl.cleanmgr.arm.002|                    du Nettoyage de disque, ce qui les arme dans le profil
 ::X|FR|cl.cleanmgr.arm.003| 64. Les noms sont écrits en dur au lieu d être
@@ -30922,33 +30877,30 @@ goto :eof
 ::X|FR|cl.cleanmgr.arm.090| supprimer ni à garder dans l état d origine :
 ::X|FR|cl.cleanmgr.arm.091| aucun profil 64 n existe et rien ne s exécute.
 ::X|FR|cl.cleanmgr.arm.092|
-::X|FR|cl.cleanmgr.arm.093|  Problemes connus : La ligne de journal 760 annonce « 14 on / 15 off »
-::X|FR|cl.cleanmgr.arm.094|                     alors que le code écrit 17 activés et 12 désactivés :
-::X|FR|cl.cleanmgr.arm.095|                     le journal se trompe dans les deux sens. Pire, le
-::X|FR|cl.cleanmgr.arm.096|                     commentaire juste au-dessus affirme que la Corbeille,
-::X|FR|cl.cleanmgr.arm.097| l Historique des fichiers et les gestionnaires de
-::X|FR|cl.cleanmgr.arm.098|                     vidages sont précisément ce que ce nettoyage refuse
-::X|FR|cl.cleanmgr.arm.099|                     délibérément de toucher - et la liste arme la
-::X|FR|cl.cleanmgr.arm.100| Corbeille et les deux gestionnaires de vidages. C est
-::X|FR|cl.cleanmgr.arm.101| la liste qui s exécute ; le commentaire est périmé et
-::X|FR|cl.cleanmgr.arm.102|                     trompeur pour qui audite le fichier.
-::X|FR|cl.cleanmgr.arm.103|
-::X|FR|cl.cleanmgr.arm.104|  Non verifie (en)  : The code comment above the block says the manual
-::X|FR|cl.cleanmgr.arm.105|                      cleanup deliberately refuses to touch the Recycle
-::X|FR|cl.cleanmgr.arm.106|                      Bin and the dump handlers, and the log line claims
-::X|FR|cl.cleanmgr.arm.107|                      14 handlers on. The list actually written contains
-::X|FR|cl.cleanmgr.arm.108|                      17 handlers including all three. The card describes
-::X|FR|cl.cleanmgr.arm.109|                      the code, because the code is what runs - but the
-::X|FR|cl.cleanmgr.arm.110|                      intent behind the block is genuinely unclear, and
-::X|FR|cl.cleanmgr.arm.111|                      someone should decide which of the two is meant to
-::X|FR|cl.cleanmgr.arm.112|                      be true.
-::X|FR|cl.cleanmgr.arm.113|
-::X|FR|cl.cleanmgr.arm.114|  Cible           : HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explore
-::X|FR|cl.cleanmgr.arm.115|                    r\VolumeCaches\<handler>, value StateFlags0064 = 2, on
-::X|FR|cl.cleanmgr.arm.116|                    17 named handlers - OPTY.bat lines 725 to 743. The
-::X|FR|cl.cleanmgr.arm.117|                    deletion itself happens at line 763, start "" cleanmgr
-::X|FR|cl.cleanmgr.arm.118|                    /sagerun:64, with a 600-second watchdog that taskkills
-::X|FR|cl.cleanmgr.arm.119|                    cleanmgr if it hangs.
+::X|FR|cl.cleanmgr.arm.093|  Problemes connus : Corrige en 05.1 : le journal annoncait « 14 on / 15
+::X|FR|cl.cleanmgr.arm.094|                     off » alors que le code ecrit 17 actives et 12
+::X|FR|cl.cleanmgr.arm.095|                     desactives, et le commentaire au-dessus du bloc
+::X|FR|cl.cleanmgr.arm.096|                     affirmait encore que la Corbeille et les
+::X|FR|cl.cleanmgr.arm.097|                     gestionnaires de vidages etaient ce que ce nettoyage
+::X|FR|cl.cleanmgr.arm.098|                     refuse de toucher. Les deux suivent maintenant la
+::X|FR|cl.cleanmgr.arm.099|                     liste, qui les arme volontairement.
+::X|FR|cl.cleanmgr.arm.100|
+::X|FR|cl.cleanmgr.arm.101|  Non verifie (en)  : The code comment above the block says the manual
+::X|FR|cl.cleanmgr.arm.102|                      cleanup deliberately refuses to touch the Recycle
+::X|FR|cl.cleanmgr.arm.103|                      Bin and the dump handlers, and the log line claims
+::X|FR|cl.cleanmgr.arm.104|                      14 handlers on. The list actually written contains
+::X|FR|cl.cleanmgr.arm.105|                      17 handlers including all three. The card describes
+::X|FR|cl.cleanmgr.arm.106|                      the code, because the code is what runs - but the
+::X|FR|cl.cleanmgr.arm.107|                      intent behind the block is genuinely unclear, and
+::X|FR|cl.cleanmgr.arm.108|                      someone should decide which of the two is meant to
+::X|FR|cl.cleanmgr.arm.109|                      be true.
+::X|FR|cl.cleanmgr.arm.110|
+::X|FR|cl.cleanmgr.arm.111|  Cible           : HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explore
+::X|FR|cl.cleanmgr.arm.112|                    r\VolumeCaches\<handler>, value StateFlags0064 = 2, on
+::X|FR|cl.cleanmgr.arm.113|                    17 named handlers - OPTY.bat lines 725 to 743. The
+::X|FR|cl.cleanmgr.arm.114|                    deletion itself happens at line 763, start "" cleanmgr
+::X|FR|cl.cleanmgr.arm.115|                    /sagerun:64, with a 600-second watchdog that taskkills
+::X|FR|cl.cleanmgr.arm.116|                    cleanmgr if it hangs.
 ::
 :: ---- cl.cleanmgr.pinoff (preference) --------------------------------
 ::P|cl.cleanmgr.pinoff|DELETE|DELETE|DELETE|DELETE|KEEP|
@@ -37982,7 +37934,7 @@ goto :eof
 ::X|EN|diag.freeze.capture.044|                    kbdhid and left a complete MEMORY.DMP plus a minidump,
 ::X|EN|diag.freeze.capture.045|                    both readable by cdb.
 ::X|EN|diag.freeze.capture.046|
-::X|EN|diag.freeze.capture.047|  Not verified    : Never tested on a PS/2 keyboard. And a dump can still
+::X|EN|diag.freeze.capture.047|  Unverified      : Never tested on a PS/2 keyboard. And a dump can still
 ::X|EN|diag.freeze.capture.048|                    be lost: the same machine once logged a real 0x133
 ::X|EN|diag.freeze.capture.049|                    blue screen with volmgr event 161 (dump creation
 ::X|EN|diag.freeze.capture.050|                    failed, BugCheckProgress 0x81) and no file, cause
@@ -38055,9 +38007,9 @@ goto :eof
 ::
 :: ---- diag.freeze.restore (restore) ----------------------------------
 ::T|EN|diag.freeze.restore.001|CRASH SETTINGS BACK TO THE WINDOWS DEFAULTS
-::T|EN|diag.freeze.restore.002|Removes the keyboard crash key, puts the dump type back to automatic and the memory test back to its standard mix. Use it once the crashes are solved. Dumps already on disk are kept.
+::T|EN|diag.freeze.restore.002|Removes the keyboard crash key, puts the dump type back to automatic, the memory test back to its standard mix, and cancels a memory test still queued for the next boot. Use it once the crashes are solved. Dumps already on disk are kept.
 ::T|FR|diag.freeze.restore.001|REGLAGES DE CRASH REMIS AUX DEFAUTS WINDOWS
-::T|FR|diag.freeze.restore.002|Retire la touche de crash clavier, remet le type de vidage en automatique et le test memoire en mode standard. A faire une fois les crashs resolus. Les vidages deja presents sont conserves.
+::T|FR|diag.freeze.restore.002|Retire la touche de crash clavier, remet le type de vidage en automatique, le test memoire en mode standard, et annule un test memoire encore prevu au prochain demarrage. A faire une fois les crashs resolus. Les vidages deja presents sont conserves.
 ::X|EN|diag.freeze.restore.001|  Actual effect   : Deletes Services\kbdhid\crashdump and
 ::X|EN|diag.freeze.restore.002|                    Services\i8042prt\crashdump, deletes the two
 ::X|EN|diag.freeze.restore.003|                    CrashOnCtrlScroll values, writes CrashDumpEnabled=7 and
@@ -38120,7 +38072,7 @@ goto :eof
 ::X|EN|diag.memtest.021|  Windows default : testmix, passcount and cacheenable absent - the
 ::X|EN|diag.memtest.022|                    standard mix - and no test is scheduled.
 ::X|EN|diag.memtest.023|
-::X|EN|diag.memtest.024|  Not verified    : How long one extended pass takes with the cache on.
+::X|EN|diag.memtest.024|  Unverified      : How long one extended pass takes with the cache on.
 ::X|EN|diag.memtest.025|                    It was never timed here.
 ::X|EN|diag.memtest.026|
 ::X|EN|diag.memtest.027|  Target          : :crash_memtest, the {memdiag} entry of the BCD store.
