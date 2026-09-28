@@ -1,0 +1,71 @@
+# Publishes the release that OPTY's self-update downloads.
+#
+# Run it by hand (Actions -> Release -> Run workflow) once the version line in
+# OPTY.bat has been bumped. It is the same sequence as tools/Release-OPTY.ps1,
+# with GitHub's own short-lived token instead of a personal one:
+#   1. every integrity gate of the release tool must pass,
+#   2. tag V<version> is created on this commit together with the release,
+#      OPTY.bat attached byte for byte,
+#   3. the published asset is downloaded again and compared with the file -
+#      any difference deletes the release and its tag, so a broken OPTY.bat is
+#      never left as "latest".
+name: Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Integrity gates
+        shell: pwsh
+        run: ./tools/Release-OPTY.ps1 -ValidateOnly
+
+      - name: Publish and verify
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ver=$(grep -m1 -oP '^set current_version=\K[0-9.]+' OPTY.bat)
+          tag="V$ver"
+          if gh release view "$tag" >/dev/null 2>&1 || git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "::error::$tag already exists - bump set current_version= in OPTY.bat"
+            exit 1
+          fi
+          prev=$(git tag --sort=-v:refname | grep '^V' | head -n1 || true)
+          range="HEAD"
+          [ -n "$prev" ] && range="$prev..HEAD"
+          {
+            echo "## OPTY $tag"
+            echo
+            git log --no-merges --pretty=format:'- %s' "$range"
+            echo
+            echo
+            echo '---'
+            echo 'Download **OPTY.bat** below, right-click -> Run as administrator.'
+            if [ -n "$prev" ]; then
+              echo
+              echo "Full changelog: https://github.com/${GITHUB_REPOSITORY}/compare/$prev...$tag"
+            fi
+          } > "$RUNNER_TEMP/notes.md"
+          gh release create "$tag" OPTY.bat --target "$GITHUB_SHA" --title "$tag" --notes-file "$RUNNER_TEMP/notes.md"
+          gh release download "$tag" --pattern OPTY.bat --output "$RUNNER_TEMP/published.bat"
+          if ! cmp -s OPTY.bat "$RUNNER_TEMP/published.bat"; then
+            echo "::error::the published asset differs from OPTY.bat - release and tag deleted"
+            gh release delete "$tag" --yes --cleanup-tag
+            exit 1
+          fi
+          echo "Published $tag - asset byte-identical to OPTY.bat ($(stat -c %s OPTY.bat) bytes)"
