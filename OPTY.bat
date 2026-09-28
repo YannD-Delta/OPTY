@@ -1,7 +1,7 @@
 :::: OPTY by @YannD-Delta ::::
 
 @echo off
-set current_version=05.1
+set current_version=05.2
 
 :: ============================ CRLF SELF-HEAL ================================
 :: This MUST stay the first thing that runs, and it must use no `call` and no
@@ -10323,7 +10323,7 @@ goto :eof
 ::T|EN|file.self.update.002|OPTY can download and replace itself with the latest version from GitHub so you get bug fixes, but that means running unreviewed code fetched over the network with no signature check.
 ::T|FR|file.self.update.001|OPTY SE MET A JOUR DEPUIS GITHUB
 ::T|FR|file.self.update.002|OPTY peut se telecharger et se remplacer par la derniere version depuis GitHub pour recuperer les corrections, mais cela veut dire executer du code non relu, telecharge sans signature ni verification.
-::X|EN|file.self.update.001|  What it is      : OPTY compares its own 'set current_version=05.1'
+::X|EN|file.self.update.001|  What it is      : OPTY compares its own 'set current_version=05.2'
 ::X|EN|file.self.update.002|                    against the tag_name of the latest GitHub release and,
 ::X|EN|file.self.update.003|                    only if the release is newer (a string compare of the
 ::X|EN|file.self.update.004|                    NN.N form, so a build ahead of the release is never
@@ -10441,7 +10441,7 @@ goto :eof
 ::X|EN|file.self.update.116|                    :update_download_failed; an unreadable check goes to
 ::X|EN|file.self.update.117|                    :update_unknown; a git checkout goes to
 ::X|EN|file.self.update.118|                    :update_checkout.
-::X|FR|file.self.update.001|  Ce que c est    : OPTY compare son propre « set current_version=05.1 »
+::X|FR|file.self.update.001|  Ce que c est    : OPTY compare son propre « set current_version=05.2 »
 ::X|FR|file.self.update.002|                    au tag_name de la derniere release GitHub et, seulement
 ::X|FR|file.self.update.003|                    si la release est plus recente (comparaison de chaines
 ::X|FR|file.self.update.004|                    au format NN.N, donc une version en avance sur la
