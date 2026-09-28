@@ -13,7 +13,7 @@
 2. **Right-click → Run as administrator**
 3. Follow the menu
 
-⚡ **Fast full cleanup + reboot:** `1` `Enter`, then `3r` `Enter`
+⚡ **Fast full cleanup + reboot:** `1` `Enter`, then `3r` `Enter`, then any key once your apps are closed
 
 > An internet connection is recommended for the update check but not required.
 
@@ -39,14 +39,14 @@ Two menus do the work. Everything else is reporting, repair or undo.
 
 This is the part that makes OPTY different from a list of `reg add` lines.
 
-**225 settings** each carry a card, in French and English, that tells you:
+**208 cards** (205 of them settings with a profile row) each carry a card, in French and English, that tells you:
 
 - **what the setting is** — not the marketing name, the mechanism
 - **what changing it actually does** — and what *each possible value* does, one by one
 - **the gain** — and where there is none, the card says *"no measurable gain"* rather than inventing one
 - **the cost** — what breaks, what slows down, what you lose permanently
 - **the Windows default** — including when that default is *the value not existing at all*
-- **what is not verified** — 132 of the 225 cards carry an explicit "unverified" note
+- **what is not verified** — 121 of the 208 cards carry an explicit "unverified" note
 
 Press `?` on any question for the long version: the reasoning behind the profile table, known bugs, and the exact registry path or command it will run.
 
@@ -64,7 +64,7 @@ Every question in the whole script uses the same five answers, so one digit mean
 
 Press `P` in the SETUP menu to answer every question with one profile in about two minutes. Anything that can lose data still stops and asks.
 
-> **Four identical columns is a normal answer.** Roughly half the cards recommend the same value for all four real profiles, because the setting genuinely does not vary by use case. Inventing a difference to fill the table would be worse than admitting there is none.
+> **Four identical columns is a normal answer.** About three quarters of the settings (158 of 205) recommend the same value for all four real profiles, because the setting genuinely does not vary by use case. Inventing a difference to fill the table would be worse than admitting there is none.
 
 ### Once you answer, the value is written
 
@@ -78,7 +78,7 @@ Even if it already looks correct. On a fresh or foreign machine the write is wha
 |------|-----------|
 | **1 — Manual** | Asks before each step and **explains it fully**, including whether the same step also runs unattended in the auto modes. |
 | **2 — Auto lite** | Quick regular pass: Windows Update, then the file cleanup. |
-| **3 — Auto full** | Everything: apps stopped, DNS, DISM, SFC, Windows Update, cleanup, WSL/Docker compaction, defrag. |
+| **3 — Auto full** | Everything: a pause to close your apps, DNS, DISM, SFC, Windows Update, cleanup, WSL/Docker compaction, defrag. |
 
 **Suffixes:** `3r` = Auto full + reboot · `3s` = + shutdown · same for `2r` / `2s`.
 
@@ -94,7 +94,7 @@ Manual only          CHKDSK
 
 The rule is **regeneration time, not file type**: anything that comes back on its own in well under 30 minutes and loses no user data.
 
-Temp files, GPU and shader caches, browser caches (**never** cookies, history, saved logins or bookmarks), game-launcher caches, Windows Update cache, Delivery Optimization, crash dumps, logs, thumbnails, `Windows.old`, upgrade rollback folders, Recycle Bin. Crash dumps are the exception while **freeze capture** is on: then they are kept, because they are the evidence.
+Temp files, GPU and shader caches, browser caches (**never** cookies, history, saved logins or bookmarks; skipped while that browser is running), game-launcher caches, Windows Update cache, Delivery Optimization, crash dumps, logs, thumbnails, `Windows.old`, upgrade rollback folders, Recycle Bin. Crash dumps are the exception while **freeze capture** is on: then they are kept, because they are the evidence.
 
 Development caches are **in scope** — npm, pip, Gradle, Cargo and friends refetch. A cache big enough that refetching is measured in hours gets its size reported before it goes.
 
@@ -127,11 +127,12 @@ Written down because most of these were mistakes it *used to* make:
 ## 🔧 Reliability
 
 - **CRLF self-heal.** GitHub's release asset is served with LF line endings while the raw file is CRLF. CMD computes `call`/`goto :eof` return addresses as byte offsets assuming CRLF, so an LF copy drifts into the wrong section partway through a long run. OPTY detects this at startup and repairs itself before doing anything.
-- **Runs in place from a git checkout.** Launched from a folder that holds `.git`, OPTY no longer relocates itself to `C:\OPTY_by-YannD` — the relocation deletes the original, and in a checkout the original is the working-tree `OPTY.bat`.
+- **Runs in place from a git checkout.** Launched from a folder that holds `.git`, OPTY no longer relocates itself to `C:\OPTY_by-YannD` — the relocation deletes the original, and in a checkout the original is the working-tree `OPTY.bat`. It does not self-update there either: use `git pull`.
+- **Safe self-update.** Only a newer release is offered, never an older one, and the script is replaced in a single step it has already read, so the running copy never executes half of the new file.
 - **Automatic restore point** before any change.
 - **Complete timestamped logs**, the 5 most recent kept.
 - **Disk-space report** — free space before and after every run.
-- **14 integrity gates** on the release build: CRLF, no stray control bytes, every `goto` and `call` resolves, no card missing a translation, no profile column that cannot be written, no card asked twice, no user-data deletion, no code reading a subroutine's output from inside its own parenthesised block.
+- **14 integrity checks** on the release build: CRLF, no stray control bytes, every `goto` and `call` resolves, no card missing a translation, no profile column that cannot be written, no card asked twice, no user-data deletion, no code reading a subroutine's output from inside its own parenthesised block.
 
 Every one of those gates exists because the bug it catches was found in shipped code.
 
@@ -139,7 +140,7 @@ Every one of those gates exists because the bug it catches was found in shipped 
 
 ## ⚠️ Good to know
 
-- **Closes apps** during cleanup: Docker Desktop, browsers, the Store window.
+- **Does not close your apps.** Auto full pauses and asks you to. Browsers, Discord and game launchers that are still running keep their caches, and the skip is logged.
 - **`Windows.old` and the upgrade staging folders are deleted** — you lose the ability to roll back a Windows upgrade.
 - **`DISM /StartComponentCleanup /ResetBase`** — installed updates can no longer be uninstalled.
 - **`CHKDSK /f /r`** may schedule a check on the next reboot.
