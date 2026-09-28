@@ -212,11 +212,22 @@ echo %date% %time% : Hardened ACL on %OPTY_HOME% (admins+SYSTEM full, users read
 :: and copying by the fixed name then shipped the OLD file sitting next to it -
 :: or nothing, with the exist-check below passing on a previous install. The
 :: copy's own exit code is what proves this run's file arrived.
+:: Never overwrite a NEWER installed copy with this one: launching an old
+:: download used to downgrade C:\OPTY_by-YannD silently. Quoted GTR is a string
+:: compare, which orders the fixed NN.N format.
+set "INSTV="
+if exist "%OPTY_HOME%\OPTY.bat" for /f "tokens=2 delims==" %%V in ('findstr /b /c:"set current_version=" "%OPTY_HOME%\OPTY.bat"') do if not defined INSTV set "INSTV=%%V"
+if defined INSTV if "%INSTV%" GTR "%current_version%" (
+    echo %date% %time% : Installed copy v%INSTV% is newer than this v%current_version% - starting it, not overwriting >> %logs%
+    goto shortcut_start
+)
 copy /y "%~f0" "%OPTY_HOME%\OPTY.bat" >nul 2>&1 || goto shortcut_copyfailed
 if not exist "%OPTY_HOME%\OPTY.bat" goto shortcut_copyfailed
+:shortcut_start
 
 echo %date% %time% : Starting script from new location          >> %logs%
 if exist "%OPTY_HOME%\OPTY_started.tmp" del "%OPTY_HOME%\OPTY_started.tmp" >nul 2>&1
+if exist "%OPTY_HOME%\OPTY_abandoned.tmp" del "%OPTY_HOME%\OPTY_abandoned.tmp" >nul 2>&1
 start "" "%OPTY_HOME%\OPTY.bat"
 :: The exist-check above only proves xcopy worked - it does NOT prove the
 :: relaunched copy is actually alive. `start` returns immediately without
@@ -243,6 +254,10 @@ del "%~f0" & exit
 
 :shortcut_unconfirmed
 echo %date% %time% : Relocated copy never confirmed after 20s - KEEPING the original >> %logs%
+:: This copy carries on. If the relocated one starts late after all, this
+:: marker makes it stand down - two OPTY runs at once would fight over the
+:: same services and registry keys.
+echo. 2>nul > "%OPTY_HOME%\OPTY_abandoned.tmp"
 color 0C
 echo.
 echo  The copy at %OPTY_HOME% did not confirm starting within 20 seconds.
@@ -266,7 +281,20 @@ echo %date% %time% : Running from a git checkout - not relocating, nothing delet
 goto shortcut_done
 
 :shortcut_done
-if /i "%~dp0" == "%OPTY_HOME%\" echo. 2>nul > "%OPTY_HOME%\OPTY_started.tmp"
+:: A relocated copy that starts after the original gave up waiting (see
+:: :shortcut_unconfirmed) stands down: the original is already running.
+if /i not "%~dp0" == "%OPTY_HOME%\" goto shortcut_live
+if not exist "%OPTY_HOME%\OPTY_abandoned.tmp" goto shortcut_announce
+del "%OPTY_HOME%\OPTY_abandoned.tmp" >nul 2>&1
+echo %date% %time% : Relocated copy started after the original gave up - exiting >> %logs%
+echo(
+echo  Another OPTY window is already running - this one closes. Run OPTY again
+echo  from %OPTY_HOME% if that window is gone.
+timeout /t 8
+exit
+:shortcut_announce
+echo. 2>nul > "%OPTY_HOME%\OPTY_started.tmp"
+:shortcut_live
 
 call :sysinfo
 
@@ -652,9 +680,9 @@ echo %date% %time% : Executed ipconfig /flushdns                      >> %logs%
 :netdns_tcp
 :: --- TCP/IP performance tuning ---
 call :L "%cInfo%" "Re-asserting good TCP defaults (autotuning normal / rss on / heuristics off)"
-netsh int tcp set global autotuninglevel=normal
-netsh int tcp set heuristics disabled
-netsh int tcp set global rss=enabled
+netsh int tcp set global autotuninglevel=normal >nul
+netsh int tcp set heuristics disabled >nul
+netsh int tcp set global rss=enabled >nul
 echo %date% %time% : Re-applied TCP good defaults (autotuning/rss/heuristics, ECN left default)  >> %logs%
 if /i %autoclean% == 2 goto dism
 timeout /t 5
@@ -821,8 +849,9 @@ for %%H in (
 ) do reg query "%VC%\%%~H" >nul 2>&1 && reg add "%VC%\%%~H" /v StateFlags0064 /t REG_DWORD /d 0 /f >nul 2>&1
 :: Same rule as :dl_dumps_go - with freeze capture on, the two dump handlers
 :: are switched back off so cleanmgr cannot delete the evidence either.
-reg query "HKLM\SYSTEM\CurrentControlSet\Services\kbdhid\crashdump" /v Dump2Key >nul 2>&1 && for %%H in ("System error memory dump files" "System error minidump files") do reg query "%VC%\%%~H" >nul 2>&1 && reg add "%VC%\%%~H" /v StateFlags0064 /t REG_DWORD /d 0 /f >nul 2>&1
-reg query "HKLM\SYSTEM\CurrentControlSet\Services\kbdhid\crashdump" /v Dump2Key >nul 2>&1 && echo %date% %time% : Freeze capture on - Disk Cleanup dump handlers left off >> %logs%
+call :capturestate
+if defined CAPON for %%H in ("System error memory dump files" "System error minidump files") do reg query "%VC%\%%~H" >nul 2>&1 && reg add "%VC%\%%~H" /v StateFlags0064 /t REG_DWORD /d 0 /f >nul 2>&1
+if defined CAPON echo %date% %time% : Freeze capture on - Disk Cleanup dump handlers left off >> %logs%
 echo %date% %time% : Wrote StateFlags0064 allow-list (17 on / 12 off) >> %logs%
 
 :: /sagerun walks every drive, so a dead SMB mapping can stall it. Hard 10 min cap.
@@ -1134,7 +1163,8 @@ if not defined STEPYES goto dl_bin
 :: hunted and the dump is the evidence: deleting it in the very next CLEAN
 :: would throw away the one thing the capture exists to produce. The old line
 :: here logged "MiniDump kept" and then deleted it two lines later.
-reg query "HKLM\SYSTEM\CurrentControlSet\Services\kbdhid\crashdump" /v Dump2Key >nul 2>&1 && goto dl_dumps_kept
+call :capturestate
+if defined CAPON goto dl_dumps_kept
 :: Crash dumps: deleted on the maintainer's explicit instruction. Note this
 :: loses the only forensic record of a BSOD or GPU driver crash.
 call :L "%cInfo%" "Deleting crash dumps"
@@ -1779,6 +1809,7 @@ reg delete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\DataCollecti
 call :L "%cInfo%" "Restoring MPO (Multi-Plane Overlay) to default"
 reg delete "HKLM\SOFTWARE\Microsoft\Windows\Dwm" /v "OverlayTestMode" /f >nul 2>&1
 reg delete "HKLM\SOFTWARE\Microsoft\Windows\Dwm" /v "OverlayMinFPS" /f >nul 2>&1
+reg delete "HKLM\SOFTWARE\Microsoft\Windows\Dwm" /v "DisableIndependentFlip" /f >nul 2>&1
 reg delete "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" /v "DisableOverlays" /f >nul 2>&1
 
 call :L "%cInfo%" "Re-enabling telemetry scheduled tasks"
@@ -1937,11 +1968,11 @@ call :killkey "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" "DisableOv
 :: NOT removed: UnsupportedMonitorModesAllowed. It is dxgkrnl's custom-mode
 :: gate (CRU / Adrenalin custom timings), unrelated to MPO, it is set to 1 on
 :: this machine, and nothing here would ever write it back.
-:: AMD added HAGS support for RX 7700-7900 in Adrenalin 23.12.1 (Windows 11 22H2+),
-:: and GPUOpen asks for it with FSR 3 frame generation on RX 7000. The Anti-Lag 2
-:: SDK lists no HAGS requirement (it supports RX 5000, which has no HAGS at all).
-call :regset "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" "HwSchMode" REG_DWORD 2 "Hardware GPU scheduling"
-call :L "%cInfo%" "Re-asserted hardware GPU scheduling (HwSchMode=2)"
+:: NOT written here any more: HwSchMode. HAGS is asked in SETUP -> Display /
+:: GPU (rad.hwschmode), and writing 2 unasked here silently undid an A/B test
+:: of it - one of the levers when chasing freezes. The pre-check reports it.
+:: (AMD added HAGS support for RX 7700-7900 in Adrenalin 23.12.1, Windows 11
+:: 22H2+; GPUOpen asks for it with FSR 3 frame generation on RX 7000.)
 
 call :L "%cInfo%" "Windows Update driver delivery (verified broken on real machines)"
 :: SearchOrderConfig=0 and ExcludeWUDriversInQualityUpdate=1 together stop WU
@@ -2078,11 +2109,10 @@ for %%V in (TdrLevel TdrDelay TdrDdiDelay TdrLimitCount TdrLimitTime TdrDebugMod
 :: longer be interrupted, which is what TDR relies on to recover.
 call :killkey "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers\Scheduler" "EnablePreemption"
 
-call :L "%cInfo%" "Power throttling override (per-app is the supported verb)"
-:: EcoQoS only ever throttled processes Windows classifies as BACKGROUND - the
-:: foreground game was never affected. What the global override actually buys is
-:: Search, Defender and Store updates running at full clocks during your session.
-call :killkey "HKLM\SYSTEM\CurrentControlSet\Control\Power\PowerThrottling" "PowerThrottlingOff"
+:: NOT here any more: PowerThrottlingOff. It is a preference asked in SETUP
+:: (power.throttling.off, SERVER = 1), and this unconditional delete undid the
+:: server's answer every time "re-assert good defaults" ran. Undo ALL (Restore
+:: -> 2) still removes it, because that one is meant to return everything.
 
 call :L "%cInfo%" "Windows Update - services and policies"
 :: Repair ONLY services that are DISABLED. wlidsvc disabled means feature updates
@@ -2416,7 +2446,18 @@ call :askreg "rad.hwschmode" 5 "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDr
 :: --- MPO leftovers. Their true default is ABSENT, so every profile is DELETE.
 :: Writing 0 here would be a third state, not a restore - the distinction that
 :: has bitten this file more than once.
-call :askreg "rad.overlay.killkey" 5 "HKLM\SOFTWARE\Microsoft\Windows\Dwm" "OverlayTestMode" REG_DWORD "MPO override (OverlayTestMode)"
+:: The card covers four values, and :askreg only ever removed OverlayTestMode -
+:: the other three survived a DELETE answer. On 25H2 DisableOverlays is
+:: reported to be the one that still works, so it was the one left behind.
+call :ask "rad.overlay.killkey" 5
+if "%ANSWER%"=="SKIP" goto sg_mpo_done
+call :profval "rad.overlay.killkey" "%ANSWER%"
+if /i not "%PROFVAL%"=="DELETE" goto sg_mpo_done
+call :killkey "HKLM\SOFTWARE\Microsoft\Windows\Dwm" "OverlayTestMode"
+call :killkey "HKLM\SOFTWARE\Microsoft\Windows\Dwm" "OverlayMinFPS"
+call :killkey "HKLM\SOFTWARE\Microsoft\Windows\Dwm" "DisableIndependentFlip"
+call :killkey "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" "DisableOverlays"
+:sg_mpo_done
 call :ask "rad.gpu.tdr.killkeys" 5
 if not "%ANSWER%"=="SKIP" (
     for %%V in (TdrLevel TdrDelay TdrDdiDelay TdrLimitCount TdrLimitTime TdrDebugMode) do call :killkey "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" "%%V"
@@ -4310,6 +4351,14 @@ if "%HVCIV%"=="0x0" (
 )
 goto :eof
 
+:capturestate
+:: -> CAPON=1 when freeze capture is armed on either keyboard driver. Only the
+:: USB one (kbdhid) used to be tested, so a PS/2-only setup lost its dumps.
+set "CAPON="
+reg query "HKLM\SYSTEM\CurrentControlSet\Services\kbdhid\crashdump" /v Dump2Key >nul 2>&1 && set "CAPON=1"
+reg query "HKLM\SYSTEM\CurrentControlSet\Services\i8042prt\crashdump" /v Dump2Key >nul 2>&1 && set "CAPON=1"
+goto :eof
+
 :rebootpending
 :: -> REBOOTPEND=1 when Windows is waiting for a restart to finish servicing.
 :: Registry only: both keys exist exactly while a restart is pending, and
@@ -4432,8 +4481,17 @@ goto :eof
 :nicenummax
 :: %~1 = class key, %~2 = keyword -> NENUMMAX = highest value the driver enumerates
 :: (the I211 only enumerates 1 and 2 RSS queues - asking for 4 or 8 is a myth)
+:: The numerically highest entry, not the last one reg query lists: that is
+:: only the highest when the driver happens to list its values in order.
 set "NENUMMAX="
-for /f "tokens=1" %%E in ('reg query "%~1\Ndi\Params\%~2\Enum" 2^>nul ^| findstr /i "REG_SZ"') do set "NENUMMAX=%%E"
+for /f "tokens=1" %%E in ('reg query "%~1\Ndi\Params\%~2\Enum" 2^>nul ^| findstr /i "REG_SZ"') do call :nicenumone "%%E"
+goto :eof
+
+:nicenumone
+:: %~1 = one Enum value name -> raises NENUMMAX when it is a larger number
+for /f "delims=0123456789" %%X in ("%~1") do goto :eof
+if not defined NENUMMAX ( set "NENUMMAX=%~1" & goto :eof )
+if %~1 GTR %NENUMMAX% set "NENUMMAX=%~1"
 goto :eof
 
 :nicdefault
