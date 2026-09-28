@@ -74,7 +74,6 @@ if exist "%~dp0OPTY_healed.bat" del "%~dp0OPTY_healed.bat" >nul 2>&1
 if exist "%~dp0OPTY_healed.target" del "%~dp0OPTY_healed.target" >nul 2>&1
 :: ===========================================================================
 
-set GitHubRawLink=https://raw.githubusercontent.com/YannD-Deltagon/OPTY/master/resources/
 set GitHubLatestLink=https://github.com/YannD-Deltagon/OPTY/releases/latest/download/
 
 :: ---- User / paths configuration (edit here if your username or layout differs) ----
@@ -202,7 +201,11 @@ icacls "%OPTY_HOME%" /grant "*S-1-5-32-544:(OI)(CI)F" >nul 2>&1
 icacls "%OPTY_HOME%" /grant "*S-1-5-18:(OI)(CI)F"     >nul 2>&1
 icacls "%OPTY_HOME%" /grant "*S-1-5-32-545:(OI)(CI)RX" >nul 2>&1
 echo %date% %time% : Hardened ACL on %OPTY_HOME% (admins+SYSTEM full, users read-only) >> %logs%
-xcopy /y /q "%~dp0OPTY.bat" "%OPTY_HOME%\" >nul
+:: %~f0, not %~dp0OPTY.bat: a browser saves a second download as "OPTY (1).bat",
+:: and copying by the fixed name then shipped the OLD file sitting next to it -
+:: or nothing, with the exist-check below passing on a previous install. The
+:: copy's own exit code is what proves this run's file arrived.
+copy /y "%~f0" "%OPTY_HOME%\OPTY.bat" >nul 2>&1 || goto shortcut_copyfailed
 if not exist "%OPTY_HOME%\OPTY.bat" goto shortcut_copyfailed
 
 echo %date% %time% : Starting script from new location          >> %logs%
@@ -228,8 +231,8 @@ goto shortcut_wait
 :shortcut_confirmed
 del "%OPTY_HOME%\OPTY_started.tmp" >nul 2>&1
 echo %date% %time% : Relocated copy confirmed running - removing the original >> %logs%
-del "%~dp0OPTY.bat"
-exit
+:: One line: once the running file is gone CMD cannot read a next line.
+del "%~f0" & exit
 
 :shortcut_unconfirmed
 echo %date% %time% : Relocated copy never confirmed after 20s - KEEPING the original >> %logs%
@@ -290,7 +293,9 @@ if %errorlevel%==0 (
     echo   attempt : %loop_pinggh% "(max : 5)"                
     echo.                                                
     set /a loop_pinggh=%loop_pinggh%+1
-    if %loop_pinggh%==5 goto ping_github_failed
+    rem The block expands loop_pinggh before set /a runs, so this tests the
+    rem pre-increment count: 4 here is the fifth attempt.
+    if %loop_pinggh%==4 goto ping_github_failed
     timeout /t 1
     goto ping_github_loop
 )
@@ -307,7 +312,7 @@ echo  Ping check failed.
 echo  local mode                                              
 echo.                                                  
 timeout /t 5
-goto update_not_available
+goto update_unknown
 
 :update_opty
 color 0E
@@ -324,12 +329,20 @@ set "latest_version="
 for /f "tokens=2 delims=V" %%a in ('curl -s https://api.github.com/repos/YannD-Deltagon/OPTY/releases/latest -L -H "Accept: application/json" ^| findstr "tag_name"') do set "latest_version=%%a"
 if not defined latest_version (
     echo %date% %time% : Version check failed - staying on %current_version%  >> %logs%
-    goto update_not_available
+    goto update_unknown
 )
 set "latest_version=%latest_version:~0,-2%"
-if not defined latest_version goto update_not_available
+if not defined latest_version goto update_unknown
 echo %date% %time% : current_version=%current_version%, latest_version=%latest_version% >> %logs%
-if "%current_version%"=="%latest_version%" goto update_not_available
+:: Only a NEWER release is an update. The old test was "not equal", so a build
+:: ahead of the latest release (a 05.1 checkout while 05.0 is published) was
+:: offered 05.0 as an "update" and the downgrade overwrote it. Quoted operands
+:: make GTR a string compare, which orders the fixed NN.N format correctly and
+:: sidesteps set /a reading 08 and 09 as invalid octal.
+if not "%latest_version%" GTR "%current_version%" goto update_not_available
+:: A git checkout updates through git. Overwriting the working-tree OPTY.bat
+:: with a release asset is the same loss :shortcut_checkout exists to prevent.
+if exist "%~dp0.git" goto update_checkout
 echo %date% %time% : Update found                          >> %logs%
 color 0E
 cls
@@ -387,15 +400,22 @@ if exist "%~dp0new_OPTY_crlf.bat" move /y "%~dp0new_OPTY_crlf.bat" "%~dp0new_OPT
 find /c "set current_version=" "%~dp0new_OPTY.bat" >nul 2>&1 || goto update_download_failed
 echo %date% %time% : Downloaded, CRLF-normalised and validated new_OPTY.bat >> %logs%
 copy /y "%~dp0OPTY.bat" "%~dp0OPTY_rollback.bat" >nul 2>&1
-move /y "%~dp0new_OPTY.bat" "%~dp0OPTY.bat" >nul || goto update_download_failed
-echo %date% %time% : Replaced old OPTY.bat with new version     >> %logs%
-echo.
-echo The script has been updated to %latest_version%.
-echo  (previous version kept as OPTY_rollback.bat)
-echo.
-start "" "%~dp0OPTY.bat"
-echo %date% %time% : Relaunched updated script                  >> %logs%
-exit
+:: The swap, the relaunch and the exit MUST sit in one parenthesised block.
+:: move replaces the file this process is running from, and CMD reads the next
+:: line at its saved byte offset - in the NEW file, so the old one-line-per-
+:: command form ran whatever the new version held at that offset (the CRLF
+:: self-heal header explains the same trap). A block is read whole before any
+:: of it runs, so nothing is read from disk after the move.
+(
+    move /y "%~dp0new_OPTY.bat" "%~dp0OPTY.bat" >nul || goto update_download_failed
+    echo %date% %time% : Replaced OPTY.bat with %latest_version%, relaunching >> %logs%
+    echo(
+    echo The script has been updated to %latest_version%.
+    echo  ^(previous version kept as OPTY_rollback.bat^)
+    echo(
+    start "" "%~dp0OPTY.bat"
+    exit
+)
 
 :update_download_failed
 del /f /q "%~dp0new_OPTY.bat" >nul 2>&1
@@ -428,8 +448,32 @@ echo %date% %time% : No update available                         >> %logs%
 color 30
 cls
 echo.                                                  
-echo You are running the latest version of this script: %current_version%. 
-echo.                                                  
+echo You are running the latest version of this script: %current_version%.
+echo.
+goto menu
+
+:update_unknown
+:: Ping failure and an unreadable API answer used to land on
+:: :update_not_available, which logged and printed "latest version" for a
+:: check that never happened.
+echo %date% %time% : Update check not possible - staying on %current_version% >> %logs%
+color 60
+cls
+echo(
+echo  Could not check for updates - continuing with version %current_version%.
+echo(
+timeout /t 3 >nul
+goto menu
+
+:update_checkout
+echo %date% %time% : v%latest_version% available, not applied - running from a git checkout >> %logs%
+color 0E
+cls
+echo(
+echo  Version %latest_version% is available, but this copy runs from a git checkout.
+echo  Update it with git pull - OPTY does not overwrite a working tree.
+echo(
+timeout /t 5
 goto menu
 
 
@@ -486,11 +530,6 @@ echo.                                                           >> %logs%
 echo ====================== :MOPTI ======================           >> %logs%
 echo.                                                           >> %logs%
 echo %date% %time% : Entered :mopti label                           >> %logs%
-if /i "%AutoOpti_Shutdown%"=="1" (
-    echo %date% %time% : AutoOpti_Shutdown flag detected            >> %logs%
-    goto wupdate
-)
-
 cls
 call :banner "CLEAN"
 echo(
@@ -719,7 +758,7 @@ set "VC=HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches"
 ::  - /verylowdisk runs EVERY registered handler, third-party ones included,
 ::    with no prompt and no record of what it removed.
 :: Now: wipe the legacy profiles, write an explicit allow-list, run that.
-call :L "%cWarn%" "Clearing the old profile (it had Recycle Bin + File History ON)"
+call :L "%cInfo%" "Clearing the legacy Disk Cleanup profiles 6553 and 65535"
 for /f "delims=" %%K in ('reg query "%VC%" 2^>nul') do (
     reg delete "%%K" /v StateFlags6553  /f >nul 2>&1
     reg delete "%%K" /v StateFlags65535 /f >nul 2>&1
@@ -739,7 +778,6 @@ for %%H in (
  "RetailDemo Offline Content"
  "Setup Log Files"
  "Temporary Files"
- "Thumbnail Cache"
  "Windows Defender"
  "Windows Error Reporting Files"
  "Windows Upgrade Log Files"
@@ -749,6 +787,9 @@ for %%H in (
 ) do reg query "%VC%\%%~H" >nul 2>&1 && reg add "%VC%\%%~H" /v StateFlags0064 /t REG_DWORD /d 2 /f >nul 2>&1
 
 :: DISABLE - re-asserted explicitly rather than left to chance.
+:: Thumbnail Cache is here, not above: the manual pass keeps thumbcache on
+:: purpose (Explorer re-renders every thumbnail, painful in footage folders),
+:: and arming it here deleted exactly what that pass was careful to keep.
 for %%H in (
  "BranchCache"
  "Content Indexer Cleaner"
@@ -758,6 +799,7 @@ for %%H in (
  "Old ChkDsk Files"
  "Previous Installations"
  "Temporary Setup Files"
+ "Thumbnail Cache"
  "Update Cleanup"
  "Upgrade Discarded Files"
  "User file versions"
@@ -767,7 +809,7 @@ for %%H in (
 :: are switched back off so cleanmgr cannot delete the evidence either.
 reg query "HKLM\SYSTEM\CurrentControlSet\Services\kbdhid\crashdump" /v Dump2Key >nul 2>&1 && for %%H in ("System error memory dump files" "System error minidump files") do reg query "%VC%\%%~H" >nul 2>&1 && reg add "%VC%\%%~H" /v StateFlags0064 /t REG_DWORD /d 0 /f >nul 2>&1
 reg query "HKLM\SYSTEM\CurrentControlSet\Services\kbdhid\crashdump" /v Dump2Key >nul 2>&1 && echo %date% %time% : Freeze capture on - Disk Cleanup dump handlers left off >> %logs%
-echo %date% %time% : Wrote StateFlags0064 allow-list (14 on / 15 off) >> %logs%
+echo %date% %time% : Wrote StateFlags0064 allow-list (16 on / 13 off) >> %logs%
 
 :: /sagerun walks every drive, so a dead SMB mapping can stall it. Hard 10 min cap.
 start "" cleanmgr /sagerun:64
@@ -940,16 +982,20 @@ call :L "%cStep%" "CLEANUP - deleting temp files, caches, logs and dumps..."
 :: A launcher being up is a machine-wide fact established before ANY card in
 :: this cascade can be declined, so it is probed once, right here, and the
 :: answer carries into every group below.
-set "RUNUBI=" & set "RUNEA=" & set "RUNEPIC="
+set "RUNUBI=" & set "RUNEA=" & set "RUNEPIC=" & set "RUNDISC="
 call :isrunning "upc.exe"
 if defined RUNNING set "RUNUBI=1"
 call :isrunning "EADesktop.exe"
 if defined RUNNING set "RUNEA=1"
 call :isrunning "EpicGamesLauncher.exe"
 if defined RUNNING set "RUNEPIC=1"
+:: Discord too: :userclean empties every profile's Discord caches under the
+:: browser card, which runs BEFORE :dl_discord and its own running check.
+for %%P in (Discord.exe DiscordPTB.exe DiscordCanary.exe) do call :isrunning "%%P" & if defined RUNNING set "RUNDISC=1"
 if defined RUNUBI  call :L "%cWarn%" "  Ubisoft Connect is running - its caches will be skipped"
 if defined RUNEA   call :L "%cWarn%" "  EA App is running - its caches will be skipped"
 if defined RUNEPIC call :L "%cWarn%" "  Epic Games Launcher is running - its caches will be skipped"
+if defined RUNDISC call :L "%cWarn%" "  Discord is running - its caches will be skipped"
 
 :dl_wu
 if not "%autoclean%"=="0" goto dl_wu_go
@@ -999,7 +1045,7 @@ if not defined STEPYES goto dl_shader
 :dl_utemp_go
 echo %date% %time% : Deleting user Temp files                         >> %logs%
 setlocal
-for /D %%i in ("C:\Users\*") do (
+for /D %%i in ("%SystemDrive%\Users\*") do (
    echo %date% %time% : Deleting Temp in %%i\AppData\Local\Temp        >> %logs%
    del /S /F /Q "%%i\AppData\Local\Temp\*"
 )
@@ -1085,10 +1131,13 @@ if not defined STEPYES goto dl_wer
 :: handler above covers it properly via the shell API; this pass catches the
 :: other volumes. FIXED drives only - a disconnected SMB mapping would stall.
 call :L "%cInfo%" "Emptying the Recycle Bin on every fixed drive"
+:: FIXEDLIST is built by the PER-DRIVE JUNK step. Declining that card in manual
+:: mode left it empty and this loop emptied nothing.
+if not defined FIXEDLIST call :fixeddrives
 for %%D in (%FIXEDLIST%) do if exist "%%D:\$Recycle.Bin" rd /S /Q "%%D:\$Recycle.Bin" >nul 2>&1
 
 :: --- Thumbnail & icon cache (rebuilt automatically; locked files are skipped) ---
-echo %date% %time% : Thumbnail cache cleared - icon cache deliberately NOT touched, see comment above >> %logs%
+echo %date% %time% : Thumbnail and icon caches deliberately left alone, see comment below >> %logs%
 :: thumbcache kept: Explorer visibly re-generates every thumbnail afterwards,
 :: painful in large footage folders. iconcache is cheap so it stays.
 :: REMOVED: del of iconcache_*.db. Measured on a live machine: the five files
@@ -1163,7 +1212,6 @@ del /F /Q "%WINDIR%\Logs\CBS\CbsPersist_*.cab" >nul 2>&1
 del /F /S /Q "%WINDIR%\Panther\*" 2>nul
 
 :: --- Legacy IE/Edge system web cache (INetCache) ---
-echo %date% %time% : Deleting INetCache                             >> %logs%
 :: INetCache left alone: shared WinINET cache used by Office, the Store and
 :: installers, and it stages Outlook attachments that may be open.
 
@@ -1208,10 +1256,6 @@ call :L "%cInfo%" "Clearing browser caches - every user and profile; running bro
 :: Every Windows user, not just the one running the script, and every browser
 :: family - including ones not installed here, which cost nothing to probe.
 for /d %%U in ("%SystemDrive%\Users\*") do call :userclean "%%~fU"
-:: WebView2 shares the Chromium cache layout and rots the same way
-del /S /F /Q "%LOCALAPPDATA%\Microsoft\EdgeWebView\Cache\*"        >nul 2>&1
-del /S /F /Q "%LOCALAPPDATA%\Microsoft\EdgeWebView\User Data\Default\Cache\*"      >nul 2>&1
-del /S /F /Q "%LOCALAPPDATA%\Microsoft\EdgeWebView\User Data\Default\Code Cache\*" >nul 2>&1
 
 :: --- Windows.old (removes rollback): Auto full, or asked in manual ---
 :dl_winold
@@ -1221,22 +1265,28 @@ call :step "cl.winold.remove" "clean.winold" "WINDOWS.OLD"
 if "%STEPYES%"=="REDRAW" goto dl_winold
 if not defined STEPYES goto dl_discord
 :dl_winold_go
+:: /SKIPSL and /L keep the recursion out of the live profile. Windows.old
+:: still holds the legacy compatibility junctions - "Local Settings",
+:: "Application Data", "My Documents" - and their stored targets are
+:: ABSOLUTE paths into the CURRENT C:\Users profile. takeown /R and
+:: icacls /T follow links unless told otherwise, so without these two
+:: switches the recursion can reassign ownership and ACLs on folders that
+:: are still in service. That change is invisible, it survives the cleanup,
+:: and nothing in this script puts it back.
+:: The group is the Administrators SID, not the word "administrators": a
+:: French system names it Administrateurs and icacls refused the grant, so rd
+:: below never got its rights (same trap as the ACL hardening in :shortcut).
+:: takeown's /D answer is localised too (O on French), hence the fallback.
+:: rd /S /Q regularly does NOT finish here: hardlinked servicing files and
+:: entries whose ACLs could not be changed stay behind. The errors were
+:: being thrown away, so a partly-deleted Windows.old was reported as a
+:: clean success. Check afterwards and say so.
+:: The comments sit above the block on purpose: :: lines inside ( ) are
+:: parsed as labels and can print "The system cannot find the drive".
 if exist "%SystemDrive%\Windows.old" (
     echo %date% %time% : Removing Windows.old previous installation  >> %logs%
-    :: /SKIPSL and /L keep the recursion out of the live profile. Windows.old
-    :: still holds the legacy compatibility junctions - "Local Settings",
-    :: "Application Data", "My Documents" - and their stored targets are
-    :: ABSOLUTE paths into the CURRENT C:\Users profile. takeown /R and
-    :: icacls /T follow links unless told otherwise, so without these two
-    :: switches the recursion can reassign ownership and ACLs on folders that
-    :: are still in service. That change is invisible, it survives the cleanup,
-    :: and nothing in this script puts it back.
-    takeown /F "%SystemDrive%\Windows.old" /R /A /D Y /SKIPSL        >nul 2>&1
-    icacls "%SystemDrive%\Windows.old" /grant administrators:F /T /C /L >nul 2>&1
-    :: rd /S /Q regularly does NOT finish here: hardlinked servicing files and
-    :: entries whose ACLs could not be changed stay behind. The errors were
-    :: being thrown away, so a partly-deleted Windows.old was reported as a
-    :: clean success. Check afterwards and say so.
+    takeown /F "%SystemDrive%\Windows.old" /R /A /D Y /SKIPSL >nul 2>&1 || takeown /F "%SystemDrive%\Windows.old" /R /A /D O /SKIPSL >nul 2>&1
+    icacls "%SystemDrive%\Windows.old" /grant *S-1-5-32-544:F /T /C /L >nul 2>&1
     rd /S /Q "%SystemDrive%\Windows.old" 2>nul
     if exist "%SystemDrive%\Windows.old" (
         call :L "%cWarn%" "  Windows.old only PARTLY removed - locked or hardlinked files remain"
@@ -1439,7 +1489,10 @@ echo.                                                           >> %logs%
 echo ====================== :CHKDSK_FULL ====================== >> %logs%
 echo %date% %time% : Entered :chkdsk_full label                    >> %logs%
 call :L "%cWarn%" "CHKDSK /f /r - full repair, locks the volume and schedules a reboot..."
-CHKDSK /f /r
+:: The volume is explicit. Bare "CHKDSK /f /r" checks the CURRENT drive, and
+:: startup does cd /d "%~dp0": launched from D:\Downloads it repaired D: and
+:: never looked at the system drive.
+CHKDSK %SystemDrive% /f /r
 >>%logs% echo %date% %time% : CHKDSK /f /r exit=%errorlevel%
 echo %date% %time% : Executed CHKDSK /f /r                         >> %logs%
 timeout /t 5
@@ -1495,6 +1548,9 @@ echo(
 >>%logs% echo %date% %time% : DISK REPORT %SystemDrive% before=%FREE_BEFORE%MB after=%FREE_AFTER%MB freed=%FREED%MB approx=%FREED_GB%GB
 timeout /t 6 /nobreak >nul
 :skip_disk_report
+:: Consumed. Left set, a later Repair -> 1 in the same session compared its
+:: "after" against this run's "before" and printed a report for nothing.
+set "FREE_BEFORE="
 
 if /i %autoshutdownreboot% == 0 goto skipshutdownreboot
 if /i %autoshutdownreboot% == 1 goto shutdown
@@ -1523,7 +1579,7 @@ if /i "%choice%"=="0" goto menu
 echo This is not a valid action                                      
 echo %date% %time% : Invalid option in :mshutdownrebootfix                >> %logs%
 timeout /t 5
-goto mshutdownreboot
+goto mshutdownrebootfix
 
 :shutdown
 echo.                                                           >> %logs%
@@ -1675,9 +1731,10 @@ call :L "%cInfo%" "Re-enabling USB selective suspend (default)"
 call :killkey "HKLM\SYSTEM\CurrentControlSet\Services\USB" "DisableSelectiveSuspend"
 
 call :L "%cInfo%" "Re-enabling background apps + telemetry (default)"
-reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications" /v "GlobalUserDisabled" /t REG_DWORD /d 0 /f >nul
-reg delete "HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy" /v "LetAppsRunInBackground" /f >nul 2>&1
-reg delete "HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection" /v "AllowTelemetry" /f >nul 2>&1
+:: gr.backgroundapps.on is DELETE in every column: absent is the shipped state.
+call :killkey "HKCU\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications" "GlobalUserDisabled"
+call :killkey "HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy" "LetAppsRunInBackground"
+call :killkey "HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection" "AllowTelemetry"
 reg delete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\DataCollection" /v "AllowTelemetry" /f >nul 2>&1
 
 call :L "%cInfo%" "Restoring MPO (Multi-Plane Overlay) to default"
@@ -1686,23 +1743,19 @@ reg delete "HKLM\SOFTWARE\Microsoft\Windows\Dwm" /v "OverlayMinFPS" /f >nul 2>&1
 reg delete "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" /v "DisableOverlays" /f >nul 2>&1
 
 call :L "%cInfo%" "Re-enabling telemetry scheduled tasks"
-schtasks /Change /TN "\Microsoft\Windows\Application Experience\Microsoft Compatibility Appraiser Exp" /Enable >nul 2>&1
-schtasks /Change /TN "\Microsoft\Windows\Application Experience\PcaPatchDbTask" /Enable >nul 2>&1
-schtasks /Change /TN "\Microsoft\Windows\Application Experience\StartupAppTask" /Enable >nul 2>&1
-schtasks /Change /TN "\Microsoft\Windows\Customer Experience Improvement Program\Consolidator" /Enable >nul 2>&1
-schtasks /Change /TN "\Microsoft\Windows\Customer Experience Improvement Program\UsbCeip" /Enable >nul 2>&1
-schtasks /Change /TN "\Microsoft\Windows\Feedback\Siuf\DmClient" /Enable >nul 2>&1
-schtasks /Change /TN "\Microsoft\Windows\Feedback\Siuf\DmClientOnScenarioDownload" /Enable >nul 2>&1
+:: The same list SETUP disables. The hand-written copy here missed the classic
+:: "Microsoft Compatibility Appraiser" name and hid every result behind >nul.
+call :taskset enable
 
 call :L "%cInfo%" "Restoring Recall / Copilot / Consumer Features / Widgets"
-reg delete "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsAI" /v "DisableAIDataAnalysis" /f >nul 2>&1
-reg delete "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsAI" /v "AllowRecallEnablement" /f >nul 2>&1
-reg delete "HKCU\Software\Policies\Microsoft\Windows\WindowsAI" /v "DisableAIDataAnalysis" /f >nul 2>&1
+call :killkey "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsAI" "DisableAIDataAnalysis"
+call :killkey "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsAI" "AllowRecallEnablement"
+call :killkey "HKCU\Software\Policies\Microsoft\Windows\WindowsAI" "DisableAIDataAnalysis"
 sc config WSAIFabricSvc start= demand >nul 2>&1
-reg delete "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot" /v "TurnOffWindowsCopilot" /f >nul 2>&1
-reg delete "HKCU\Software\Policies\Microsoft\Windows\WindowsCopilot" /v "TurnOffWindowsCopilot" /f >nul 2>&1
-reg delete "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" /v "DisableWindowsConsumerFeatures" /f >nul 2>&1
-reg delete "HKLM\SOFTWARE\Policies\Microsoft\Dsh" /v "AllowNewsAndInterests" /f >nul 2>&1
+call :killkey "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot" "TurnOffWindowsCopilot"
+call :killkey "HKCU\Software\Policies\Microsoft\Windows\WindowsCopilot" "TurnOffWindowsCopilot"
+call :killkey "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" "DisableWindowsConsumerFeatures"
+call :killkey "HKLM\SOFTWARE\Policies\Microsoft\Dsh" "AllowNewsAndInterests"
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v "TaskbarDa" /t REG_DWORD /d 1 /f >nul
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v "ShowTaskViewButton" /t REG_DWORD /d 1 /f >nul
 
@@ -1734,7 +1787,7 @@ call :svcset "TabletInputService" demand        3 "TabletInputService (touch key
 reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\DriverSearching" /v "SearchOrderConfig" /t REG_DWORD /d 1 /f >nul
 reg add "HKCU\System\GameConfigStore" /v "GameDVR_Enabled" /t REG_DWORD /d 1 /f >nul
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\GameDVR" /v "AppCaptureEnabled" /t REG_DWORD /d 1 /f >nul
-reg delete "HKLM\SOFTWARE\Policies\Microsoft\Windows\GameDVR" /v "AllowGameDVR" /f >nul 2>&1
+call :killkey "HKLM\SOFTWARE\Policies\Microsoft\Windows\GameDVR" "AllowGameDVR"
 reg add "HKLM\SOFTWARE\Microsoft\PolicyManager\default\ApplicationManagement\AllowGameDVR" /v "value" /t REG_DWORD /d 1 /f >nul
 powercfg /h on >nul
 
@@ -1748,7 +1801,7 @@ reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManage
 reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" /v "SilentInstalledAppsEnabled" /f >nul 2>&1
 reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" /v "PreInstalledAppsEnabled" /f >nul 2>&1
 reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" /v "RotatingLockScreenOverlayEnabled" /f >nul 2>&1
-reg delete "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" /v "DisableWindowsSpotlightFeatures" /f >nul 2>&1
+call :killkey "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" "DisableWindowsSpotlightFeatures"
 
 :: Pointer acceleration is a preference (mouse.accel.off: Gaming wants true
 :: 1:1, Office/Laptop/Windows want the Windows default), not a single value
@@ -1758,6 +1811,15 @@ reg delete "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" /v "DisableWi
 call :ask_mouse_accel
 call :mousecurve
 call :mouseapply
+
+:: SETUP writes these four and the undo never reverted them.
+call :L "%cInfo%" "Restoring menu animation, window drag, power plan and AMD ULPS"
+call :regset "HKCU\Control Panel\Desktop" "MenuAnimate" REG_SZ 1 "Menu animations"
+call :regset "HKCU\Control Panel\Desktop" "DragFullWindows" REG_SZ 1 "Show window contents while dragging"
+call :ultremove
+call :gpuvendor
+if defined GPUAMD reg query "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000" /v EnableUlps >nul 2>&1 && call :regset "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000" "EnableUlps" REG_DWORD 1 "AMD ULPS"
+if defined GPUAMD reg query "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000" /v EnableUlps_NA >nul 2>&1 && call :regset "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000" "EnableUlps_NA" REG_SZ 1 "AMD ULPS (string twin)"
 
 call :L "%cOK%" "All profile defaults restored (gaming + debloat + services + mouse)."
 pause
@@ -1794,12 +1856,12 @@ call :L "%cInfo%" "Windows Firewall ON (all profiles)"
 netsh advfirewall set allprofiles state on >nul
 
 call :L "%cInfo%" "Microsoft Defender real-time ON (removing disable overrides)"
-reg delete "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender" /v "DisableAntiSpyware" /f >nul 2>&1
-reg delete "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender" /v "DisableAntiVirus" /f >nul 2>&1
-reg delete "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" /v "DisableRealtimeMonitoring" /f >nul 2>&1
-reg delete "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" /v "DisableBehaviorMonitoring" /f >nul 2>&1
-reg delete "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" /v "DisableOnAccessProtection" /f >nul 2>&1
-reg delete "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" /v "DisableScanOnRealtimeEnable" /f >nul 2>&1
+call :killkey "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender" "DisableAntiSpyware"
+call :killkey "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender" "DisableAntiVirus"
+call :killkey "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" "DisableRealtimeMonitoring"
+call :killkey "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" "DisableBehaviorMonitoring"
+call :killkey "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" "DisableOnAccessProtection"
+call :killkey "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" "DisableScanOnRealtimeEnable"
 
 call :L "%cInfo%" "UAC ON (EnableLUA=1, secure prompt) - reboot needed if it was off"
 call :regset "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" "EnableLUA" REG_DWORD 1 "UAC EnableLUA"
@@ -2021,12 +2083,13 @@ set "WUP=HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"
 for %%V in (NoAutoUpdate AUOptions UseWUServer WUServer WUStatusServer SetDisableUXWUAccess DisableWindowsUpdateAccess SetUpdateNotificationLevel DeferQualityUpdates DeferQualityUpdatesPeriodInDays DeferFeatureUpdates DeferFeatureUpdatesPeriodInDays TargetReleaseVersion TargetReleaseVersionInfo PauseQualityUpdatesStartTime PauseFeatureUpdatesStartTime BranchReadinessLevel DisableDualScan) do call :killkey "%WUP%" "%%V"
 for %%V in (NoAutoUpdate AUOptions UseWUServer NoAutoRebootWithLoggedOnUsers) do call :killkey "%WUP%\AU" "%%V"
 :: Delivery Optimization: mode 100 (Bypass) is deprecated and breaks downloads on
-:: 24H2+, mode 99 (Simple) is the offline mode. Both are deletes, not rewrites.
+:: 24H2+, so it is deleted. Mode 99 (Simple, no peering) is a valid, supported
+:: choice - removing it overrode a deliberate setting, which the
+:: rad.do.mode.killkey card already said this line should not do.
 set "DOP=HKLM\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization"
 set "DODM="
 for /f "tokens=3" %%A in ('reg query "%DOP%" /v DODownloadMode 2^>nul ^| findstr /i /c:"    DODownloadMode    REG_"') do set "DODM=%%A"
 if "%DODM%"=="0x64" call :killkey "%DOP%" "DODownloadMode"
-if "%DODM%"=="0x63" call :killkey "%DOP%" "DODownloadMode"
 for %%V in (DOMaxDownloadBandwidth DOPercentageMaxDownloadBandwidth DOMaxUploadBandwidth) do call :killkey "%DOP%" "%%V"
 goto rad_bcd
 :rad_wu_report
@@ -2457,9 +2520,22 @@ call :askreg "mo.superfetch.killkey" 5 "HKLM\SYSTEM\CurrentControlSet\Control\Se
 :: --- so these are asked but never create one where Windows had none.
 call :ask "rad.pwr.procfreqmax" 5
 if "%ANSWER%"=="SKIP" goto ss_done
+call :profval "rad.pwr.procfreqmax" "%ANSWER%"
 set "ACTSCH=" & set "SUBP=54533251-82be-4824-96c1-47b60b740d00"
 for /f "tokens=3" %%A in ('reg query "HKLM\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes" /v ActivePowerScheme 2^>nul ^| findstr /i /c:"    ActivePowerScheme    REG_"') do set "ACTSCH=%%A"
 if not defined ACTSCH goto ss_done
+:: The card's WINDOWS column is DELETE: remove the overrides so the plan
+:: inherits again. Every answer used to run :pwrfix, which writes a value -
+:: the "third state" the card warns about.
+if /i not "%PROFVAL%"=="DELETE" goto ss_pwrcap
+for %%G in (75b0ae3f-bce0-45a7-8c89-c9611c25e100 bc5038f7-23e0-4960-96da-33abaf5935ec 5d76a2ca-e8c0-402f-a133-2158492d58ad) do (
+    reg delete "HKLM\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes\%ACTSCH%\%SUBP%\%%G" /v ACSettingIndex /f >nul 2>&1
+    reg delete "HKLM\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes\%ACTSCH%\%SUBP%\%%G" /v DCSettingIndex /f >nul 2>&1
+)
+powercfg /setactive SCHEME_CURRENT >nul 2>&1
+call :L "%cOK%" "  CPU power overrides removed - the plan inherits its defaults again"
+goto ss_done
+:ss_pwrcap
 call :pwrfix 75b0ae3f-bce0-45a7-8c89-c9611c25e100 0 "Max CPU frequency cap"
 call :pwrfix bc5038f7-23e0-4960-96da-33abaf5935ec 100 "Max processor state (AC)"
 call :pwrfix 5d76a2ca-e8c0-402f-a133-2158492d58ad 0 "CPU idle states"
@@ -2470,9 +2546,10 @@ call :pwrfix 5d76a2ca-e8c0-402f-a133-2158492d58ad 0 "CPU idle states"
 call :ask "powercfg.hibernate" 5
 if "%ANSWER%"=="SKIP" goto ss_ult
 call :profval "powercfg.hibernate" "%ANSWER%"
-if /i "%PROFVAL%"=="on"  powercfg.exe /hibernate on
+if /i not "%PROFVAL%"=="on" if /i not "%PROFVAL%"=="off" goto ss_ult
+powercfg.exe /hibernate %PROFVAL%
+if errorlevel 1 ( call :L "%cErr%" "  FAILED   powercfg /hibernate %PROFVAL% refused" & goto ss_ult )
 if /i "%PROFVAL%"=="on"  call :L "%cOK%" "  hibernation on - fast startup available again"
-if /i "%PROFVAL%"=="off" powercfg.exe /hibernate off
 if /i "%PROFVAL%"=="off" call :L "%cOK%" "  hibernation off - hiberfil.sys removed"
 :ss_ult
 
@@ -2498,15 +2575,36 @@ powercfg /setactive %ULTGUID% >nul 2>&1
 call :L "%cOK%" "  Ultimate Performance is now the active plan"
 goto ss_close
 :ss_ultdel
-if not defined HASULT ( call :L "%cInfo%" "  already  no OPTY-created Ultimate plan to remove" & goto ss_close )
-powercfg /setactive 381b4222-f694-41f0-9685-ff5bb260df2e >nul 2>&1
-powercfg /delete %ULTGUID% >nul 2>&1
-call :L "%cOK%" "  FIXED    OPTY's Ultimate plan removed - back on Balanced"
+call :ultremove
 :ss_close
 
 call :L "%cOK%" "System and gaming section done."
 if not defined AUTOPROFILE pause
 goto setup_next
+
+:ultremove
+:: Removes the Ultimate plan created under OPTY's own GUID, and nothing else.
+:: Balanced is activated only when that plan is the ACTIVE one - powercfg
+:: cannot delete the active scheme - never when the user runs another plan.
+set "ULTGUID=9f9d6f1a-0b7e-4c3a-9c8e-0a1b2c3d4e5f"
+powercfg /list 2>nul | findstr /i "%ULTGUID%" >nul || (
+    call :L "%cInfo%" "  already  no OPTY-created Ultimate plan to remove"
+    goto :eof
+)
+set "ACTNOW="
+for /f "tokens=3" %%A in ('reg query "HKLM\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes" /v ActivePowerScheme 2^>nul ^| findstr /i /c:"    ActivePowerScheme    REG_"') do set "ACTNOW=%%A"
+if /i "%ACTNOW%"=="%ULTGUID%" powercfg /setactive 381b4222-f694-41f0-9685-ff5bb260df2e >nul 2>&1
+powercfg /delete %ULTGUID% >nul 2>&1
+if errorlevel 1 (
+    call :L "%cErr%" "  FAILED   OPTY's Ultimate plan could not be removed"
+    goto :eof
+)
+if /i "%ACTNOW%"=="%ULTGUID%" (
+    call :L "%cOK%" "  FIXED    OPTY's Ultimate plan removed - back on Balanced"
+) else (
+    call :L "%cOK%" "  FIXED    OPTY's Ultimate plan removed - the active plan is unchanged"
+)
+goto :eof
 
 :asknic
 :: %~1 card id  %~2 recommended answer  %~3 NDIS keyword  %~4 label
@@ -2535,7 +2633,9 @@ if "%ANSWER%"=="SKIP" ( call :L "%cInfo%" "  skipped  %~4" & goto :eof )
 call :profval "%~1" "%ANSWER%"
 if not defined PROFVAL ( call :L "%cErr%" "  no profile value for %~1 answer %ANSWER%" & goto :eof )
 if /i "%PROFVAL%"=="SKIP"       ( call :L "%cInfo%" "  left alone  %~4" & goto :eof )
-if /i "%PROFVAL%"=="NICDEFAULT" ( call :nicdefault "%NICKEY%" "%~3" & goto :eof )
+:: :nicdefault takes the FULL Ndi\Params\<kw> key. Passing the bare keyword made
+:: its reg query fail, so every NICDEFAULT answer wrote nothing and said nothing.
+if /i "%PROFVAL%"=="NICDEFAULT" ( call :nicdefault "%NICKEY%" "%NICKEY%\Ndi\Params\%~3" & goto :eof )
 call :nicset "%NICKEY%" "%~3" "%PROFVAL%"
 goto :eof
 
@@ -2957,6 +3057,9 @@ call :regset "HKLM\SYSTEM\CurrentControlSet\Control\CrashControl" "CrashDumpEnab
 call :crbcddel "testmix" "memory test mix"
 call :crbcddel "passcount" "memory test pass count"
 call :crbcddel "cacheenable" "memory test CPU cache setting"
+:: Option 3 also queues a one-time boot into the test. Deleting its settings
+:: left that queued, so the next boot still ran it - Windows ships none queued.
+bcdedit /deletevalue {bootmgr} bootsequence >nul 2>&1 && call :L "%cOK%" "  DELETED  pending one-time boot into the memory test"
 echo(
 call :ti "The keyboard change is undone at the next reboot. Dumps already on disk are kept." "Le changement clavier est annule au prochain redemarrage. Les vidages deja presents restent."
 echo(
@@ -3005,14 +3108,20 @@ echo(
 :: of this file - the same read-myself trick as the card table. FOR substitution
 :: is never re-parsed, so its pipes, quotes and brackets reach the .ps1 verbatim.
 if not exist "%OPTY_HOME%" md "%OPTY_HOME%" >nul 2>&1
-set "CRTXT=%OPTY_HOME%\crash_%current_date%_%current_time%.txt"
+:: The time is read now, not at startup: current_time is fixed at launch, so a
+:: second report in the same session overwrote the first one.
+set "CRT=%time:~0,8%"
+set "CRT=%CRT::=-%"
+set "CRT=%CRT: =0%"
+set "CRTXT=%OPTY_HOME%\crash_%current_date%_%CRT%.txt"
 set "CRPS=%TEMP%\OPTY_crashreport.ps1"
 if exist "%CRPS%" del "%CRPS%" >nul 2>&1
 for /f "usebackq tokens=2,* delims=|" %%A in (`findstr /b /l /c:"::PS|crashreport|" "%SELF%"`) do >>"%CRPS%" echo(%%B
 if not exist "%CRPS%" goto crash_report_fail
 powershell -NoProfile -ExecutionPolicy Bypass -File "%CRPS%"
 del "%CRPS%" >nul 2>&1
-echo %date% %time% : Crash report written to %CRTXT%            >> %logs%
+if exist "%CRTXT%" echo %date% %time% : Crash report written to %CRTXT%            >> %logs%
+if not exist "%CRTXT%" echo %date% %time% : Crash report FAILED - %CRTXT% was not created >> %logs%
 echo(
 call :rule
 call :ti "Saved to %CRTXT%" "Enregistre dans %CRTXT%"
@@ -3243,6 +3352,9 @@ goto mrepair
 
 
 :mrestore
+:: An undo is never answered by an armed profile: its :ask calls would re-apply
+:: that profile (MouseSpeed, WSearch, Spooler) instead of reverting them.
+set "AUTOPROFILE="
 echo.                                                           >> %logs%
 echo ====================== :MRESTORE ========================= >> %logs%
 echo %date% %time% : Entered :mrestore label                       >> %logs%
@@ -3445,8 +3557,8 @@ call :nicrestart "%NICKEY%"
 echo(
 call :L "%cOK%" "Ethernet section done."
 call :L "%cInfo%" "Torrent + gaming lag is upstream queue saturation, not a NIC setting."
-call :L "%cInfo%" "Real fix: SQM/fq_codel on the router at ~90%% of link rate, or cap"
-call :L "%cInfo%" "qBittorrent upload to ~85-90%% of your measured upstream."
+call :L "%cInfo%" "Real fix: SQM/fq_codel on the router at ~90%%%% of link rate, or cap"
+call :L "%cInfo%" "qBittorrent upload to ~85-90%%%% of your measured upstream."
 del /f /q "%TEMP%\opty_nic_list.txt" >nul 2>&1
 if not defined AUTOPROFILE pause
 if defined SETUPWALK goto setup_next
@@ -3461,6 +3573,9 @@ goto mnetwork
 
 
 :net_restore
+set "NRDONE="
+:: Same rule as :mrestore - profile 1 answers the restore card with SKIP.
+set "AUTOPROFILE="
 echo.                                                           >> %logs%
 echo ====================== :NET_RESTORE ====================== >> %logs%
 echo %date% %time% : Entered :net_restore label                  >> %logs%
@@ -3514,13 +3629,17 @@ if "%ANSWER%"=="SKIP" goto nr_tcp
 call :profval "net.nic.restore.driver14" "%ANSWER%"
 if /i not "%PROFVAL%"=="APPLY" ( call :L "%cInfo%" "  left alone - profile %ANSWER% keeps the current NIC settings" & goto nr_tcp )
 :: every tunable keyword carries its own factory value in Ndi\Params\<kw>\default
+:: *FlowControl joined the list when :setup_ethernet started writing it -
+:: restoring every keyword SETUP writes is the whole point of this screen.
+set "NICWROTE=0" & set "NICSKIP=0"
 :: Restore ONLY the keywords :setup_ethernet can write. The unfiltered query
 :: returned all 31 the driver exposes, so "Restore" also re-enabled Wake-on-LAN,
 :: 802.3az EEE and ReduceSpeedOnPowerDown - settings the user had deliberately
 :: turned off and that OPTY never touched.
 :: findstr /e /c: is required here: a `for %%P in (*RSS ITR)` style list would be
 :: treated as a filesystem glob and silently drop every *-prefixed keyword.
-for /f "delims=" %%P in ('reg query "%NICKEY%\Ndi\Params" 2^>nul ^| findstr /i /e /c:"\*InterruptModeration" /c:"\ITR" /c:"\*LsoV2IPv4" /c:"\*LsoV2IPv6" /c:"\*TCPChecksumOffloadIPv4" /c:"\*TCPChecksumOffloadIPv6" /c:"\*UDPChecksumOffloadIPv4" /c:"\*UDPChecksumOffloadIPv6" /c:"\*IPChecksumOffloadIPv4" /c:"\*RSS" /c:"\*NumRssQueues" /c:"\*JumboPacket" /c:"\*ReceiveBuffers" /c:"\*TransmitBuffers"') do call :nicdefault "%NICKEY%" "%%P"
+for /f "delims=" %%P in ('reg query "%NICKEY%\Ndi\Params" 2^>nul ^| findstr /i /e /c:"\*InterruptModeration" /c:"\ITR" /c:"\*LsoV2IPv4" /c:"\*LsoV2IPv6" /c:"\*TCPChecksumOffloadIPv4" /c:"\*TCPChecksumOffloadIPv6" /c:"\*UDPChecksumOffloadIPv4" /c:"\*UDPChecksumOffloadIPv6" /c:"\*IPChecksumOffloadIPv4" /c:"\*RSS" /c:"\*NumRssQueues" /c:"\*JumboPacket" /c:"\*ReceiveBuffers" /c:"\*TransmitBuffers" /c:"\*FlowControl"') do call :nicdefault "%NICKEY%" "%%P"
+if %NICWROTE% GTR 0 set "NRDONE=1"
 echo(
 :nr_tcp
 echo(
@@ -3541,7 +3660,11 @@ call :rule
 set "choice="
 set /p choice= Enter action:
 if "%choice%"=="1" call :nicrestart "%NICKEY%"
-call :L "%cOK%" "Adapter restored to the driver's own defaults."
+if defined NRDONE (
+    call :L "%cOK%" "Adapter restored to the driver's own defaults."
+) else (
+    call :L "%cInfo%" "No adapter keyword was restored."
+)
 del /f /q "%TEMP%\opty_nic_list.txt" >nul 2>&1
 pause
 goto mnetwork
@@ -3929,7 +4052,8 @@ if not defined RUNEPIC for /d %%W in ("%UL%\EpicGamesLauncher\Saved\webcache*") 
 if not defined RUNEPIC del /F /S /Q "%UL%\EpicGamesLauncher\Saved\Logs\*"     >nul 2>&1
 :: Discord beta and canary carry the same three cache folders as stable and
 :: were never targeted - an account on the beta channel kept its whole cache.
-for %%D in (discord discordptb discordcanary) do (
+:: Skipped while any Discord build runs - see RUNDISC at the top of :delete.
+if not defined RUNDISC for %%D in (discord discordptb discordcanary) do (
     del /F /S /Q "%UR%\%%D\Cache\*"        >nul 2>&1
     del /F /S /Q "%UR%\%%D\Code Cache\*"   >nul 2>&1
     del /F /S /Q "%UR%\%%D\GPUCache\*"     >nul 2>&1
@@ -3965,6 +4089,8 @@ goto :eof
 
 :regset
 :: %~1 key  %~2 value  %~3 type  %~4 data  %~5 label
+call :policyguard "%~1" "%~5"
+if defined POLSKIP goto :eof
 :: Reads the current value BEFORE writing, so the log can distinguish "this
 :: actually repaired something" from "this was already correct". Without it the
 :: tool prints the same OK either way, which makes every report unfalsifiable.
@@ -4108,11 +4234,18 @@ reg query "%~1\Ndi\Params\%~2\Enum" >nul 2>&1 && (
 set "OLDV="
 for /f "tokens=3" %%O in ('reg query "%~1" /v "%~2" 2^>nul ^| findstr /i /c:"REG_SZ"') do set "OLDV=%%O"
 reg add "%~1" /v "%~2" /t REG_SZ /d "%NV%" /f >nul 2>&1
+if errorlevel 1 (
+    call :L "%cErr%" "  FAILED   %~2 = %NV%   (write refused)"
+    set /a NICSKIP+=1
+    goto :eof
+)
+:: FIXED is the one case that really changed something, and it was the one
+:: case not counted: a run where every value differed reported "nothing was
+:: written" and skipped the adapter restart.
+set /a NICWROTE+=1
 if not defined OLDV (
-    set /a NICWROTE+=1
     call :L "%cOK%" "  SET      %~2 = %NV%   (was absent)"
 ) else if "%OLDV%"=="%NV%" (
-    set /a NICWROTE+=1
     call :L "%cInfo%" "  written  %~2 = %NV%   (was already correct)"
 ) else (
     call :L "%cOK%" "  FIXED    %~2 : was %OLDV%, now %NV%"
@@ -4146,8 +4279,18 @@ set "NKW=%NKW:*\Ndi\Params\=%"
 if not defined NKW goto :eof
 set "NDEF="
 for /f "tokens=3" %%D in ('reg query "%~2" /v default 2^>nul ^| findstr /i "REG_SZ"') do set "NDEF=%%D"
-if not defined NDEF goto :eof
+if not defined NDEF (
+    call :L "%cInfo%" "  %NKW% left as is - the driver publishes no default for it"
+    set /a NICSKIP+=1
+    goto :eof
+)
 reg add "%~1" /v "%NKW%" /t REG_SZ /d "%NDEF%" /f >nul 2>&1
+if errorlevel 1 (
+    call :L "%cErr%" "  FAILED   %NKW% = %NDEF%  (write refused)"
+    set /a NICSKIP+=1
+    goto :eof
+)
+set /a NICWROTE+=1
 call :L "%cInfo%" "  %NKW% = %NDEF%  (driver default)"
 goto :eof
 
@@ -4161,7 +4304,26 @@ for /f "tokens=2,*" %%A in ('reg query "HKLM\SYSTEM\CurrentControlSet\Control\Ne
 if not defined NPNP goto :eof
 call :L "%cWarn%" "Restarting adapter - the link will drop for a few seconds..."
 pnputil /restart-device "%NPNP%" >nul 2>&1
+if errorlevel 1 (
+    call :L "%cWarn%" "Adapter restart refused - the settings apply at the next reboot."
+    goto :eof
+)
 call :L "%cOK%" "Adapter restarted - settings are live."
+goto :eof
+
+:policyguard
+:: %~1 = registry key, %~2 = label -> POLSKIP=1 when the key is a policy and
+:: this machine is managed. :ismanaged promised "policy keys will be REPORTED,
+:: not changed", but only the Windows Update purge honoured it: every other
+:: write and delete under \Policies\ went ahead on domain, Entra ID and MDM
+:: machines - the org's own settings, undone at the next refresh anyway, while
+:: the log claimed the change. The probe runs once per session.
+set "POLSKIP="
+echo(%~1| findstr /i /c:"\Policies\" >nul || goto :eof
+if not defined MGDPROBED call :ismanaged
+if not defined ISMANAGED goto :eof
+set "POLSKIP=1"
+call :L "%cWarn%" "  managed  %~2 left to the organisation (%ISMANAGED%)"
 goto :eof
 
 :ismanaged
@@ -4179,6 +4341,7 @@ goto :eof
 ::     workgroup machine, it is just empty. Presence proves nothing - it has to
 ::     contain a DN, hence the "DC=" test.
 set "ISMANAGED="
+set "MGDPROBED=1"
 if defined USERDNSDOMAIN set "ISMANAGED=domain"
 if not defined ISMANAGED reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Group Policy\State\Machine" /v "Distinguished-Name" 2>nul | findstr /i /c:"DC=" >nul && set "ISMANAGED=domain"
 if not defined ISMANAGED reg query "HKLM\SYSTEM\CurrentControlSet\Control\CloudDomainJoin\JoinInfo" >nul 2>&1 && set "ISMANAGED=EntraID"
@@ -4423,6 +4586,10 @@ echo(
 call :L "%cOK%" "Profile %AUTOPROFILE% applied to every SETUP section."
 call :ti "Each write above is one line - SET, FIXED or already correct. To change" "Chaque ecriture ci-dessus tient en une ligne - SET, FIXED ou deja bonne."
 call :ti "any single choice, its question is waiting in its section." "Pour modifier un choix, sa question vous attend dans sa section."
+:: Disarm, or that sentence is false: every section would answer itself again,
+:: and Restore -> 2 would re-apply this profile instead of undoing it.
+set "AUTOPROFILE="
+>>%logs% echo %date% %time% : Setup walk finished - AUTOPROFILE cleared
 pause
 goto msetup
 
@@ -4690,9 +4857,13 @@ goto :eof
 :: in the log rather than vanishing silently.
 :: dir /-c prints an unseparated byte total; its label is localised (FR "octets",
 :: EN "bytes") so both are matched, and the number is taken by position.
+:: The LAST line dir prints is "N Dir(s)  <free> bytes free" (FR "octets
+:: libres"), which matched too and won the loop, so the drive's free space was
+:: reported as the cache size. It is filtered out; the grand-total File(s) line
+:: is then the last one left.
 if not exist "%~1" goto :eof
 set "BCB="
-for /f "tokens=3" %%S in ('dir /s /-c "%~1" 2^>nul ^| findstr /i /c:" octets" /c:" bytes"') do set "BCB=%%S"
+for /f "tokens=3" %%S in ('dir /s /-c "%~1" 2^>nul ^| findstr /i /c:" octets" /c:" bytes" ^| findstr /v /i /c:" free" /c:" libres"') do set "BCB=%%S"
 if not defined BCB goto :eof
 set "BCB=%BCB:.=%"
 set "BCB=%BCB:,=%"
@@ -4745,6 +4916,8 @@ goto :eof
 :: Deletes the value ONLY if it exists, and reports it. Used for settings whose
 :: Windows default is "value absent" - writing 0 would NOT restore them.
 reg query "%~1" /v "%~2" >nul 2>&1 || goto :eof
+call :policyguard "%~1" "%~2"
+if defined POLSKIP goto :eof
 call :L "%cWarn%" "  leftover found: %~2  -> removing (default is ABSENT)"
 >>%logs% echo %date% %time% : Removed leftover %~1\%~2
 reg delete "%~1" /v "%~2" /f >nul 2>&1
@@ -6505,7 +6678,7 @@ goto :eof
 ::X|FR|gr.spotlight.policy.del.074|                    (OPTY.bat line 1686)
 ::
 :: ---- db.recall.off (preference) -------------------------------------
-::P|db.recall.off|1|1|1|1|DELETE|
+::P|db.recall.off|1|1|DELETE|1|DELETE|
 ::T|EN|db.recall.off.001|BLOCK WINDOWS RECALL
 ::T|EN|db.recall.off.002|Blocks Windows Recall, the feature that snapshots and indexes your screen; this is a real privacy and background-load win on Copilot+ PCs, but pure insurance with no effect elsewhere since Recall does not exist on other hardware.
 ::T|FR|db.recall.off.001|BLOQUER WINDOWS RECALL
@@ -14303,7 +14476,7 @@ goto :eof
 ::X|FR|rp.throttle.window.075|                    writes the throttle back, both inside :restore_point
 ::
 :: ---- mmcss.network.throttling (preference) --------------------------
-::P|mmcss.network.throttling|10|4294967295|10|10|10|
+::P|mmcss.network.throttling|10|0xffffffff|10|10|10|
 ::T|EN|mmcss.network.throttling.001|NETWORK SPEED CAP DURING AUDIO PLAYBACK
 ::T|EN|mmcss.network.throttling.002|Windows secretly caps your network speed to about 100 Mbit/s whenever audio is playing, to protect against crackling - lifting the cap only helps if your connection is faster than that and you move big files while listening, and it very slightly raises the risk of audio dropouts.
 ::T|FR|mmcss.network.throttling.001|LE PLAFOND RESEAU MMCSS PENDANT LA LECTURE AUDIO
@@ -16226,7 +16399,7 @@ goto :eof
 ::X|FR|mouse.accel.off.136|                    the live-apply are separate cards asked right after.
 ::
 :: ---- mouse.smoothcurve.delete (repair) --------------------------
-::P|mouse.smoothcurve.delete|DELETE|DELETE|DELETE|DELETE|SKIP|
+::P|mouse.smoothcurve.delete|DELETE|DELETE|DELETE|DELETE|DELETE|
 ::T|EN|mouse.smoothcurve.delete.001|CLEAN UP CORRUPTED MOUSE ACCELERATION CURVES
 ::T|EN|mouse.smoothcurve.delete.002|Deletes the two mouse acceleration curve values only if they are not the standard 40-byte size - this is cleanup for a bug an older version of this same script caused, not a fix for anything on a machine that never ran that old version.
 ::T|FR|mouse.smoothcurve.delete.001|NETTOYER LES COURBES D ACCELERATION DE SOURIS CORROMPUES
@@ -19717,7 +19890,7 @@ goto :eof
 ::X|FR|net.nic.flowcontrol.profile.080|                    from the :net_restore keyword filter.
 ::
 :: ---- net.nti.profile.choice (preference) ----------------------------
-::P|net.nti.profile.choice|10|4294967295|10|10|10|
+::P|net.nti.profile.choice|10|0xffffffff|10|10|10|
 ::T|EN|net.nti.profile.choice.001|NETWORK THROTTLING CAP BY PROFILE
 ::T|EN|net.nti.profile.choice.002|Keeps the audio-protecting network cap at its default of 10 for most profiles, but lifts it for the server profile so big transfers can use the full connection even while media plays, at the cost of a small audio-glitch risk.
 ::T|FR|net.nti.profile.choice.001|PLAFOND RESEAU AUDIO SELON LE PROFIL
