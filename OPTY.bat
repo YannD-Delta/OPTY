@@ -490,6 +490,13 @@ echo.                                                           >> %logs%
 echo ====================== :MENU ======================            >> %logs%
 echo.                                                           >> %logs%
 echo %date% %time% : Entered :menu label                          >> %logs%
+:: The pre-check runs once per session, the first time the menu is reached,
+:: so nothing seriously wrong on the machine goes unnoticed before a menu is
+:: picked. Read-only: it changes nothing.
+if defined PRECHECKED goto menu_show
+set "PRECHECKED=1"
+call :precheck
+:menu_show
 color 0F
 cls
 call :banner "OPTY v%current_version%   -   Windows 11 optimizer   -   @YannD-Delta"
@@ -1067,8 +1074,14 @@ for /D %%i in ("%SystemDrive%\Users\*") do (
 endlocal
 
 :dl_shader
-if not "%autoclean%"=="0" goto dl_shader_go
-call :step "cl.gpu.shadercache" "clean.delete" "GPU SHADER CACHES"
+:: Asked in Manual only, on the owner's instruction. Emptied on every auto run,
+:: every game recompiled its shaders - with stutter - after each CLEAN; AMD
+:: treats clearing it as a troubleshooting step, not maintenance.
+if "%autoclean%"=="0" goto dl_shader_ask
+call :L "%cInfo%" "GPU shader caches kept - they are only cleared when asked in Manual mode"
+goto dl_dumps
+:dl_shader_ask
+call :step "cl.gpu.shadercache" "clean.shader" "GPU SHADER CACHES"
 if "%STEPYES%"=="REDRAW" goto dl_shader
 if not defined STEPYES goto dl_dumps
 :dl_shader_go
@@ -1178,6 +1191,7 @@ echo %date% %time% : Deleting WER reports and crash dumps           >> %logs%
 :: folders moved into :userclean so every profile is covered, not only the
 :: account that happens to be running OPTY.
 del /F /S /Q "%ProgramData%\Microsoft\Windows\WER\*" 2>nul
+for /d %%U in ("%SystemDrive%\Users\*") do call :userclean "%%~fU" wer
 
 :dl_logs
 if not "%autoclean%"=="0" goto dl_logs_go
@@ -1276,7 +1290,7 @@ if not defined STEPYES goto dl_winold
 call :L "%cInfo%" "Clearing browser caches - every user and profile; running browsers are skipped, never closed"
 :: Every Windows user, not just the one running the script, and every browser
 :: family - including ones not installed here, which cost nothing to probe.
-for /d %%U in ("%SystemDrive%\Users\*") do call :userclean "%%~fU"
+for /d %%U in ("%SystemDrive%\Users\*") do call :userclean "%%~fU" browsers
 
 :: --- Windows.old (removes rollback): Auto full, or asked in manual ---
 :dl_winold
@@ -1336,6 +1350,7 @@ if defined RUNNING (
     del /F /S /Q "%APPDATA%\discord\Code Cache\*"          >nul 2>&1
     del /F /S /Q "%APPDATA%\discord\GPUCache\*"            >nul 2>&1
 )
+for /d %%U in ("%SystemDrive%\Users\*") do call :userclean "%%~fU" discord
 
 :: --- NOT cleared ---
 :: Spotify Storage/Data: that is the OFFLINE MUSIC cache. Clearing it forces a
@@ -1402,6 +1417,7 @@ if not defined RUNUBI del /F /S /Q "%UBIPF%\http2\*"  >nul 2>&1
 if not defined RUNUBI del /F /S /Q "%UBIPF%\club\*"   >nul 2>&1
 if not defined RUNUBI del /F /S /Q "%UBIPF%\ulcf\*"   >nul 2>&1
 if defined RUNUBI call :L "%cWarn%" "  Ubisoft Connect is running - skipped"
+for /d %%U in ("%SystemDrive%\Users\*") do call :userclean "%%~fU" ubi
 :dl_ea
 if not "%autoclean%"=="0" goto dl_ea_go
 call :step "cl.ea.cache" "clean.delete" "EA APP CACHE"
@@ -1410,6 +1426,7 @@ if not defined STEPYES goto dl_origin
 :dl_ea_go
 if not defined RUNEA del /F /S /Q "%ProgramData%\EA Core\cache\*" >nul 2>&1
 if defined RUNEA call :L "%cWarn%" "  EA App is running - skipped"
+for /d %%U in ("%SystemDrive%\Users\*") do call :userclean "%%~fU" ea
 :dl_origin
 if not "%autoclean%"=="0" goto dl_origin_go
 call :step "cl.origin.logs" "clean.delete" "ORIGIN LOGS"
@@ -1420,6 +1437,7 @@ if not defined STEPYES goto dl_font
 :: %ProgramData%\Origin\LocalContent holds game entitlement data and wiping it
 :: can stop games from launching.
 del /F /S /Q "%ProgramData%\Origin\Logs\*"                                   >nul 2>&1
+for /d %%U in ("%SystemDrive%\Users\*") do call :userclean "%%~fU" origin
 
 :: --- REMOVED: Adobe Common Media Cache ---
 :: Deleting it forces Premiere/After Effects to re-conform audio and re-render
@@ -1780,12 +1798,13 @@ call :killkey "HKLM\SOFTWARE\Policies\Microsoft\Dsh" "AllowNewsAndInterests"
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v "TaskbarDa" /t REG_DWORD /d 1 /f >nul
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v "ShowTaskViewButton" /t REG_DWORD /d 1 /f >nul
 
-call :L "%cInfo%" "Re-enabling VBS / Memory Integrity HVCI"
-:: The Windows default for both is the value being ABSENT, not 1. Forcing 1 on
-:: a machine whose hardware or drivers cannot support HVCI causes driver-load
-:: failures, so the revert removes the override instead of asserting a value.
-call :killkey "HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity" "Enabled"
-call :killkey "HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard" "EnableVirtualizationBasedSecurity"
+:: VBS / Memory Integrity are NOT reverted here any more, on the owner's
+:: explicit instruction ("desactive le, quoi qu'il arrive"). Deleting Enabled=0
+:: is exactly what makes a PC eligible again for the automatic enablement
+:: Microsoft rolls out from October 2026 (MC1465669): it leaves alone only the
+:: devices where Memory Integrity was explicitly disabled. SETUP -> System owns
+:: this setting (card hvci.off); Windows Security still turns it back on.
+call :hvcistate
 
 call :L "%cInfo%" "Restoring services + GameDVR + hibernation to Windows defaults (map_only undo)"
 :: These five exist here to undo the OLD gaming profile, which used to set them to
@@ -1903,9 +1922,8 @@ call :regset "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\Syste
 call :regset "HKLM\SYSTEM\CurrentControlSet\Control\PriorityControl" "Win32PrioritySeparation" REG_DWORD 2 "Win32PrioritySeparation"
 echo %date% %time% : Re-asserted MMCSS 20 / NTI 10 / Win32PrioSep 2   >> %logs%
 
-call :L "%cInfo%" "Memory Integrity / HVCI back to the Windows default (value absent)"
-call :killkey "HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity" "Enabled"
-call :killkey "HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard" "EnableVirtualizationBasedSecurity"
+:: Not reverted - same reason as in :gaming_restore (card hvci.off).
+call :hvcistate
 
 call :L "%cInfo%" "Display: clearing leftover overlay/MPO overrides (their default is ABSENT)"
 :: Writing 0 does NOT restore these - the Windows default is the value not existing.
@@ -2539,6 +2557,10 @@ call :askreg "usb.selective.suspend.off" 5 "HKLM\SYSTEM\CurrentControlSet\Servic
 :: --- foreground game was never affected.
 call :askreg "power.throttling.off" 5 "HKLM\SYSTEM\CurrentControlSet\Control\Power\PowerThrottling" "PowerThrottlingOff" REG_DWORD "Global power throttling override"
 
+:: --- Memory Integrity (HVCI). Written as an explicit 0: absent is what the
+:: --- October 2026 rollout switches on. Takes effect after a restart.
+call :askreg "hvci.off" 1 "HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity" "Enabled" REG_DWORD "Memory Integrity (HVCI) - restart needed"
+
 :: --- Prefetcher, and the Superfetch value Windows ships ABSENT.
 call :askreg "mo.prefetcher" 5 "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters" "EnablePrefetcher" REG_DWORD "Prefetcher"
 call :askreg "mo.superfetch.killkey" 5 "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters" "EnableSuperfetch" REG_DWORD "EnableSuperfetch (ships absent)"
@@ -2989,6 +3011,7 @@ echo(     %cVal%1.%cR%  Network diagnose   %cInfo%what differs from your driver 
 echo(     %cVal%2.%cR%  Network report     %cInfo%every setting + limits to a .txt and .json%cR%
 echo(     %cVal%3.%cR%  Open OPTY folder   %cInfo%reports in %OPTY_HOME_D%, logs next to OPTY.bat%cR%
 echo(     %cVal%4.%cR%  Crashes / freezes  %cInfo%capture a freeze, memory test, crash report%cR%
+echo(     %cVal%5.%cR%  Pre-check          %cInfo%look for anything seriously wrong on this PC%cR%
 echo(
 echo(     %cVal%0.%cR%  Menu
 echo(
@@ -3000,10 +3023,15 @@ if "%choice%"=="1" goto net_diag
 if "%choice%"=="2" goto netinfo_report
 if "%choice%"=="3" goto mreports_open
 if "%choice%"=="4" goto mcrash
+if "%choice%"=="5" goto mreports_precheck
 if "%choice%"=="0" goto menu
 color 0C
 echo This is not a valid action
 timeout /t 3 >nul
+goto mreports
+
+:mreports_precheck
+call :precheck
 goto mreports
 
 :mreports_open
@@ -3849,6 +3877,7 @@ call :prune_pat "opty_nic_list.txt"
 call :prune_pat "netinfo_*.txt"   "%OPTY_HOME%\"
 call :prune_pat "netprops_*.json" "%OPTY_HOME%\"
 call :prune_pat "crash_*.txt"     "%OPTY_HOME%\"
+call :prune_pat "precheck_*.txt"  "%OPTY_HOME%\"
 call :prune_pat "opty_nic_list.txt" "%TEMP%\"
 call :L "%cOK%" "OPTY artifacts pruned - only files OPTY itself wrote were touched"
 goto mmaint
@@ -4068,22 +4097,38 @@ echo %date% %time% : Swept drive %~1:                               >> %logs%
 goto :eof
 
 :userclean
-:: %~1 = a user profile folder. Runs the per-user cache sweep for EVERY profile
-:: on the machine, not only the one running the script.
+:: %~1 = a user profile folder, %~2 = which part: wer, ubi, ea, origin,
+:: discord or browsers. Runs that part for EVERY profile on the machine, not
+:: only the one running the script.
+:: Each part is called from its OWN card's step. The whole sweep used to run
+:: under the browser card, so a Skip on the WER, Ubisoft, EA, Origin or
+:: Discord card still deleted every profile's copy - the answer was ignored.
 :: Caches only - never Cookies, History, Login Data, Preferences or Bookmarks.
 if not exist "%~1\AppData\Local" goto :eof
 set "UL=%~1\AppData\Local"
 set "UR=%~1\AppData\Roaming"
-:: Crash reports and launcher caches, per profile. These used to sit in the
-:: main body against a single hardcoded profile path, so on any other account
-:: they deleted nothing and logged a clean anyway.
+if /i "%~2"=="wer"      goto uc_wer
+if /i "%~2"=="ubi"      goto uc_ubi
+if /i "%~2"=="ea"       goto uc_ea
+if /i "%~2"=="origin"   goto uc_origin
+if /i "%~2"=="discord"  goto uc_discord
+if /i "%~2"=="browsers" goto uc_browsers
+goto :eof
+:uc_wer
+:: Crash reports, per profile. These used to sit in the main body against a
+:: single hardcoded profile path, so on any other account they deleted
+:: nothing and logged a clean anyway.
 del /F /S /Q "%UL%\Microsoft\Windows\WER\*"                >nul 2>&1
 del /F /S /Q "%UL%\CrashDumps\*"                           >nul 2>&1
+goto :eof
+:uc_ubi
 :: Same restriction as the Program Files copy: ownership and activations are
 :: entitlement state, not cache.
 if not defined RUNUBI  del /F /S /Q "%UL%\Ubisoft Game Launcher\cache\http2\*" >nul 2>&1
 if not defined RUNUBI  del /F /S /Q "%UL%\Ubisoft Game Launcher\cache\club\*"  >nul 2>&1
 if not defined RUNUBI  del /F /S /Q "%UL%\Ubisoft Game Launcher\cache\ulcf\*"  >nul 2>&1
+goto :eof
+:uc_ea
 :: NOT cache\* . EA Desktop\cache does not exist on the reference machine, so
 :: unlike Steam and Ubisoft its contents could not be enumerated - and both of
 :: those turned out to keep logins or entitlements in a folder called cache.
@@ -4092,18 +4137,15 @@ if not defined RUNUBI  del /F /S /Q "%UL%\Ubisoft Game Launcher\cache\ulcf\*"  >
 if not defined RUNEA   del /F /S /Q "%UL%\Electronic Arts\EA Desktop\cache\Cache\*"      >nul 2>&1
 if not defined RUNEA   del /F /S /Q "%UL%\Electronic Arts\EA Desktop\cache\Code Cache\*" >nul 2>&1
 if not defined RUNEA   del /F /S /Q "%UL%\Electronic Arts\EA Desktop\cache\GPUCache\*"   >nul 2>&1
+goto :eof
+:uc_origin
 del /F /S /Q "%UL%\Origin\Logs\*"                          >nul 2>&1
 del /F /S /Q "%UR%\Origin\Logs\*"                          >nul 2>&1
+goto :eof
+:uc_browsers
+:: Epic has no card of its own, so its web cache stays with the browsers.
 if not defined RUNEPIC for /d %%W in ("%UL%\EpicGamesLauncher\Saved\webcache*") do rd /S /Q "%%W" >nul 2>&1
 if not defined RUNEPIC del /F /S /Q "%UL%\EpicGamesLauncher\Saved\Logs\*"     >nul 2>&1
-:: Discord beta and canary carry the same three cache folders as stable and
-:: were never targeted - an account on the beta channel kept its whole cache.
-:: Skipped while any Discord build runs - see RUNDISC at the top of :delete.
-if not defined RUNDISC for %%D in (discord discordptb discordcanary) do (
-    del /F /S /Q "%UR%\%%D\Cache\*"        >nul 2>&1
-    del /F /S /Q "%UR%\%%D\Code Cache\*"   >nul 2>&1
-    del /F /S /Q "%UR%\%%D\GPUCache\*"     >nul 2>&1
-)
 :: Chromium-family browsers, including ones that are not installed here
 :: (guarded by :chromecache, which returns immediately if the folder is absent)
 call :chromecache "%UL%\Google\Chrome\User Data" "chrome.exe"
@@ -4123,6 +4165,16 @@ if not defined RUNNING for /d %%F in ("%UL%\Mozilla\Firefox\Profiles\*") do (
     del /F /S /Q "%%~F\startupCache\*"  >nul 2>&1
     del /F /S /Q "%%~F\jumpListCache\*" >nul 2>&1
     del /F /S /Q "%%~F\thumbnails\*"    >nul 2>&1
+)
+goto :eof
+:uc_discord
+:: Discord beta and canary carry the same three cache folders as stable and
+:: were never targeted - an account on the beta channel kept its whole cache.
+:: Skipped while any Discord build runs - see RUNDISC at the top of :delete.
+if not defined RUNDISC for %%D in (discord discordptb discordcanary) do (
+    del /F /S /Q "%UR%\%%D\Cache\*"        >nul 2>&1
+    del /F /S /Q "%UR%\%%D\Code Cache\*"   >nul 2>&1
+    del /F /S /Q "%UR%\%%D\GPUCache\*"     >nul 2>&1
 )
 goto :eof
 
@@ -4207,6 +4259,54 @@ if "%SVCN%"=="%~3" (
     goto :eof
 )
 call :L "%cOK%" "  FIXED    %~4 : start type was %SVCN%, now %~2"
+goto :eof
+
+:precheck
+:: The pre-check is a PowerShell script stored as ::PS|precheck| data lines at
+:: the bottom of this file, extracted the same way as the crash report. It
+:: only READS: registry values, event logs, CIM. Its exit code is the number
+:: of findings that deserve a look, so a clean machine does not stop here.
+cls
+call :banner "PRE-CHECK"
+echo(
+call :t "  Looking for anything seriously wrong on this PC (read-only)..." "  Recherche de tout ce qui cloche serieusement sur ce PC (lecture seule)..."
+echo(
+if not exist "%OPTY_HOME%" md "%OPTY_HOME%" >nul 2>&1
+set "PCT=%time:~0,8%"
+set "PCT=%PCT::=-%"
+set "PCT=%PCT: =0%"
+set "PCTXT=%OPTY_HOME%\precheck_%current_date%_%PCT%.txt"
+set "PCPS=%TEMP%\OPTY_precheck.ps1"
+if exist "%PCPS%" del "%PCPS%" >nul 2>&1
+for /f "usebackq tokens=2,* delims=|" %%A in (`findstr /b /l /c:"::PS|precheck|" "%SELF%"`) do >>"%PCPS%" echo(%%B
+if not exist "%PCPS%" goto :eof
+powershell -NoProfile -ExecutionPolicy Bypass -File "%PCPS%"
+set "PCRC=%errorlevel%"
+del "%PCPS%" >nul 2>&1
+if exist "%PCTXT%" (
+    >>%logs% echo %date% %time% : Pre-check - %PCRC% finding^(s^) worth a look, report in %PCTXT%
+    type "%PCTXT%" >> %logs%
+) else (
+    >>%logs% echo %date% %time% : Pre-check FAILED - no report written
+)
+echo(
+if "%PCRC%"=="0" (
+    timeout /t 3 >nul
+) else (
+    pause
+)
+goto :eof
+
+:hvcistate
+:: Reports Memory Integrity without changing it. Registry only: a value of 0 is
+:: the explicit "off" that the October 2026 rollout respects.
+set "HVCIV="
+for /f "tokens=3" %%A in ('reg query "HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity" /v Enabled 2^>nul ^| findstr /i /c:"    Enabled    REG_"') do set "HVCIV=%%A"
+if "%HVCIV%"=="0x0" (
+    call :L "%cInfo%" "  kept     Memory Integrity explicitly off (SETUP -> System, card hvci.off)"
+) else (
+    call :L "%cInfo%" "  left     Memory Integrity as Windows has it - SETUP -> System turns it off"
+)
 goto :eof
 
 :rebootpending
@@ -5029,7 +5129,7 @@ echo %date% %time% : Restore-point throttle back to the absent default >> %logs%
 goto :eof
 ::
 :: ---- gpu.ulps : AMD Ultra Low Power State -----------------------------------
-::P|gpu.ulps|0|1|1|1|1|
+::P|gpu.ulps|1|1|1|1|1|
 ::T|EN|gpu.ulps.001|AMD GPU DEEP SLEEP (ULPS)
 ::T|EN|gpu.ulps.002|Lets an idle AMD GPU save power and run quieter, but turning it off to fix cursor lag did not help in real testing and caused a display glitch instead.
 ::T|FR|gpu.ulps.001|VEILLE PROFONDE DU GPU AMD (ULPS)
@@ -6634,151 +6734,170 @@ goto :eof
 ::T|EN|gr.spotlight.policy.del.002|Brings back the rotating Spotlight lock-screen photos and desktop theme; there is no performance gain or cost either way, you just get the promotional tip overlays back along with the pictures.
 ::T|FR|gr.spotlight.policy.del.001|RETABLIR WINDOWS SPOTLIGHT
 ::T|FR|gr.spotlight.policy.del.002|Retablit les photos tournantes de l ecran de verrouillage et le theme de bureau Spotlight ; aucun gain ni cout de performance dans un sens ou l autre, vous recuperez juste les surcouches de conseils promotionnels avec les images.
-::X|EN|gr.spotlight.policy.del.001|  What it is      : The machine-wide policy that switches off the rotating
-::X|EN|gr.spotlight.policy.del.002|                    lock-screen and desktop imagery together with the tips
-::X|EN|gr.spotlight.policy.del.003|                    shown on it.
-::X|EN|gr.spotlight.policy.del.004|
-::X|EN|gr.spotlight.policy.del.005|  Actual effect   : Deletes the value, so the Spotlight pictures and the
-::X|EN|gr.spotlight.policy.del.006|                    Spotlight desktop theme work again.
-::X|EN|gr.spotlight.policy.del.007|
-::X|EN|gr.spotlight.policy.del.008|  Gain            : You get the rotating photographs back, if you liked
-::X|EN|gr.spotlight.policy.del.009|                    them, and the Personalization page stops showing a
-::X|EN|gr.spotlight.policy.del.010|                    policy marking.
-::X|EN|gr.spotlight.policy.del.011|
-::X|EN|gr.spotlight.policy.del.012|  Cost            : The tip overlays and their promotional links come back
-::X|EN|gr.spotlight.policy.del.013|                    with the pictures - they are one feature, not two.
-::X|EN|gr.spotlight.policy.del.014|
-::X|EN|gr.spotlight.policy.del.015|  Windows default : Absent, Spotlight on.
+::X|EN|gr.spotlight.policy.del.001|  What it is      : The policy that switches off the rotating lock-screen
+::X|EN|gr.spotlight.policy.del.002|                    and desktop imagery together with the tips shown on it.
+::X|EN|gr.spotlight.policy.del.003|                    Current builds write it under HKCU (a User policy);
+::X|EN|gr.spotlight.policy.del.004|                    older builds wrote it under HKLM.
+::X|EN|gr.spotlight.policy.del.005|
+::X|EN|gr.spotlight.policy.del.006|  Actual effect   : Deletes the value from both HKLM and HKCU, so the
+::X|EN|gr.spotlight.policy.del.007|                    Spotlight pictures and the Spotlight desktop theme work
+::X|EN|gr.spotlight.policy.del.008|                    again.
+::X|EN|gr.spotlight.policy.del.009|
+::X|EN|gr.spotlight.policy.del.010|  Gain            : You get the rotating photographs back, if you liked
+::X|EN|gr.spotlight.policy.del.011|                    them, and the Personalization page stops showing a
+::X|EN|gr.spotlight.policy.del.012|                    policy marking.
+::X|EN|gr.spotlight.policy.del.013|
+::X|EN|gr.spotlight.policy.del.014|  Cost            : The tip overlays and their promotional links come back
+::X|EN|gr.spotlight.policy.del.015|                    with the pictures - they are one feature, not two.
 ::X|EN|gr.spotlight.policy.del.016|
-::X|EN|gr.spotlight.policy.del.017|  Possible values:
-::X|EN|gr.spotlight.policy.del.018|    1                    : The whole Spotlight family is off: no rotating
-::X|EN|gr.spotlight.policy.del.019|                           lock-screen photographs, no Spotlight desktop
-::X|EN|gr.spotlight.policy.del.020|                           theme, no tip overlays and no "like what you
-::X|EN|gr.spotlight.policy.del.021|                           see" promotional links. The Windows Spotlight
-::X|EN|gr.spotlight.policy.del.022|                           option disappears from the Personalization
-::X|EN|gr.spotlight.policy.del.023|                           dropdown rather than being merely unselected,
-::X|EN|gr.spotlight.policy.del.024|                           and because this is an HKLM policy it applies
-::X|EN|gr.spotlight.policy.del.025|                           to every account on the machine.
-::X|EN|gr.spotlight.policy.del.026|    0                    : An explicit "Spotlight allowed by policy". A
-::X|EN|gr.spotlight.policy.del.027|                           third state, not the shipped condition; it
-::X|EN|gr.spotlight.policy.del.028|                           still marks Personalization as managed.
-::X|EN|gr.spotlight.policy.del.029|    DELETE               : Absent, the shipped state. Spotlight is
-::X|EN|gr.spotlight.policy.del.030|                           available and each user picks it, or not, in
-::X|EN|gr.spotlight.policy.del.031|                           Personalization.
-::X|EN|gr.spotlight.policy.del.032|
-::X|EN|gr.spotlight.policy.del.033|  Why these profiles : Gaming, server and laptop set 1; office and the
-::X|EN|gr.spotlight.policy.del.034|                       Windows answer delete. Be clear about the size of
-::X|EN|gr.spotlight.policy.del.035|                       the win, though: there is no CPU or RAM gain here
-::X|EN|gr.spotlight.policy.del.036|                       at all, and the download is a few images on a slow
-::X|EN|gr.spotlight.policy.del.037|                       rotation, so the honest case for 1 is that you do
-::X|EN|gr.spotlight.policy.del.038|                       not want promotional links on your lock screen and
-::X|EN|gr.spotlight.policy.del.039|                       you set your own image anyway. It also carries a
-::X|EN|gr.spotlight.policy.del.040|                       cost the other privacy knobs do not - because it is
-::X|EN|gr.spotlight.policy.del.041|                       an HKLM policy it stamps Personalization as managed
-::X|EN|gr.spotlight.policy.del.042|                       by your organization for every account, which is
-::X|EN|gr.spotlight.policy.del.043|                       exactly the banner this script otherwise refuses to
-::X|EN|gr.spotlight.policy.del.044|                       cause. Office deletes for that reason as much as
-::X|EN|gr.spotlight.policy.del.045|                       for the photographs. If you also answered 1 on the
-::X|EN|gr.spotlight.policy.del.046|                       sponsored-apps card, this one may already be
-::X|EN|gr.spotlight.policy.del.047|                       redundant.
-::X|EN|gr.spotlight.policy.del.048|
-::X|EN|gr.spotlight.policy.del.049|  Known problems  : With the policy at 1, Windows Spotlight vanishes from
-::X|EN|gr.spotlight.policy.del.050|                    the Personalization > Lock screen dropdown and
-::X|EN|gr.spotlight.policy.del.051|                    Settings displays a managed-by-your-organization note
-::X|EN|gr.spotlight.policy.del.052|                    on that page for every user of the machine.
-::X|EN|gr.spotlight.policy.del.053|
-::X|EN|gr.spotlight.policy.del.054|  Unverified      : I did not measure how much Spotlight actually
-::X|EN|gr.spotlight.policy.del.055|                    downloads. It is a handful of images on a slow
-::X|EN|gr.spotlight.policy.del.056|                    rotation, so calling it a bandwidth saving is
-::X|EN|gr.spotlight.policy.del.057|                    generous; treat the network argument as small rather
-::X|EN|gr.spotlight.policy.del.058|                    than as a headline. Whether
-::X|EN|gr.spotlight.policy.del.059|                    DisableWindowsConsumerFeatures=1 already suppresses
-::X|EN|gr.spotlight.policy.del.060|                    Spotlight on 25H2, making this value redundant, is
-::X|EN|gr.spotlight.policy.del.061|                    also unverified.
-::X|EN|gr.spotlight.policy.del.062|
-::X|EN|gr.spotlight.policy.del.063|  Target          : HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent,
-::X|EN|gr.spotlight.policy.del.064|                    value "DisableWindowsSpotlightFeatures" - deleted by
-::X|EN|gr.spotlight.policy.del.065|                    call :killkey under the OPTY.bat label
-::X|EN|gr.spotlight.policy.del.066|                    :gaming_restore (the value is removed only if
-::X|EN|gr.spotlight.policy.del.067|                    present; on a managed machine it is left to the
-::X|EN|gr.spotlight.policy.del.068|                    organisation).
-::X|FR|gr.spotlight.policy.del.001|  Ce que c est    : La strategie machine qui coupe d un bloc les images
+::X|EN|gr.spotlight.policy.del.017|  Windows default : Absent, Spotlight on.
+::X|EN|gr.spotlight.policy.del.018|
+::X|EN|gr.spotlight.policy.del.019|  Possible values:
+::X|EN|gr.spotlight.policy.del.020|    1                    : The whole Spotlight family is off: no rotating
+::X|EN|gr.spotlight.policy.del.021|                           lock-screen photographs, no Spotlight desktop
+::X|EN|gr.spotlight.policy.del.022|                           theme, no tip overlays and no "like what you
+::X|EN|gr.spotlight.policy.del.023|                           see" promotional links. The Windows Spotlight
+::X|EN|gr.spotlight.policy.del.024|                           option disappears from the Personalization
+::X|EN|gr.spotlight.policy.del.025|                           dropdown rather than being merely unselected.
+::X|EN|gr.spotlight.policy.del.026|                           The HKLM copy older builds wrote reached every
+::X|EN|gr.spotlight.policy.del.027|                           account; the HKCU copy reaches only the account
+::X|EN|gr.spotlight.policy.del.028|                           that ran the script. Microsoft lists the policy
+::X|EN|gr.spotlight.policy.del.029|                           for Enterprise, Education and IoT only, so Home
+::X|EN|gr.spotlight.policy.del.030|                           and Pro are expected to ignore it.
+::X|EN|gr.spotlight.policy.del.031|    0                    : An explicit "Spotlight allowed by policy". A
+::X|EN|gr.spotlight.policy.del.032|                           third state, not the shipped condition; it
+::X|EN|gr.spotlight.policy.del.033|                           still marks Personalization as managed.
+::X|EN|gr.spotlight.policy.del.034|    DELETE               : Absent, the shipped state. Spotlight is
+::X|EN|gr.spotlight.policy.del.035|                           available and each user picks it, or not, in
+::X|EN|gr.spotlight.policy.del.036|                           Personalization.
+::X|EN|gr.spotlight.policy.del.037|
+::X|EN|gr.spotlight.policy.del.038|  Why these profiles : Gaming, server and laptop set 1; office and the
+::X|EN|gr.spotlight.policy.del.039|                       Windows answer delete. Be clear about the size of
+::X|EN|gr.spotlight.policy.del.040|                       the win, though: there is no CPU or RAM gain here
+::X|EN|gr.spotlight.policy.del.041|                       at all, and the download is a few images on a slow
+::X|EN|gr.spotlight.policy.del.042|                       rotation, so the honest case for 1 is that you do
+::X|EN|gr.spotlight.policy.del.043|                       not want promotional links on your lock screen and
+::X|EN|gr.spotlight.policy.del.044|                       you set your own image anyway. It also carries a
+::X|EN|gr.spotlight.policy.del.045|                       cost the other privacy knobs do not - where it is
+::X|EN|gr.spotlight.policy.del.046|                       honoured it stamps Personalization as managed by
+::X|EN|gr.spotlight.policy.del.047|                       your organization (for every account with the old
+::X|EN|gr.spotlight.policy.del.048|                       HKLM copy, for one account with the HKCU copy),
+::X|EN|gr.spotlight.policy.del.049|                       which is exactly the banner this script otherwise
+::X|EN|gr.spotlight.policy.del.050|                       refuses to cause. Office deletes for that reason as
+::X|EN|gr.spotlight.policy.del.051|                       much as for the photographs. If you also answered 1
+::X|EN|gr.spotlight.policy.del.052|                       on the sponsored-apps card, this one may already be
+::X|EN|gr.spotlight.policy.del.053|                       redundant.
+::X|EN|gr.spotlight.policy.del.054|
+::X|EN|gr.spotlight.policy.del.055|  Known problems  : With the policy at 1, Windows Spotlight vanishes from
+::X|EN|gr.spotlight.policy.del.056|                    the Personalization > Lock screen dropdown and
+::X|EN|gr.spotlight.policy.del.057|                    Settings displays a managed-by-your-organization note
+::X|EN|gr.spotlight.policy.del.058|                    on that page (every user with the HKLM copy, the
+::X|EN|gr.spotlight.policy.del.059|                    account that ran the script with the HKCU copy).
+::X|EN|gr.spotlight.policy.del.060|
+::X|EN|gr.spotlight.policy.del.061|  Unverified      : I did not measure how much Spotlight actually
+::X|EN|gr.spotlight.policy.del.062|                    downloads. It is a handful of images on a slow
+::X|EN|gr.spotlight.policy.del.063|                    rotation, so calling it a bandwidth saving is
+::X|EN|gr.spotlight.policy.del.064|                    generous; treat the network argument as small rather
+::X|EN|gr.spotlight.policy.del.065|                    than as a headline. Whether
+::X|EN|gr.spotlight.policy.del.066|                    DisableWindowsConsumerFeatures=1 already suppresses
+::X|EN|gr.spotlight.policy.del.067|                    Spotlight on 25H2, making this value redundant, is
+::X|EN|gr.spotlight.policy.del.068|                    also unverified.
+::X|EN|gr.spotlight.policy.del.069|
+::X|EN|gr.spotlight.policy.del.070|  Target          : HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent
+::X|EN|gr.spotlight.policy.del.071|                    and HKCU\Software\Policies\Microsoft\Windows\CloudContent,
+::X|EN|gr.spotlight.policy.del.072|                    value "DisableWindowsSpotlightFeatures" - deleted from
+::X|EN|gr.spotlight.policy.del.073|                    both by call :killkey under the OPTY.bat label
+::X|EN|gr.spotlight.policy.del.074|                    :gaming_restore (the value is removed only if
+::X|EN|gr.spotlight.policy.del.075|                    present; on a managed machine it is left to the
+::X|EN|gr.spotlight.policy.del.076|                    organisation).
+::X|FR|gr.spotlight.policy.del.001|  Ce que c est    : La strategie qui coupe d un bloc les images
 ::X|FR|gr.spotlight.policy.del.002|                    tournantes de l ecran de verrouillage et du bureau,
-::X|FR|gr.spotlight.policy.del.003|                    ainsi que les conseils affiches par-dessus.
-::X|FR|gr.spotlight.policy.del.004|
-::X|FR|gr.spotlight.policy.del.005|  Effet reel      : Supprime la valeur : les images Spotlight et le theme
-::X|FR|gr.spotlight.policy.del.006|                    Spotlight du bureau refonctionnent.
-::X|FR|gr.spotlight.policy.del.007|
-::X|FR|gr.spotlight.policy.del.008|  Gain            : Vous retrouvez les photos tournantes, si vous les
-::X|FR|gr.spotlight.policy.del.009|                    aimiez, et la page Personnalisation cesse d afficher
-::X|FR|gr.spotlight.policy.del.010|                    une mention de strategie.
-::X|FR|gr.spotlight.policy.del.011|
-::X|FR|gr.spotlight.policy.del.012|  Cout            : Les surcouches de conseils et leurs liens
-::X|FR|gr.spotlight.policy.del.013|                    promotionnels reviennent avec les images : c est une
-::X|FR|gr.spotlight.policy.del.014|                    seule fonction, pas deux.
-::X|FR|gr.spotlight.policy.del.015|
-::X|FR|gr.spotlight.policy.del.016|  Defaut Windows  : Absente, Spotlight actif.
-::X|FR|gr.spotlight.policy.del.017|
-::X|FR|gr.spotlight.policy.del.018|  Valeurs possibles :
-::X|FR|gr.spotlight.policy.del.019|    1                    : Toute la famille Spotlight est coupee : plus de
-::X|FR|gr.spotlight.policy.del.020|                           photos tournantes sur l ecran de verrouillage,
-::X|FR|gr.spotlight.policy.del.021|                           plus de theme Spotlight du bureau, plus de
-::X|FR|gr.spotlight.policy.del.022|                           surcouches de conseils ni de liens
-::X|FR|gr.spotlight.policy.del.023|                           promotionnels "vous aimez cette image".
-::X|FR|gr.spotlight.policy.del.024|                           L option Windows Spotlight disparait de la
-::X|FR|gr.spotlight.policy.del.025|                           liste deroulante de Personnalisation au lieu
-::X|FR|gr.spotlight.policy.del.026|                           d y rester simplement non selectionnee, et
-::X|FR|gr.spotlight.policy.del.027|                           comme il s agit d une strategie HKLM, elle
-::X|FR|gr.spotlight.policy.del.028|                           s applique a tous les comptes de la machine.
-::X|FR|gr.spotlight.policy.del.029|    0                    : Un "Spotlight autorise par strategie"
-::X|FR|gr.spotlight.policy.del.030|                           explicite. Troisieme etat, pas la condition
-::X|FR|gr.spotlight.policy.del.031|                           d origine ; Personnalisation reste marquee
-::X|FR|gr.spotlight.policy.del.032|                           comme geree.
-::X|FR|gr.spotlight.policy.del.033|    DELETE               : Absente, l etat d origine. Spotlight est
-::X|FR|gr.spotlight.policy.del.034|                           disponible et chaque utilisateur le choisit, ou
-::X|FR|gr.spotlight.policy.del.035|                           non, dans Personnalisation.
-::X|FR|gr.spotlight.policy.del.036|
-::X|FR|gr.spotlight.policy.del.037|  Pourquoi ces profils : Gaming, serveur et portable ecrivent 1 ;
-::X|FR|gr.spotlight.policy.del.038|                         bureautique et la reponse Windows suppriment.
-::X|FR|gr.spotlight.policy.del.039|                         Soyons clairs sur la taille du gain : il n y a
-::X|FR|gr.spotlight.policy.del.040|                         ici aucun gain CPU ni memoire, et le
-::X|FR|gr.spotlight.policy.del.041|                         telechargement se limite a quelques images sur
-::X|FR|gr.spotlight.policy.del.042|                         une rotation lente. L argument honnete pour 1,
-::X|FR|gr.spotlight.policy.del.043|                         c est que vous ne voulez pas de liens
-::X|FR|gr.spotlight.policy.del.044|                         promotionnels sur votre ecran de verrouillage et
-::X|FR|gr.spotlight.policy.del.045|                         que vous mettez votre propre image de toute
-::X|FR|gr.spotlight.policy.del.046|                         facon. Cette valeur a en revanche un cout que les
-::X|FR|gr.spotlight.policy.del.047|                         autres reglages de confidentialite n ont pas :
-::X|FR|gr.spotlight.policy.del.048|                         etant une strategie HKLM, elle marque
-::X|FR|gr.spotlight.policy.del.049|                         Personnalisation comme geree par votre
-::X|FR|gr.spotlight.policy.del.050|                         organisation pour tous les comptes, exactement la
-::X|FR|gr.spotlight.policy.del.051|                         banniere que ce script se refuse a provoquer
-::X|FR|gr.spotlight.policy.del.052|                         ailleurs. La bureautique supprime autant pour
-::X|FR|gr.spotlight.policy.del.053|                         cette raison que pour les photos. Et si vous avez
-::X|FR|gr.spotlight.policy.del.054|                         repondu 1 sur la carte des applications
-::X|FR|gr.spotlight.policy.del.055|                         sponsorisees, celle-ci est peut-etre deja
-::X|FR|gr.spotlight.policy.del.056|                         redondante.
-::X|FR|gr.spotlight.policy.del.057|
-::X|FR|gr.spotlight.policy.del.058|  Problemes connus : Avec la strategie a 1, Windows Spotlight disparait de
-::X|FR|gr.spotlight.policy.del.059|                     la liste Personnalisation > Ecran de verrouillage et
-::X|FR|gr.spotlight.policy.del.060|                     Parametres affiche sur cette page une mention "gere
-::X|FR|gr.spotlight.policy.del.061|                     par votre organisation" pour tous les utilisateurs de
-::X|FR|gr.spotlight.policy.del.062|                     la machine.
-::X|FR|gr.spotlight.policy.del.063|
-::X|FR|gr.spotlight.policy.del.064|  Non verifie       : Je n ai pas mesure ce que Spotlight telecharge vraiment.
-::X|FR|gr.spotlight.policy.del.065|                      C est une poignee d images sur une rotation lente, donc
-::X|FR|gr.spotlight.policy.del.066|                      parler d economie de bande passante est genereux ;
-::X|FR|gr.spotlight.policy.del.067|                      considerez cet argument reseau comme mineur, pas comme
-::X|FR|gr.spotlight.policy.del.068|                      un argument phare. Je n ai pas non plus verifie si
-::X|FR|gr.spotlight.policy.del.069|                      DisableWindowsConsumerFeatures=1 supprime deja Spotlight
-::X|FR|gr.spotlight.policy.del.070|                      sur 25H2, ce qui rendrait cette valeur redondante.
-::X|FR|gr.spotlight.policy.del.071|
-::X|FR|gr.spotlight.policy.del.072|  Cible           : HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent,
-::X|FR|gr.spotlight.policy.del.073|                    valeur "DisableWindowsSpotlightFeatures" - supprimee
-::X|FR|gr.spotlight.policy.del.074|                    par call :killkey sous le label OPTY.bat
-::X|FR|gr.spotlight.policy.del.075|                    :gaming_restore (la valeur n est retiree que si elle
-::X|FR|gr.spotlight.policy.del.076|                    existe ; sur une machine geree elle est laissee a
-::X|FR|gr.spotlight.policy.del.077|                    l organisation).
+::X|FR|gr.spotlight.policy.del.003|                    ainsi que les conseils affiches par-dessus. Les
+::X|FR|gr.spotlight.policy.del.004|                    versions actuelles l ecrivent sous HKCU (strategie
+::X|FR|gr.spotlight.policy.del.005|                    Utilisateur) ; les anciennes l ecrivaient sous HKLM.
+::X|FR|gr.spotlight.policy.del.006|
+::X|FR|gr.spotlight.policy.del.007|  Effet reel      : Supprime la valeur sous HKLM et sous HKCU : les images
+::X|FR|gr.spotlight.policy.del.008|                    Spotlight et le theme Spotlight du bureau
+::X|FR|gr.spotlight.policy.del.009|                    refonctionnent.
+::X|FR|gr.spotlight.policy.del.010|
+::X|FR|gr.spotlight.policy.del.011|  Gain            : Vous retrouvez les photos tournantes, si vous les
+::X|FR|gr.spotlight.policy.del.012|                    aimiez, et la page Personnalisation cesse d afficher
+::X|FR|gr.spotlight.policy.del.013|                    une mention de strategie.
+::X|FR|gr.spotlight.policy.del.014|
+::X|FR|gr.spotlight.policy.del.015|  Cout            : Les surcouches de conseils et leurs liens
+::X|FR|gr.spotlight.policy.del.016|                    promotionnels reviennent avec les images : c est une
+::X|FR|gr.spotlight.policy.del.017|                    seule fonction, pas deux.
+::X|FR|gr.spotlight.policy.del.018|
+::X|FR|gr.spotlight.policy.del.019|  Defaut Windows  : Absente, Spotlight actif.
+::X|FR|gr.spotlight.policy.del.020|
+::X|FR|gr.spotlight.policy.del.021|  Valeurs possibles :
+::X|FR|gr.spotlight.policy.del.022|    1                    : Toute la famille Spotlight est coupee : plus de
+::X|FR|gr.spotlight.policy.del.023|                           photos tournantes sur l ecran de verrouillage,
+::X|FR|gr.spotlight.policy.del.024|                           plus de theme Spotlight du bureau, plus de
+::X|FR|gr.spotlight.policy.del.025|                           surcouches de conseils ni de liens
+::X|FR|gr.spotlight.policy.del.026|                           promotionnels "vous aimez cette image".
+::X|FR|gr.spotlight.policy.del.027|                           L option Windows Spotlight disparait de la
+::X|FR|gr.spotlight.policy.del.028|                           liste deroulante de Personnalisation au lieu
+::X|FR|gr.spotlight.policy.del.029|                           d y rester simplement non selectionnee. La
+::X|FR|gr.spotlight.policy.del.030|                           copie HKLM des anciennes versions touchait tous
+::X|FR|gr.spotlight.policy.del.031|                           les comptes ; la copie HKCU ne touche que le
+::X|FR|gr.spotlight.policy.del.032|                           compte qui a lance le script. Microsoft ne
+::X|FR|gr.spotlight.policy.del.033|                           liste la strategie que pour Entreprise,
+::X|FR|gr.spotlight.policy.del.034|                           Education et IoT : Famille et Pro devraient l
+::X|FR|gr.spotlight.policy.del.035|                           ignorer.
+::X|FR|gr.spotlight.policy.del.036|    0                    : Un "Spotlight autorise par strategie"
+::X|FR|gr.spotlight.policy.del.037|                           explicite. Troisieme etat, pas la condition
+::X|FR|gr.spotlight.policy.del.038|                           d origine ; Personnalisation reste marquee
+::X|FR|gr.spotlight.policy.del.039|                           comme geree.
+::X|FR|gr.spotlight.policy.del.040|    DELETE               : Absente, l etat d origine. Spotlight est
+::X|FR|gr.spotlight.policy.del.041|                           disponible et chaque utilisateur le choisit, ou
+::X|FR|gr.spotlight.policy.del.042|                           non, dans Personnalisation.
+::X|FR|gr.spotlight.policy.del.043|
+::X|FR|gr.spotlight.policy.del.044|  Pourquoi ces profils : Gaming, serveur et portable ecrivent 1 ;
+::X|FR|gr.spotlight.policy.del.045|                         bureautique et la reponse Windows suppriment.
+::X|FR|gr.spotlight.policy.del.046|                         Soyons clairs sur la taille du gain : il n y a
+::X|FR|gr.spotlight.policy.del.047|                         ici aucun gain CPU ni memoire, et le
+::X|FR|gr.spotlight.policy.del.048|                         telechargement se limite a quelques images sur
+::X|FR|gr.spotlight.policy.del.049|                         une rotation lente. L argument honnete pour 1,
+::X|FR|gr.spotlight.policy.del.050|                         c est que vous ne voulez pas de liens
+::X|FR|gr.spotlight.policy.del.051|                         promotionnels sur votre ecran de verrouillage et
+::X|FR|gr.spotlight.policy.del.052|                         que vous mettez votre propre image de toute
+::X|FR|gr.spotlight.policy.del.053|                         facon. Cette valeur a en revanche un cout que les
+::X|FR|gr.spotlight.policy.del.054|                         autres reglages de confidentialite n ont pas : la
+::X|FR|gr.spotlight.policy.del.055|                         ou elle est appliquee, elle marque
+::X|FR|gr.spotlight.policy.del.056|                         Personnalisation comme geree par votre
+::X|FR|gr.spotlight.policy.del.057|                         organisation (pour tous les comptes avec l ancienne
+::X|FR|gr.spotlight.policy.del.058|                         copie HKLM, pour un seul compte avec la copie
+::X|FR|gr.spotlight.policy.del.059|                         HKCU), exactement la banniere que ce script se
+::X|FR|gr.spotlight.policy.del.060|                         refuse a provoquer ailleurs. La bureautique
+::X|FR|gr.spotlight.policy.del.061|                         supprime autant pour cette raison que pour les
+::X|FR|gr.spotlight.policy.del.062|                         photos. Et si vous avez
+::X|FR|gr.spotlight.policy.del.063|                         repondu 1 sur la carte des applications
+::X|FR|gr.spotlight.policy.del.064|                         sponsorisees, celle-ci est peut-etre deja
+::X|FR|gr.spotlight.policy.del.065|                         redondante.
+::X|FR|gr.spotlight.policy.del.066|
+::X|FR|gr.spotlight.policy.del.067|  Problemes connus : Avec la strategie a 1, Windows Spotlight disparait de
+::X|FR|gr.spotlight.policy.del.068|                     la liste Personnalisation > Ecran de verrouillage et
+::X|FR|gr.spotlight.policy.del.069|                     Parametres affiche sur cette page une mention "gere
+::X|FR|gr.spotlight.policy.del.070|                     par votre organisation" (tous les utilisateurs avec
+::X|FR|gr.spotlight.policy.del.071|                     la copie HKLM, le compte qui a lance le script avec la
+::X|FR|gr.spotlight.policy.del.072|                     copie HKCU).
+::X|FR|gr.spotlight.policy.del.073|
+::X|FR|gr.spotlight.policy.del.074|  Non verifie       : Je n ai pas mesure ce que Spotlight telecharge vraiment.
+::X|FR|gr.spotlight.policy.del.075|                      C est une poignee d images sur une rotation lente, donc
+::X|FR|gr.spotlight.policy.del.076|                      parler d economie de bande passante est genereux ;
+::X|FR|gr.spotlight.policy.del.077|                      considerez cet argument reseau comme mineur, pas comme
+::X|FR|gr.spotlight.policy.del.078|                      un argument phare. Je n ai pas non plus verifie si
+::X|FR|gr.spotlight.policy.del.079|                      DisableWindowsConsumerFeatures=1 supprime deja Spotlight
+::X|FR|gr.spotlight.policy.del.080|                      sur 25H2, ce qui rendrait cette valeur redondante.
+::X|FR|gr.spotlight.policy.del.081|
+::X|FR|gr.spotlight.policy.del.082|  Cible           : HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent
+::X|FR|gr.spotlight.policy.del.083|                    et HKCU\Software\Policies\Microsoft\Windows\CloudContent,
+::X|FR|gr.spotlight.policy.del.084|                    valeur "DisableWindowsSpotlightFeatures" - supprimee
+::X|FR|gr.spotlight.policy.del.085|                    des deux par call :killkey sous le label OPTY.bat
+::X|FR|gr.spotlight.policy.del.086|                    :gaming_restore (la valeur n est retiree que si elle
+::X|FR|gr.spotlight.policy.del.087|                    existe ; sur une machine geree elle est laissee a
+::X|FR|gr.spotlight.policy.del.088|                    l organisation).
 ::
 :: ---- db.recall.off (preference) -------------------------------------
 ::P|db.recall.off|1|1|DELETE|1|DELETE|
@@ -7725,152 +7844,185 @@ goto :eof
 :: ---- db.spotlight.off (preference) ----------------------------------
 ::P|db.spotlight.off|1|1|DELETE|1|DELETE|
 ::T|EN|db.spotlight.off.001|DISABLE WINDOWS SPOTLIGHT
-::T|EN|db.spotlight.off.002|Turns off Spotlight's rotating lock-screen photos, tip overlays and promo links - a real but tiny bandwidth saving, and on some profiles it stamps Settings as managed by your organization for every account on the machine.
+::T|EN|db.spotlight.off.002|Turns off Spotlight's rotating lock-screen photos, tip overlays and promo links for your account - a real but tiny bandwidth saving; Microsoft lists the policy for Enterprise and Education only, so Home and Pro likely ignore it, and where it works Settings may show managed by your organization.
 ::T|FR|db.spotlight.off.001|DESACTIVER WINDOWS SPOTLIGHT
-::T|FR|db.spotlight.off.002|Desactive les photos tournantes, les conseils et les liens promotionnels de Spotlight sur l ecran de verrouillage - une economie de bande passante reelle mais minime, qui peut aussi afficher gere par votre organisation pour tous les comptes de la machine sur certains profils.
+::T|FR|db.spotlight.off.002|Desactive pour votre compte les photos tournantes, les conseils et les liens promotionnels de Spotlight sur l ecran de verrouillage - une economie de bande passante reelle mais minime ; Microsoft ne liste la strategie que pour Entreprise et Education, donc Famille et Pro l ignorent sans doute, et la ou elle agit Parametres peut afficher gere par votre organisation.
 ::X|EN|db.spotlight.off.001|  What it is      : Spotlight is the rotating lock-screen and desktop imagery,
 ::X|EN|db.spotlight.off.002|                    delivered with tip overlays and promotional links. This
-::X|EN|db.spotlight.off.003|                    one policy value switches the whole family off for every
-::X|EN|db.spotlight.off.004|                    account.
+::X|EN|db.spotlight.off.003|                    one policy value is meant to switch the whole family off
+::X|EN|db.spotlight.off.004|                    for the account that runs the script.
 ::X|EN|db.spotlight.off.005|
-::X|EN|db.spotlight.off.006|  Actual effect   : Writes DisableWindowsSpotlightFeatures=1 under HKLM.
-::X|EN|db.spotlight.off.007|
-::X|EN|db.spotlight.off.008|  Gain            : No tip overlays and no promotional links on your lock
-::X|EN|db.spotlight.off.009|                    screen, and one component that stops fetching content.
-::X|EN|db.spotlight.off.010|                    Size it honestly: there is no CPU or memory gain, and the
-::X|EN|db.spotlight.off.011|                    network saving is a few images on a slow rotation - real,
-::X|EN|db.spotlight.off.012|                    but small enough that it should not be the reason you do
-::X|EN|db.spotlight.off.013|                    this.
-::X|EN|db.spotlight.off.014|
-::X|EN|db.spotlight.off.015|  Cost            : You lose the rotating photographs, and if you never chose
-::X|EN|db.spotlight.off.016|                    your own lock-screen image you get a plain one. There is
-::X|EN|db.spotlight.off.017|                    also a cost the other privacy knobs do not have - see
-::X|EN|db.spotlight.off.018|                    known problems below.
-::X|EN|db.spotlight.off.019|
-::X|EN|db.spotlight.off.020|  Windows default : Absent, Spotlight on.
+::X|EN|db.spotlight.off.006|  Actual effect   : Writes DisableWindowsSpotlightFeatures=1 under HKCU
+::X|EN|db.spotlight.off.007|                    (a User policy), and always deletes the HKLM copy that
+::X|EN|db.spotlight.off.008|                    older builds of this script wrote, whatever you answer.
+::X|EN|db.spotlight.off.009|
+::X|EN|db.spotlight.off.010|  Gain            : No tip overlays and no promotional links on your lock
+::X|EN|db.spotlight.off.011|                    screen, and one component that stops fetching content.
+::X|EN|db.spotlight.off.012|                    Size it honestly: there is no CPU or memory gain, and the
+::X|EN|db.spotlight.off.013|                    network saving is a few images on a slow rotation - real,
+::X|EN|db.spotlight.off.014|                    but small enough that it should not be the reason you do
+::X|EN|db.spotlight.off.015|                    this.
+::X|EN|db.spotlight.off.016|
+::X|EN|db.spotlight.off.017|  Cost            : You lose the rotating photographs, and if you never chose
+::X|EN|db.spotlight.off.018|                    your own lock-screen image you get a plain one. There is
+::X|EN|db.spotlight.off.019|                    also a cost the other privacy knobs do not have - see
+::X|EN|db.spotlight.off.020|                    known problems below.
 ::X|EN|db.spotlight.off.021|
-::X|EN|db.spotlight.off.022|  Possible values:
-::X|EN|db.spotlight.off.023|    1      : The entire Spotlight family is off: no rotating lock-screen
-::X|EN|db.spotlight.off.024|             photographs, no Spotlight desktop theme, no tip overlays, no
-::X|EN|db.spotlight.off.025|             promotional links. The Windows Spotlight option is removed from
-::X|EN|db.spotlight.off.026|             the Personalization dropdown rather than merely unselected, and
-::X|EN|db.spotlight.off.027|             because the value lives in HKLM it applies to every account on
-::X|EN|db.spotlight.off.028|             the machine.
-::X|EN|db.spotlight.off.029|    0      : Explicitly allowed by policy. A third state - still flagged as
-::X|EN|db.spotlight.off.030|             managed, just permissive. Delete rather than write 0 to undo.
-::X|EN|db.spotlight.off.031|    DELETE : Absent, the shipped state. Spotlight available and chosen per
-::X|EN|db.spotlight.off.032|             user in Personalization.
-::X|EN|db.spotlight.off.033|
-::X|EN|db.spotlight.off.034|  Why these profiles : Gaming, server and laptop write 1: a machine whose lock
-::X|EN|db.spotlight.off.035|                       screen you barely look at has nothing to lose, and on a
-::X|EN|db.spotlight.off.036|                       laptop or a metered link the fetch is worth avoiding
-::X|EN|db.spotlight.off.037|                       even though it is small. Office deletes, matching
-::X|EN|db.spotlight.off.038|                       Windows, for two reasons - a household enjoys the daily
-::X|EN|db.spotlight.off.039|                       photographs, and this is a machine-wide HKLM policy
-::X|EN|db.spotlight.off.040|                       that stamps Personalization as managed by your
-::X|EN|db.spotlight.off.041|                       organization for everyone who signs in, which is the
-::X|EN|db.spotlight.off.042|                       exact banner this script refuses to cause elsewhere. If
-::X|EN|db.spotlight.off.043|                       that banner bothers you more than the tips do, answer 3
-::X|EN|db.spotlight.off.044|                       or 5 even on a machine you would otherwise strip. And
-::X|EN|db.spotlight.off.045|                       if you already blocked sponsored apps, check whether
-::X|EN|db.spotlight.off.046|                       the lock screen has gone plain already; the two
-::X|EN|db.spotlight.off.047|                       overlap.
-::X|EN|db.spotlight.off.048|
-::X|EN|db.spotlight.off.049|  Known problems     : With the policy at 1, Windows Spotlight disappears from
-::X|EN|db.spotlight.off.050|                       Personalization > Lock screen and Settings shows a
-::X|EN|db.spotlight.off.051|                       managed-by-your-organization note on that page for
-::X|EN|db.spotlight.off.052|                       every user of the machine, not just the one who ran the
-::X|EN|db.spotlight.off.053|                       script.
-::X|EN|db.spotlight.off.054|
-::X|EN|db.spotlight.off.055|  Unverified         : I did not measure Spotlight's actual download volume -
-::X|EN|db.spotlight.off.056|                       it is a handful of images on a slow rotation, so the
-::X|EN|db.spotlight.off.057|                       bandwidth argument is small and should not be sold as a
-::X|EN|db.spotlight.off.058|                       headline. Whether DisableWindowsConsumerFeatures=1
-::X|EN|db.spotlight.off.059|                       already suppresses Spotlight on 25H2, which would make
-::X|EN|db.spotlight.off.060|                       this value redundant on any machine that answered yes
-::X|EN|db.spotlight.off.061|                       there, is unverified.
-::X|EN|db.spotlight.off.062|
-::X|EN|db.spotlight.off.063|  Target             : reg add
-::X|EN|db.spotlight.off.064|                       "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent"
-::X|EN|db.spotlight.off.065|                       /v "DisableWindowsSpotlightFeatures" /t REG_DWORD /d 1
-::X|EN|db.spotlight.off.066|                       /f (the :askreg call under :sp_spotlight in
-::X|EN|db.spotlight.off.067|                       OPTY.bat, privacy section)
+::X|EN|db.spotlight.off.022|  Windows default : Absent, Spotlight on.
+::X|EN|db.spotlight.off.023|
+::X|EN|db.spotlight.off.024|  Possible values:
+::X|EN|db.spotlight.off.025|    1      : The entire Spotlight family is off, where Windows honours the
+::X|EN|db.spotlight.off.026|             policy: no rotating lock-screen photographs, no Spotlight
+::X|EN|db.spotlight.off.027|             desktop theme, no tip overlays, no promotional links. The
+::X|EN|db.spotlight.off.028|             Windows Spotlight option is removed from the Personalization
+::X|EN|db.spotlight.off.029|             dropdown rather than merely unselected. Because the value lives
+::X|EN|db.spotlight.off.030|             in HKCU it applies to the account that ran the script, not to
+::X|EN|db.spotlight.off.031|             every account on the machine. Microsoft lists this policy for
+::X|EN|db.spotlight.off.032|             Enterprise, Education and IoT only, so on Home and Pro expect
+::X|EN|db.spotlight.off.033|             it to be ignored.
+::X|EN|db.spotlight.off.034|    0      : Explicitly allowed by policy. A third state - still flagged as
+::X|EN|db.spotlight.off.035|             managed, just permissive. Delete rather than write 0 to undo.
+::X|EN|db.spotlight.off.036|    DELETE : Absent, the shipped state. Spotlight available and chosen per
+::X|EN|db.spotlight.off.037|             user in Personalization.
+::X|EN|db.spotlight.off.038|
+::X|EN|db.spotlight.off.039|  Why these profiles : Gaming, server and laptop write 1: a machine whose lock
+::X|EN|db.spotlight.off.040|                       screen you barely look at has nothing to lose, and on a
+::X|EN|db.spotlight.off.041|                       laptop or a metered link the fetch is worth avoiding
+::X|EN|db.spotlight.off.042|                       even though it is small. Office deletes, matching
+::X|EN|db.spotlight.off.043|                       Windows, for two reasons - a household enjoys the daily
+::X|EN|db.spotlight.off.044|                       photographs, and this is a policy that can stamp
+::X|EN|db.spotlight.off.045|                       Personalization as managed by your organization,
+::X|EN|db.spotlight.off.046|                       which is the exact banner this script refuses to
+::X|EN|db.spotlight.off.047|                       cause elsewhere. If that banner bothers you more than
+::X|EN|db.spotlight.off.048|                       the tips do, answer 3 or 5 even on a machine you would
+::X|EN|db.spotlight.off.049|                       otherwise strip. On Home and Pro the values that
+::X|EN|db.spotlight.off.050|                       actually work are the ContentDeliveryManager ones:
+::X|EN|db.spotlight.off.051|                       RotatingLockScreenOverlayEnabled, which the
+::X|EN|db.spotlight.off.052|                       suggestions card (db.cdm.suggestions.off) writes, and
+::X|EN|db.spotlight.off.053|                       SubscribedContent-338387Enabled, which this script
+::X|EN|db.spotlight.off.054|                       does not write. If you already blocked those, check
+::X|EN|db.spotlight.off.055|                       whether the lock screen has gone plain already; the
+::X|EN|db.spotlight.off.056|                       two overlap.
+::X|EN|db.spotlight.off.057|
+::X|EN|db.spotlight.off.058|  Known problems     : Where the policy is honoured at 1, Windows Spotlight
+::X|EN|db.spotlight.off.059|                       disappears from Personalization > Lock screen and
+::X|EN|db.spotlight.off.060|                       Settings shows a managed-by-your-organization note on
+::X|EN|db.spotlight.off.061|                       that page for the account that ran the script. On
+::X|EN|db.spotlight.off.062|                       Home and Pro the value is expected to do nothing.
+::X|EN|db.spotlight.off.063|
+::X|EN|db.spotlight.off.064|  Unverified         : I did not measure Spotlight's actual download volume -
+::X|EN|db.spotlight.off.065|                       it is a handful of images on a slow rotation, so the
+::X|EN|db.spotlight.off.066|                       bandwidth argument is small and should not be sold as a
+::X|EN|db.spotlight.off.067|                       headline. Whether DisableWindowsConsumerFeatures=1
+::X|EN|db.spotlight.off.068|                       already suppresses Spotlight on 25H2, which would make
+::X|EN|db.spotlight.off.069|                       this value redundant on any machine that answered yes
+::X|EN|db.spotlight.off.070|                       there, is unverified.
+::X|EN|db.spotlight.off.071|
+::X|EN|db.spotlight.off.072|  Sources            : Microsoft Learn, Policy CSP - Experience (2026-09-10);
+::X|EN|db.spotlight.off.073|                       Microsoft Learn, Manage connections from Windows
+::X|EN|db.spotlight.off.074|                       operating system components (2026-02-13).
+::X|EN|db.spotlight.off.075|
+::X|EN|db.spotlight.off.076|  Target             : reg add
+::X|EN|db.spotlight.off.077|                       "HKCU\Software\Policies\Microsoft\Windows\CloudContent"
+::X|EN|db.spotlight.off.078|                       /v "DisableWindowsSpotlightFeatures" /t REG_DWORD /d 1
+::X|EN|db.spotlight.off.079|                       /f (the :askreg call under :sp_spotlight in
+::X|EN|db.spotlight.off.080|                       OPTY.bat, privacy section), followed by :killkey on
+::X|EN|db.spotlight.off.081|                       the same value under
+::X|EN|db.spotlight.off.082|                       "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent"
 ::X|FR|db.spotlight.off.001|  Ce que c est   : Spotlight, ce sont les images tournantes de l ecran de
 ::X|FR|db.spotlight.off.002|                   verrouillage et du bureau, livrees avec des surcouches de
 ::X|FR|db.spotlight.off.003|                   conseils et des liens promotionnels. Cette unique valeur de
-::X|FR|db.spotlight.off.004|                   strategie coupe toute la famille, pour tous les comptes.
-::X|FR|db.spotlight.off.005|
-::X|FR|db.spotlight.off.006|  Effet reel     : Ecrit DisableWindowsSpotlightFeatures=1 sous HKLM.
-::X|FR|db.spotlight.off.007|
-::X|FR|db.spotlight.off.008|  Gain           : Plus de surcouches de conseils ni de liens promotionnels
-::X|FR|db.spotlight.off.009|                   sur votre ecran de verrouillage, et un composant de moins
-::X|FR|db.spotlight.off.010|                   qui telecharge du contenu. Mesurons honnetement : aucun
-::X|FR|db.spotlight.off.011|                   gain CPU ni memoire, et l economie reseau se limite a
-::X|FR|db.spotlight.off.012|                   quelques images sur une rotation lente. Reelle, mais assez
-::X|FR|db.spotlight.off.013|                   faible pour ne pas etre la raison de le faire.
-::X|FR|db.spotlight.off.014|
-::X|FR|db.spotlight.off.015|  Cout           : Vous perdez les photos tournantes, et si vous n avez jamais
-::X|FR|db.spotlight.off.016|                   choisi votre propre image de verrouillage, vous heritez d
-::X|FR|db.spotlight.off.017|                   un ecran uni. Il y a aussi un cout que les autres reglages
-::X|FR|db.spotlight.off.018|                   de confidentialite n ont pas - voir problemes connus plus
-::X|FR|db.spotlight.off.019|                   bas.
-::X|FR|db.spotlight.off.020|
-::X|FR|db.spotlight.off.021|  Defaut Windows : Absente, Spotlight actif.
-::X|FR|db.spotlight.off.022|
-::X|FR|db.spotlight.off.023|  Valeurs possibles :
-::X|FR|db.spotlight.off.024|    1      : Toute la famille Spotlight est coupee : plus de photos tournantes
-::X|FR|db.spotlight.off.025|             au verrouillage, plus de theme Spotlight du bureau, plus de
-::X|FR|db.spotlight.off.026|             surcouches de conseils ni de liens promotionnels. L option
-::X|FR|db.spotlight.off.027|             Windows Spotlight est retiree de la liste deroulante de
-::X|FR|db.spotlight.off.028|             Personnalisation au lieu d y rester simplement non selectionnee,
-::X|FR|db.spotlight.off.029|             et comme la valeur se trouve sous HKLM, elle s applique a tous
-::X|FR|db.spotlight.off.030|             les comptes de la machine.
-::X|FR|db.spotlight.off.031|    0      : Explicitement autorise par strategie. Troisieme etat : toujours
-::X|FR|db.spotlight.off.032|             signale comme gere, simplement dans le sens permissif. Pour
-::X|FR|db.spotlight.off.033|             annuler, supprimez au lieu d ecrire 0.
-::X|FR|db.spotlight.off.034|    DELETE : Absente, l etat d origine. Spotlight disponible et choisi par
-::X|FR|db.spotlight.off.035|             chaque utilisateur dans Personnalisation.
-::X|FR|db.spotlight.off.036|
-::X|FR|db.spotlight.off.037|  Pourquoi ces profils : Gaming, serveur et portable ecrivent 1 : une machine
-::X|FR|db.spotlight.off.038|                         dont vous ne regardez guere l ecran de verrouillage n
-::X|FR|db.spotlight.off.039|                         a rien a y perdre, et sur un portable ou une
-::X|FR|db.spotlight.off.040|                         connexion limitee, ce telechargement vaut la peine d
-::X|FR|db.spotlight.off.041|                         etre evite meme s il est modeste. La bureautique
-::X|FR|db.spotlight.off.042|                         supprime, comme Windows, pour deux raisons : un foyer
-::X|FR|db.spotlight.off.043|                         apprecie les photos du jour, et il s agit d une
-::X|FR|db.spotlight.off.044|                         strategie HKLM a l echelle de la machine, qui marque
-::X|FR|db.spotlight.off.045|                         Personnalisation comme geree par votre organisation
-::X|FR|db.spotlight.off.046|                         pour toute personne qui ouvre une session -
-::X|FR|db.spotlight.off.047|                         exactement la banniere que ce script se refuse a
-::X|FR|db.spotlight.off.048|                         provoquer ailleurs. Si cette banniere vous derange
-::X|FR|db.spotlight.off.049|                         plus que les conseils, repondez 3 ou 5 meme sur une
-::X|FR|db.spotlight.off.050|                         machine que vous depouilleriez par ailleurs. Et si
-::X|FR|db.spotlight.off.051|                         vous avez deja bloque les applications sponsorisees,
-::X|FR|db.spotlight.off.052|                         verifiez si l ecran de verrouillage n est pas deja
-::X|FR|db.spotlight.off.053|                         devenu uni : les deux se recoupent.
-::X|FR|db.spotlight.off.054|
-::X|FR|db.spotlight.off.055|  Problemes connus     : Avec la strategie a 1, Windows Spotlight disparait de
-::X|FR|db.spotlight.off.056|                         Personnalisation > Ecran de verrouillage et
-::X|FR|db.spotlight.off.057|                         Parametres affiche sur cette page une mention gere
-::X|FR|db.spotlight.off.058|                         par votre organisation pour tous les utilisateurs de
-::X|FR|db.spotlight.off.059|                         la machine, pas seulement celui qui a lance le
-::X|FR|db.spotlight.off.060|                         script.
-::X|FR|db.spotlight.off.061|
-::X|FR|db.spotlight.off.062|  Non verifie          : Le volume reel telecharge par Spotlight n a pas ete
-::X|FR|db.spotlight.off.063|                         mesure ici - ce sont quelques images sur une rotation
-::X|FR|db.spotlight.off.064|                         lente, donc l argument de bande passante est modeste
-::X|FR|db.spotlight.off.065|                         et ne devrait pas etre vendu comme un argument
-::X|FR|db.spotlight.off.066|                         principal. Il n est pas verifie que
-::X|FR|db.spotlight.off.067|                         DisableWindowsConsumerFeatures=1 supprime deja
-::X|FR|db.spotlight.off.068|                         Spotlight sur 25H2, ce qui rendrait cette valeur
-::X|FR|db.spotlight.off.069|                         redondante sur toute machine ayant repondu oui a ce
-::X|FR|db.spotlight.off.070|                         reglage-la.
-::X|FR|db.spotlight.off.071|
-::X|FR|db.spotlight.off.072|  Cible                : reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\Clo
-::X|FR|db.spotlight.off.073|                         udContent" /v "DisableWindowsSpotlightFeatures" /t
-::X|FR|db.spotlight.off.074|                         REG_DWORD /d 1 /f (l appel :askreg sous
-::X|FR|db.spotlight.off.075|                         :sp_spotlight dans OPTY.bat, section
-::X|FR|db.spotlight.off.076|                         confidentialite)
+::X|FR|db.spotlight.off.004|                   strategie est censee couper toute la famille, pour le
+::X|FR|db.spotlight.off.005|                   compte qui lance le script.
+::X|FR|db.spotlight.off.006|
+::X|FR|db.spotlight.off.007|  Effet reel     : Ecrit DisableWindowsSpotlightFeatures=1 sous HKCU (une
+::X|FR|db.spotlight.off.008|                   strategie Utilisateur), et supprime toujours la copie HKLM
+::X|FR|db.spotlight.off.009|                   ecrite par les anciennes versions du script, quelle que
+::X|FR|db.spotlight.off.010|                   soit votre reponse.
+::X|FR|db.spotlight.off.011|
+::X|FR|db.spotlight.off.012|  Gain           : Plus de surcouches de conseils ni de liens promotionnels
+::X|FR|db.spotlight.off.013|                   sur votre ecran de verrouillage, et un composant de moins
+::X|FR|db.spotlight.off.014|                   qui telecharge du contenu. Mesurons honnetement : aucun
+::X|FR|db.spotlight.off.015|                   gain CPU ni memoire, et l economie reseau se limite a
+::X|FR|db.spotlight.off.016|                   quelques images sur une rotation lente. Reelle, mais assez
+::X|FR|db.spotlight.off.017|                   faible pour ne pas etre la raison de le faire.
+::X|FR|db.spotlight.off.018|
+::X|FR|db.spotlight.off.019|  Cout           : Vous perdez les photos tournantes, et si vous n avez jamais
+::X|FR|db.spotlight.off.020|                   choisi votre propre image de verrouillage, vous heritez d
+::X|FR|db.spotlight.off.021|                   un ecran uni. Il y a aussi un cout que les autres reglages
+::X|FR|db.spotlight.off.022|                   de confidentialite n ont pas - voir problemes connus plus
+::X|FR|db.spotlight.off.023|                   bas.
+::X|FR|db.spotlight.off.024|
+::X|FR|db.spotlight.off.025|  Defaut Windows : Absente, Spotlight actif.
+::X|FR|db.spotlight.off.026|
+::X|FR|db.spotlight.off.027|  Valeurs possibles :
+::X|FR|db.spotlight.off.028|    1      : Toute la famille Spotlight est coupee, la ou Windows applique la
+::X|FR|db.spotlight.off.029|             strategie : plus de photos tournantes au verrouillage, plus de
+::X|FR|db.spotlight.off.030|             theme Spotlight du bureau, plus de surcouches de conseils ni de
+::X|FR|db.spotlight.off.031|             liens promotionnels. L option Windows Spotlight est retiree de
+::X|FR|db.spotlight.off.032|             la liste deroulante de Personnalisation au lieu d y rester
+::X|FR|db.spotlight.off.033|             simplement non selectionnee. Comme la valeur se trouve sous
+::X|FR|db.spotlight.off.034|             HKCU, elle s applique au compte qui a lance le script, pas a
+::X|FR|db.spotlight.off.035|             tous les comptes de la machine. Microsoft ne liste cette
+::X|FR|db.spotlight.off.036|             strategie que pour Entreprise, Education et IoT : sur Famille
+::X|FR|db.spotlight.off.037|             et Pro, attendez-vous a ce qu elle soit ignoree.
+::X|FR|db.spotlight.off.038|    0      : Explicitement autorise par strategie. Troisieme etat : toujours
+::X|FR|db.spotlight.off.039|             signale comme gere, simplement dans le sens permissif. Pour
+::X|FR|db.spotlight.off.040|             annuler, supprimez au lieu d ecrire 0.
+::X|FR|db.spotlight.off.041|    DELETE : Absente, l etat d origine. Spotlight disponible et choisi par
+::X|FR|db.spotlight.off.042|             chaque utilisateur dans Personnalisation.
+::X|FR|db.spotlight.off.043|
+::X|FR|db.spotlight.off.044|  Pourquoi ces profils : Gaming, serveur et portable ecrivent 1 : une machine
+::X|FR|db.spotlight.off.045|                         dont vous ne regardez guere l ecran de verrouillage n
+::X|FR|db.spotlight.off.046|                         a rien a y perdre, et sur un portable ou une
+::X|FR|db.spotlight.off.047|                         connexion limitee, ce telechargement vaut la peine d
+::X|FR|db.spotlight.off.048|                         etre evite meme s il est modeste. La bureautique
+::X|FR|db.spotlight.off.049|                         supprime, comme Windows, pour deux raisons : un foyer
+::X|FR|db.spotlight.off.050|                         apprecie les photos du jour, et il s agit d une
+::X|FR|db.spotlight.off.051|                         strategie qui peut marquer Personnalisation comme
+::X|FR|db.spotlight.off.052|                         geree par votre organisation - exactement la
+::X|FR|db.spotlight.off.053|                         banniere que ce script se refuse a provoquer
+::X|FR|db.spotlight.off.054|                         ailleurs. Si cette banniere vous derange plus que
+::X|FR|db.spotlight.off.055|                         les conseils, repondez 3 ou 5 meme sur une machine
+::X|FR|db.spotlight.off.056|                         que vous depouilleriez par ailleurs. Sur Famille et
+::X|FR|db.spotlight.off.057|                         Pro, les valeurs qui fonctionnent vraiment sont
+::X|FR|db.spotlight.off.058|                         celles de ContentDeliveryManager :
+::X|FR|db.spotlight.off.059|                         RotatingLockScreenOverlayEnabled, qu ecrit la carte
+::X|FR|db.spotlight.off.060|                         des suggestions (db.cdm.suggestions.off), et
+::X|FR|db.spotlight.off.061|                         SubscribedContent-338387Enabled, que ce script n
+::X|FR|db.spotlight.off.062|                         ecrit pas. Si vous les avez deja bloquees, verifiez
+::X|FR|db.spotlight.off.063|                         si l ecran de verrouillage n est pas deja devenu
+::X|FR|db.spotlight.off.064|                         uni : les deux se recoupent.
+::X|FR|db.spotlight.off.065|
+::X|FR|db.spotlight.off.066|  Problemes connus     : La ou la strategie est appliquee a 1, Windows
+::X|FR|db.spotlight.off.067|                         Spotlight disparait de Personnalisation > Ecran de
+::X|FR|db.spotlight.off.068|                         verrouillage et Parametres affiche sur cette page
+::X|FR|db.spotlight.off.069|                         une mention gere par votre organisation pour le
+::X|FR|db.spotlight.off.070|                         compte qui a lance le script. Sur Famille et Pro, la
+::X|FR|db.spotlight.off.071|                         valeur ne devrait rien faire.
+::X|FR|db.spotlight.off.072|
+::X|FR|db.spotlight.off.073|  Non verifie          : Le volume reel telecharge par Spotlight n a pas ete
+::X|FR|db.spotlight.off.074|                         mesure ici - ce sont quelques images sur une rotation
+::X|FR|db.spotlight.off.075|                         lente, donc l argument de bande passante est modeste
+::X|FR|db.spotlight.off.076|                         et ne devrait pas etre vendu comme un argument
+::X|FR|db.spotlight.off.077|                         principal. Il n est pas verifie que
+::X|FR|db.spotlight.off.078|                         DisableWindowsConsumerFeatures=1 supprime deja
+::X|FR|db.spotlight.off.079|                         Spotlight sur 25H2, ce qui rendrait cette valeur
+::X|FR|db.spotlight.off.080|                         redondante sur toute machine ayant repondu oui a ce
+::X|FR|db.spotlight.off.081|                         reglage-la.
+::X|FR|db.spotlight.off.082|
+::X|FR|db.spotlight.off.083|  Sources              : Microsoft Learn, Policy CSP - Experience
+::X|FR|db.spotlight.off.084|                         (2026-09-10) ; Microsoft Learn, Manage connections
+::X|FR|db.spotlight.off.085|                         from Windows operating system components
+::X|FR|db.spotlight.off.086|                         (2026-02-13).
+::X|FR|db.spotlight.off.087|
+::X|FR|db.spotlight.off.088|  Cible                : reg add "HKCU\Software\Policies\Microsoft\Windows\Clo
+::X|FR|db.spotlight.off.089|                         udContent" /v "DisableWindowsSpotlightFeatures" /t
+::X|FR|db.spotlight.off.090|                         REG_DWORD /d 1 /f (l appel :askreg sous
+::X|FR|db.spotlight.off.091|                         :sp_spotlight dans OPTY.bat, section
+::X|FR|db.spotlight.off.092|                         confidentialite), suivi de :killkey sur la meme
+::X|FR|db.spotlight.off.093|                         valeur sous "HKLM\SOFTWARE\Policies\Microsoft\Windo
+::X|FR|db.spotlight.off.094|                         ws\CloudContent"
 ::
 :: ---- reg.console.vt (preference) ------------------------------------
 ::P|reg.console.vt|1|1|1|1|DELETE|
@@ -10107,103 +10259,118 @@ goto :eof
 ::X|EN|file.self.update.004|                    NN.N form, so a build ahead of the release is never
 ::X|EN|file.self.update.005|                    downgraded), offers to download and replace itself. A
 ::X|EN|file.self.update.006|                    copy running from a git checkout is never replaced: it
-::X|EN|file.self.update.007|                    is told to update with git pull. The API call is
-::X|EN|file.self.update.008|                    unauthenticated, so it is rate limited to 60 requests
-::X|EN|file.self.update.009|                    per hour per IP; if tag_name cannot be read the check
-::X|EN|file.self.update.010|                    bails out and reports no update rather than guessing.
-::X|EN|file.self.update.011|
-::X|EN|file.self.update.012|  Actual effect   : curl -f -L writes new_OPTY.bat next to the script. The
-::X|EN|file.self.update.013|                    payload is rejected unless it contains 'set
-::X|EN|file.self.update.014|                    current_version='. Line endings are forced to CRLF.
-::X|EN|file.self.update.015|                    OPTY.bat is copied to OPTY_rollback.bat, the new file
-::X|EN|file.self.update.016|                    is moved over it, and the script relaunches. On any
-::X|EN|file.self.update.017|                    failure the download is deleted and nothing on disk
-::X|EN|file.self.update.018|                    changes.
-::X|EN|file.self.update.019|
-::X|EN|file.self.update.020|  Gain            : You get the fixes. This script's job is deleting files
-::X|EN|file.self.update.021|                    and writing registry values, so running the corrected
-::X|EN|file.self.update.022|                    version matters more here than it would for ordinary
-::X|EN|file.self.update.023|                    software - a bug in OPTY is a bug that touches your
-::X|EN|file.self.update.024|                    machine's configuration.
-::X|EN|file.self.update.025|
-::X|EN|file.self.update.026|  Cost            : You run code you have not read, fetched over the
-::X|EN|file.self.update.027|                    network. The -f flag and the content check block the
-::X|EN|file.self.update.028|                    two failure modes that previously overwrote OPTY.bat
-::X|EN|file.self.update.029|                    with a 404 error page, and OPTY_rollback.bat gives you
-::X|EN|file.self.update.030|                    a way back, but nothing verifies the author: there is
-::X|EN|file.self.update.031|                    no signature and no checksum. Trust here is entirely
-::X|EN|file.self.update.032|                    trust in the repository. Nothing else on the machine
-::X|EN|file.self.update.033|                    changes.
-::X|EN|file.self.update.034|
-::X|EN|file.self.update.035|  Windows default : Not applicable - this is OPTY updating itself, not a
-::X|EN|file.self.update.036|                    Windows setting.
-::X|EN|file.self.update.037|
-::X|EN|file.self.update.038|  Possible values:
-::X|EN|file.self.update.039|    RUN                  : A profile whose column is RUN (1, 3 or 4). curl
-::X|EN|file.self.update.040|                           fetches the release asset with -f (fail on HTTP
-::X|EN|file.self.update.041|                           error instead of writing the error page to
-::X|EN|file.self.update.042|                           disk). The file is rejected unless it contains
-::X|EN|file.self.update.043|                           the literal string 'set current_version='. It
-::X|EN|file.self.update.044|                           is then rewritten line by line so every line
-::X|EN|file.self.update.045|                           ends CRLF. The current OPTY.bat is copied to
-::X|EN|file.self.update.046|                           OPTY_rollback.bat, the new file is moved over
-::X|EN|file.self.update.047|                           OPTY.bat, and the script relaunches in a new
-::X|EN|file.self.update.048|                           console window. Any failure at any step deletes
-::X|EN|file.self.update.049|                           the download and leaves OPTY.bat untouched.
-::X|EN|file.self.update.050|    SKIP                 : Profile 2 or 5, s to skip, or a bare Enter
-::X|EN|file.self.update.051|                           (Enter takes the recommended 5, whose column is
-::X|EN|file.self.update.052|                           SKIP). Nothing is downloaded, nothing is
-::X|EN|file.self.update.053|                           replaced, the run continues on the current
-::X|EN|file.self.update.054|                           version. An earlier build fell straight into
-::X|EN|file.self.update.055|                           the update on Enter, which is why a bare Enter
-::X|EN|file.self.update.056|                           now lands on SKIP.
-::X|EN|file.self.update.057|
-::X|EN|file.self.update.058|  Why these profiles : Three of the five say yes for the same reason and
-::X|EN|file.self.update.059|                       it is not a performance reason: a desktop, an
-::X|EN|file.self.update.060|                       office PC and a laptop all have someone at the
-::X|EN|file.self.update.061|                       keyboard when the replaced script relaunches. The
-::X|EN|file.self.update.062|                       server says no because of the relaunch specifically
-::X|EN|file.self.update.063|                       - 'start "" OPTY.bat' opens a new console that
-::X|EN|file.self.update.064|                       nobody is sitting in front of on a headless box,
-::X|EN|file.self.update.065|                       and swapping the running maintenance script for an
-::X|EN|file.self.update.066|                       unreviewed one on an unattended machine is not a
-::X|EN|file.self.update.067|                       trade a server profile should make silently.
-::X|EN|file.self.update.068|                       WINDOWS is SKIP because OPTY's own shipped answer
-::X|EN|file.self.update.069|                       is no: it is the recommended answer, so a bare
-::X|EN|file.self.update.070|                       Enter declines.
-::X|EN|file.self.update.071|
-::X|EN|file.self.update.072|  Known problems  : Measured against the live repository: the
-::X|EN|file.self.update.073|                    releases/latest/download/OPTY.bat asset arrives with 0
-::X|EN|file.self.update.074|                    CR and 1854 lone LF, while the
-::X|EN|file.self.update.075|                    raw.githubusercontent.com copy arrives with 3530 CR
-::X|EN|file.self.update.076|                    and no lone LF. CMD computes the return address of
-::X|EN|file.self.update.077|                    call and goto :eof as a byte offset assuming 2-byte
-::X|EN|file.self.update.078|                    CRLF, so an LF-only OPTY.bat drifts into the wrong
-::X|EN|file.self.update.079|                    section partway through a long run. That is the
-::X|EN|file.self.update.080|                    'sometimes it works, sometimes it jumps somewhere
-::X|EN|file.self.update.081|                    random' the CRLF normalisation step now prevents.
-::X|EN|file.self.update.082|                    Separately, behind a shared or NATed IP the
-::X|EN|file.self.update.083|                    unauthenticated GitHub API can hit its 60/hour limit
-::X|EN|file.self.update.084|                    and the check reports 'you are running the latest
-::X|EN|file.self.update.085|                    version' when you are not.
-::X|EN|file.self.update.086|
-::X|EN|file.self.update.087|  Unverified      : The transfer is HTTPS to GitHub, but nothing verifies
-::X|EN|file.self.update.088|                    who built the release - no signature, no checksum.
-::X|EN|file.self.update.089|                    Whether the releases asset still ships LF-only today
-::X|EN|file.self.update.090|                    was measured once, on the version quoted in the code
-::X|EN|file.self.update.091|                    comments; GitHub could change that at any time, which
-::X|EN|file.self.update.092|                    is precisely why the script normalises rather than
-::X|EN|file.self.update.093|                    trusting the server.
-::X|EN|file.self.update.094|
-::X|EN|file.self.update.095|  Target          : :update_opty (version check, :ask "file.self.update")
-::X|EN|file.self.update.096|                    and :update_found_and_accepted: curl -f -L -o
-::X|EN|file.self.update.097|                    "%~dp0new_OPTY.bat" %GitHubLatestLink%OPTY.bat,
-::X|EN|file.self.update.098|                    validate with find /c "set current_version=",
-::X|EN|file.self.update.099|                    CRLF-normalise via type / find /v "", copy /y OPTY.bat
-::X|EN|file.self.update.100|                    OPTY_rollback.bat, move /y new_OPTY.bat OPTY.bat,
-::X|EN|file.self.update.101|                    start "" OPTY.bat. Failures go to
-::X|EN|file.self.update.102|                    :update_download_failed; a git checkout goes to
-::X|EN|file.self.update.103|                    :update_checkout.
+::X|EN|file.self.update.007|                    is told to update with git pull. The check queries
+::X|EN|file.self.update.008|                    https://api.github.com/repositories/589619283/releases
+::X|EN|file.self.update.009|                    /latest - the repository's numeric id, which survives
+::X|EN|file.self.update.010|                    renames - and the download comes from
+::X|EN|file.self.update.011|                    github.com/YannD-Delta/OPTY. The account was renamed
+::X|EN|file.self.update.012|                    from YannD-Deltagon; the old URLs only worked through
+::X|EN|file.self.update.013|                    GitHub's rename redirect, which stops as soon as
+::X|EN|file.self.update.014|                    someone registers the old name and a same-named
+::X|EN|file.self.update.015|                    repository (Source: GitHub Docs, Changing your GitHub
+::X|EN|file.self.update.016|                    username) - and this download runs elevated. The API
+::X|EN|file.self.update.017|                    call is unauthenticated, so it is rate limited to 60
+::X|EN|file.self.update.018|                    requests per hour per IP; if tag_name cannot be read
+::X|EN|file.self.update.019|                    the check bails out and says it could not check,
+::X|EN|file.self.update.020|                    rather than guessing.
+::X|EN|file.self.update.021|
+::X|EN|file.self.update.022|  Actual effect   : curl -f -L writes new_OPTY.bat next to the script. The
+::X|EN|file.self.update.023|                    payload is rejected unless it contains 'set
+::X|EN|file.self.update.024|                    current_version='. Line endings are forced to CRLF.
+::X|EN|file.self.update.025|                    OPTY.bat is copied to OPTY_rollback.bat, the new file
+::X|EN|file.self.update.026|                    is moved over it, and the script relaunches. On any
+::X|EN|file.self.update.027|                    failure the download is deleted and nothing on disk
+::X|EN|file.self.update.028|                    changes.
+::X|EN|file.self.update.029|
+::X|EN|file.self.update.030|  Gain            : You get the fixes. This script's job is deleting files
+::X|EN|file.self.update.031|                    and writing registry values, so running the corrected
+::X|EN|file.self.update.032|                    version matters more here than it would for ordinary
+::X|EN|file.self.update.033|                    software - a bug in OPTY is a bug that touches your
+::X|EN|file.self.update.034|                    machine's configuration.
+::X|EN|file.self.update.035|
+::X|EN|file.self.update.036|  Cost            : You run code you have not read, fetched over the
+::X|EN|file.self.update.037|                    network. The -f flag and the content check block the
+::X|EN|file.self.update.038|                    two failure modes that previously overwrote OPTY.bat
+::X|EN|file.self.update.039|                    with a 404 error page, and OPTY_rollback.bat gives you
+::X|EN|file.self.update.040|                    a way back, but nothing verifies the author: there is
+::X|EN|file.self.update.041|                    no signature and no checksum. Trust here is entirely
+::X|EN|file.self.update.042|                    trust in the repository. Nothing else on the machine
+::X|EN|file.self.update.043|                    changes.
+::X|EN|file.self.update.044|
+::X|EN|file.self.update.045|  Windows default : Not applicable - this is OPTY updating itself, not a
+::X|EN|file.self.update.046|                    Windows setting.
+::X|EN|file.self.update.047|
+::X|EN|file.self.update.048|  Possible values:
+::X|EN|file.self.update.049|    RUN                  : A profile whose column is RUN (1, 3 or 4). curl
+::X|EN|file.self.update.050|                           fetches the release asset with -f (fail on HTTP
+::X|EN|file.self.update.051|                           error instead of writing the error page to
+::X|EN|file.self.update.052|                           disk). The file is rejected unless it contains
+::X|EN|file.self.update.053|                           the literal string 'set current_version='. It
+::X|EN|file.self.update.054|                           is then rewritten line by line so every line
+::X|EN|file.self.update.055|                           ends CRLF. The current OPTY.bat is copied to
+::X|EN|file.self.update.056|                           OPTY_rollback.bat, the new file is moved over
+::X|EN|file.self.update.057|                           OPTY.bat, and the script relaunches in a new
+::X|EN|file.self.update.058|                           console window. Any failure at any step deletes
+::X|EN|file.self.update.059|                           the download and leaves OPTY.bat untouched.
+::X|EN|file.self.update.060|    SKIP                 : Profile 2 or 5, s to skip, or a bare Enter
+::X|EN|file.self.update.061|                           (Enter takes the recommended 5, whose column is
+::X|EN|file.self.update.062|                           SKIP). Nothing is downloaded, nothing is
+::X|EN|file.self.update.063|                           replaced, the run continues on the current
+::X|EN|file.self.update.064|                           version. An earlier build fell straight into
+::X|EN|file.self.update.065|                           the update on Enter, which is why a bare Enter
+::X|EN|file.self.update.066|                           now lands on SKIP.
+::X|EN|file.self.update.067|
+::X|EN|file.self.update.068|  Why these profiles : Three of the five say yes for the same reason and
+::X|EN|file.self.update.069|                       it is not a performance reason: a desktop, an
+::X|EN|file.self.update.070|                       office PC and a laptop all have someone at the
+::X|EN|file.self.update.071|                       keyboard when the replaced script relaunches. The
+::X|EN|file.self.update.072|                       server says no because of the relaunch specifically
+::X|EN|file.self.update.073|                       - 'start "" OPTY.bat' opens a new console that
+::X|EN|file.self.update.074|                       nobody is sitting in front of on a headless box,
+::X|EN|file.self.update.075|                       and swapping the running maintenance script for an
+::X|EN|file.self.update.076|                       unreviewed one on an unattended machine is not a
+::X|EN|file.self.update.077|                       trade a server profile should make silently.
+::X|EN|file.self.update.078|                       WINDOWS is SKIP because OPTY's own shipped answer
+::X|EN|file.self.update.079|                       is no: it is the recommended answer, so a bare
+::X|EN|file.self.update.080|                       Enter declines.
+::X|EN|file.self.update.081|
+::X|EN|file.self.update.082|  Known problems  : Measured against the live repository: the
+::X|EN|file.self.update.083|                    releases/latest/download/OPTY.bat asset arrives with 0
+::X|EN|file.self.update.084|                    CR and 1854 lone LF, while the
+::X|EN|file.self.update.085|                    raw.githubusercontent.com copy arrives with 3530 CR
+::X|EN|file.self.update.086|                    and no lone LF. CMD computes the return address of
+::X|EN|file.self.update.087|                    call and goto :eof as a byte offset assuming 2-byte
+::X|EN|file.self.update.088|                    CRLF, so an LF-only OPTY.bat drifts into the wrong
+::X|EN|file.self.update.089|                    section partway through a long run. That is the
+::X|EN|file.self.update.090|                    'sometimes it works, sometimes it jumps somewhere
+::X|EN|file.self.update.091|                    random' the CRLF normalisation step now prevents.
+::X|EN|file.self.update.092|                    Separately, behind a shared or NATed IP the
+::X|EN|file.self.update.093|                    unauthenticated GitHub API can hit its 60/hour limit;
+::X|EN|file.self.update.094|                    the check then shows 'Could not check for updates' and
+::X|EN|file.self.update.095|                    carries on with the current version, so an available
+::X|EN|file.self.update.096|                    update is simply not offered on that run.
+::X|EN|file.self.update.097|
+::X|EN|file.self.update.098|  Unverified      : The transfer is HTTPS to GitHub, but nothing verifies
+::X|EN|file.self.update.099|                    who built the release - no signature, no checksum.
+::X|EN|file.self.update.100|                    Whether the releases asset still ships LF-only today
+::X|EN|file.self.update.101|                    was measured once, on the version quoted in the code
+::X|EN|file.self.update.102|                    comments; GitHub could change that at any time, which
+::X|EN|file.self.update.103|                    is precisely why the script normalises rather than
+::X|EN|file.self.update.104|                    trusting the server.
+::X|EN|file.self.update.105|
+::X|EN|file.self.update.106|  Target          : :update_opty (version check, :ask "file.self.update")
+::X|EN|file.self.update.107|                    and :update_found_and_accepted: curl -s
+::X|EN|file.self.update.108|                    %GitHubApiLatest% (the numeric-id API URL) for
+::X|EN|file.self.update.109|                    tag_name, then curl -f -L -o "%~dp0new_OPTY.bat"
+::X|EN|file.self.update.110|                    %GitHubLatestLink%OPTY.bat (github.com/YannD-Delta/
+::X|EN|file.self.update.111|                    OPTY/releases/latest/download/),
+::X|EN|file.self.update.112|                    validate with find /c "set current_version=",
+::X|EN|file.self.update.113|                    CRLF-normalise via type / find /v "", copy /y OPTY.bat
+::X|EN|file.self.update.114|                    OPTY_rollback.bat, move /y new_OPTY.bat OPTY.bat,
+::X|EN|file.self.update.115|                    start "" OPTY.bat. Failures go to
+::X|EN|file.self.update.116|                    :update_download_failed; an unreadable check goes to
+::X|EN|file.self.update.117|                    :update_unknown; a git checkout goes to
+::X|EN|file.self.update.118|                    :update_checkout.
 ::X|FR|file.self.update.001|  Ce que c est    : OPTY compare son propre « set current_version=05.1 »
 ::X|FR|file.self.update.002|                    au tag_name de la derniere release GitHub et, seulement
 ::X|FR|file.self.update.003|                    si la release est plus recente (comparaison de chaines
@@ -10211,110 +10378,126 @@ goto :eof
 ::X|FR|file.self.update.005|                    release n est jamais retrogradee), propose de se
 ::X|FR|file.self.update.006|                    telecharger et de se remplacer. Une copie lancee
 ::X|FR|file.self.update.007|                    depuis un depot git n est jamais remplacee : on lui
-::X|FR|file.self.update.008|                    dit de se mettre a jour par git pull. L appel a l API
-::X|FR|file.self.update.009|                    se fait sans authentification : il est donc limite a
-::X|FR|file.self.update.010|                    60 requetes par heure et par IP, et si tag_name est
-::X|FR|file.self.update.011|                    illisible le controle abandonne en annoncant « pas de
-::X|FR|file.self.update.012|                    mise a jour » plutot que de deviner.
-::X|FR|file.self.update.013|
-::X|FR|file.self.update.014|  Effet reel      : curl -f -L ecrit new_OPTY.bat a cote du script. Le
-::X|FR|file.self.update.015|                    fichier est rejete s il ne contient pas « set
-::X|FR|file.self.update.016|                    current_version= ». Les fins de ligne sont forcees en
-::X|FR|file.self.update.017|                    CRLF. OPTY.bat est copie en OPTY_rollback.bat, le
-::X|FR|file.self.update.018|                    nouveau fichier l ecrase, et le script se relance. Au
-::X|FR|file.self.update.019|                    moindre echec, le telechargement est supprime et rien
-::X|FR|file.self.update.020|                    ne change sur le disque.
-::X|FR|file.self.update.021|
-::X|FR|file.self.update.022|  Gain            : Vous recuperez les corrections. Le metier de ce
-::X|FR|file.self.update.023|                    script, c est de supprimer des fichiers et d ecrire
-::X|FR|file.self.update.024|                    dans le registre : tourner sur la version corrigee
-::X|FR|file.self.update.025|                    compte plus ici que pour un logiciel ordinaire,
-::X|FR|file.self.update.026|                    puisqu un bogue d OPTY est un bogue qui touche la
-::X|FR|file.self.update.027|                    configuration de la machine.
-::X|FR|file.self.update.028|
-::X|FR|file.self.update.029|  Cout            : Vous executez du code que vous n avez pas lu, recupere
-::X|FR|file.self.update.030|                    sur le reseau. Le -f et le controle de contenu
-::X|FR|file.self.update.031|                    bloquent les deux scenarios qui ecrasaient auparavant
-::X|FR|file.self.update.032|                    OPTY.bat avec une page d erreur 404, et
-::X|FR|file.self.update.033|                    OPTY_rollback.bat vous laisse un chemin de retour,
-::X|FR|file.self.update.034|                    mais rien ne verifie l auteur : ni signature, ni somme
-::X|FR|file.self.update.035|                    de controle. La confiance ici, c est uniquement la
-::X|FR|file.self.update.036|                    confiance dans le depot. Rien d autre sur la machine
-::X|FR|file.self.update.037|                    ne bouge.
+::X|FR|file.self.update.008|                    dit de se mettre a jour par git pull. Le controle
+::X|FR|file.self.update.009|                    interroge https://api.github.com/repositories/58961928
+::X|FR|file.self.update.010|                    3/releases/latest - l identifiant numerique du depot,
+::X|FR|file.self.update.011|                    qui survit aux renommages - et le telechargement vient
+::X|FR|file.self.update.012|                    de github.com/YannD-Delta/OPTY. Le compte s appelait
+::X|FR|file.self.update.013|                    YannD-Deltagon ; les anciennes URL ne marchaient plus
+::X|FR|file.self.update.014|                    que grace a la redirection de GitHub apres renommage,
+::X|FR|file.self.update.015|                    qui cesse des que quelqu un enregistre l ancien nom et
+::X|FR|file.self.update.016|                    un depot du meme nom (Source : GitHub Docs, Changing
+::X|FR|file.self.update.017|                    your GitHub username) - et ce telechargement tourne en
+::X|FR|file.self.update.018|                    administrateur. L appel a l API se fait sans
+::X|FR|file.self.update.019|                    authentification : il est donc limite a 60 requetes
+::X|FR|file.self.update.020|                    par heure et par IP, et si tag_name est illisible le
+::X|FR|file.self.update.021|                    controle abandonne en annoncant qu il n a pas pu
+::X|FR|file.self.update.022|                    verifier, plutot que de deviner.
+::X|FR|file.self.update.023|
+::X|FR|file.self.update.024|  Effet reel      : curl -f -L ecrit new_OPTY.bat a cote du script. Le
+::X|FR|file.self.update.025|                    fichier est rejete s il ne contient pas « set
+::X|FR|file.self.update.026|                    current_version= ». Les fins de ligne sont forcees en
+::X|FR|file.self.update.027|                    CRLF. OPTY.bat est copie en OPTY_rollback.bat, le
+::X|FR|file.self.update.028|                    nouveau fichier l ecrase, et le script se relance. Au
+::X|FR|file.self.update.029|                    moindre echec, le telechargement est supprime et rien
+::X|FR|file.self.update.030|                    ne change sur le disque.
+::X|FR|file.self.update.031|
+::X|FR|file.self.update.032|  Gain            : Vous recuperez les corrections. Le metier de ce
+::X|FR|file.self.update.033|                    script, c est de supprimer des fichiers et d ecrire
+::X|FR|file.self.update.034|                    dans le registre : tourner sur la version corrigee
+::X|FR|file.self.update.035|                    compte plus ici que pour un logiciel ordinaire,
+::X|FR|file.self.update.036|                    puisqu un bogue d OPTY est un bogue qui touche la
+::X|FR|file.self.update.037|                    configuration de la machine.
 ::X|FR|file.self.update.038|
-::X|FR|file.self.update.039|  Defaut Windows  : Sans objet : c est OPTY qui se met a jour lui-meme,
-::X|FR|file.self.update.040|                    pas un reglage Windows.
-::X|FR|file.self.update.041|
-::X|FR|file.self.update.042|  Valeurs possibles :
-::X|FR|file.self.update.043|    RUN                  : Un profil dont la colonne vaut RUN (1, 3 ou 4).
-::X|FR|file.self.update.044|                           curl recupere l asset de la release avec -f
-::X|FR|file.self.update.045|                           (echec sur erreur HTTP au lieu d ecrire la page
-::X|FR|file.self.update.046|                           d erreur sur le disque). Le fichier est rejete
-::X|FR|file.self.update.047|                           s il ne contient pas la chaine litterale « set
-::X|FR|file.self.update.048|                           current_version= ». Il est ensuite reecrit
-::X|FR|file.self.update.049|                           ligne par ligne pour forcer des fins de ligne
-::X|FR|file.self.update.050|                           CRLF. L OPTY.bat actuel est copie en
-::X|FR|file.self.update.051|                           OPTY_rollback.bat, le nouveau fichier ecrase
-::X|FR|file.self.update.052|                           OPTY.bat, et le script se relance dans une
-::X|FR|file.self.update.053|                           nouvelle fenetre. Le moindre echec supprime le
-::X|FR|file.self.update.054|                           telechargement et laisse OPTY.bat intact.
-::X|FR|file.self.update.055|    SKIP                 : Profil 2 ou 5, s pour passer, ou un simple
-::X|FR|file.self.update.056|                           Entree (Entree prend le 5 recommande, dont la
-::X|FR|file.self.update.057|                           colonne vaut SKIP). Rien n est telecharge, rien
-::X|FR|file.self.update.058|                           n est remplace, la session continue sur la
-::X|FR|file.self.update.059|                           version actuelle. Une version anterieure
-::X|FR|file.self.update.060|                           enchainait directement sur la mise a jour quand
-::X|FR|file.self.update.061|                           on appuyait sur Entree, d ou un Entree qui
-::X|FR|file.self.update.062|                           tombe aujourd hui sur SKIP.
-::X|FR|file.self.update.063|
-::X|FR|file.self.update.064|  Pourquoi ces profils : Trois profils sur cinq disent oui, et pour une
-::X|FR|file.self.update.065|                         raison qui n a rien a voir avec les performances
-::X|FR|file.self.update.066|                         : sur un poste de bureau, un PC bureautique ou un
-::X|FR|file.self.update.067|                         portable, quelqu un est devant l ecran quand le
-::X|FR|file.self.update.068|                         script remplace se relance. Le profil serveur dit
-::X|FR|file.self.update.069|                         non a cause de ce relancement precisement : «
-::X|FR|file.self.update.070|                         start "" OPTY.bat » ouvre une console que
-::X|FR|file.self.update.071|                         personne ne regarde sur une machine sans ecran,
-::X|FR|file.self.update.072|                         et echanger en silence le script de maintenance
-::X|FR|file.self.update.073|                         en cours contre une version non relue n est pas
-::X|FR|file.self.update.074|                         un compromis qu un profil serveur doit accepter.
-::X|FR|file.self.update.075|                         WINDOWS reste sur SKIP parce que la reponse
-::X|FR|file.self.update.076|                         d origine d OPTY est non : c est la reponse
-::X|FR|file.self.update.077|                         recommandee, donc un simple Entree refuse.
-::X|FR|file.self.update.078|
-::X|FR|file.self.update.079|  Problemes connus : Mesure sur le depot reel : l asset
-::X|FR|file.self.update.080|                     releases/latest/download/OPTY.bat arrive avec 0 CR et
-::X|FR|file.self.update.081|                     1854 LF isoles, alors que la copie
-::X|FR|file.self.update.082|                     raw.githubusercontent.com arrive avec 3530 CR et
-::X|FR|file.self.update.083|                     aucun LF isole. CMD calcule l adresse de retour de
-::X|FR|file.self.update.084|                     call et goto :eof comme un decalage en octets en
-::X|FR|file.self.update.085|                     supposant des CRLF de 2 octets : un OPTY.bat en LF
-::X|FR|file.self.update.086|                     seul derive donc vers la mauvaise section au milieu
-::X|FR|file.self.update.087|                     d une longue execution. C est exactement le « parfois
-::X|FR|file.self.update.088|                     ca marche, parfois ca saute n importe ou » que
-::X|FR|file.self.update.089|                     l etape de normalisation CRLF evite desormais. Par
-::X|FR|file.self.update.090|                     ailleurs, derriere une IP partagee ou en NAT, l API
-::X|FR|file.self.update.091|                     GitHub non authentifiee peut atteindre sa limite de
-::X|FR|file.self.update.092|                     60 requetes/heure et le controle annonce « vous avez
-::X|FR|file.self.update.093|                     la derniere version » alors que non.
-::X|FR|file.self.update.094|
-::X|FR|file.self.update.095|  Non verifie (en)  : The transfer is HTTPS to GitHub, but nothing
-::X|FR|file.self.update.096|                      verifies who built the release - no signature, no
-::X|FR|file.self.update.097|                      checksum. Whether the releases asset still ships LF-
-::X|FR|file.self.update.098|                      only today was measured once, on the version quoted
-::X|FR|file.self.update.099|                      in the code comments; GitHub could change that at
-::X|FR|file.self.update.100|                      any time, which is precisely why the script
-::X|FR|file.self.update.101|                      normalises rather than trusting the server.
-::X|FR|file.self.update.102|
-::X|FR|file.self.update.103|  Cible           : :update_opty (controle de version, :ask
-::X|FR|file.self.update.104|                    "file.self.update") et :update_found_and_accepted :
-::X|FR|file.self.update.105|                    curl -f -L -o "%~dp0new_OPTY.bat"
-::X|FR|file.self.update.106|                    %GitHubLatestLink%OPTY.bat, validation par find /c
-::X|FR|file.self.update.107|                    "set current_version=", normalisation CRLF par type /
-::X|FR|file.self.update.108|                    find /v "", copy /y OPTY.bat OPTY_rollback.bat, move
-::X|FR|file.self.update.109|                    /y new_OPTY.bat OPTY.bat, start "" OPTY.bat. Les
-::X|FR|file.self.update.110|                    echecs vont a :update_download_failed ; un depot git
-::X|FR|file.self.update.111|                    va a :update_checkout.
+::X|FR|file.self.update.039|  Cout            : Vous executez du code que vous n avez pas lu, recupere
+::X|FR|file.self.update.040|                    sur le reseau. Le -f et le controle de contenu
+::X|FR|file.self.update.041|                    bloquent les deux scenarios qui ecrasaient auparavant
+::X|FR|file.self.update.042|                    OPTY.bat avec une page d erreur 404, et
+::X|FR|file.self.update.043|                    OPTY_rollback.bat vous laisse un chemin de retour,
+::X|FR|file.self.update.044|                    mais rien ne verifie l auteur : ni signature, ni somme
+::X|FR|file.self.update.045|                    de controle. La confiance ici, c est uniquement la
+::X|FR|file.self.update.046|                    confiance dans le depot. Rien d autre sur la machine
+::X|FR|file.self.update.047|                    ne bouge.
+::X|FR|file.self.update.048|
+::X|FR|file.self.update.049|  Defaut Windows  : Sans objet : c est OPTY qui se met a jour lui-meme,
+::X|FR|file.self.update.050|                    pas un reglage Windows.
+::X|FR|file.self.update.051|
+::X|FR|file.self.update.052|  Valeurs possibles :
+::X|FR|file.self.update.053|    RUN                  : Un profil dont la colonne vaut RUN (1, 3 ou 4).
+::X|FR|file.self.update.054|                           curl recupere l asset de la release avec -f
+::X|FR|file.self.update.055|                           (echec sur erreur HTTP au lieu d ecrire la page
+::X|FR|file.self.update.056|                           d erreur sur le disque). Le fichier est rejete
+::X|FR|file.self.update.057|                           s il ne contient pas la chaine litterale « set
+::X|FR|file.self.update.058|                           current_version= ». Il est ensuite reecrit
+::X|FR|file.self.update.059|                           ligne par ligne pour forcer des fins de ligne
+::X|FR|file.self.update.060|                           CRLF. L OPTY.bat actuel est copie en
+::X|FR|file.self.update.061|                           OPTY_rollback.bat, le nouveau fichier ecrase
+::X|FR|file.self.update.062|                           OPTY.bat, et le script se relance dans une
+::X|FR|file.self.update.063|                           nouvelle fenetre. Le moindre echec supprime le
+::X|FR|file.self.update.064|                           telechargement et laisse OPTY.bat intact.
+::X|FR|file.self.update.065|    SKIP                 : Profil 2 ou 5, s pour passer, ou un simple
+::X|FR|file.self.update.066|                           Entree (Entree prend le 5 recommande, dont la
+::X|FR|file.self.update.067|                           colonne vaut SKIP). Rien n est telecharge, rien
+::X|FR|file.self.update.068|                           n est remplace, la session continue sur la
+::X|FR|file.self.update.069|                           version actuelle. Une version anterieure
+::X|FR|file.self.update.070|                           enchainait directement sur la mise a jour quand
+::X|FR|file.self.update.071|                           on appuyait sur Entree, d ou un Entree qui
+::X|FR|file.self.update.072|                           tombe aujourd hui sur SKIP.
+::X|FR|file.self.update.073|
+::X|FR|file.self.update.074|  Pourquoi ces profils : Trois profils sur cinq disent oui, et pour une
+::X|FR|file.self.update.075|                         raison qui n a rien a voir avec les performances
+::X|FR|file.self.update.076|                         : sur un poste de bureau, un PC bureautique ou un
+::X|FR|file.self.update.077|                         portable, quelqu un est devant l ecran quand le
+::X|FR|file.self.update.078|                         script remplace se relance. Le profil serveur dit
+::X|FR|file.self.update.079|                         non a cause de ce relancement precisement : «
+::X|FR|file.self.update.080|                         start "" OPTY.bat » ouvre une console que
+::X|FR|file.self.update.081|                         personne ne regarde sur une machine sans ecran,
+::X|FR|file.self.update.082|                         et echanger en silence le script de maintenance
+::X|FR|file.self.update.083|                         en cours contre une version non relue n est pas
+::X|FR|file.self.update.084|                         un compromis qu un profil serveur doit accepter.
+::X|FR|file.self.update.085|                         WINDOWS reste sur SKIP parce que la reponse
+::X|FR|file.self.update.086|                         d origine d OPTY est non : c est la reponse
+::X|FR|file.self.update.087|                         recommandee, donc un simple Entree refuse.
+::X|FR|file.self.update.088|
+::X|FR|file.self.update.089|  Problemes connus : Mesure sur le depot reel : l asset
+::X|FR|file.self.update.090|                     releases/latest/download/OPTY.bat arrive avec 0 CR et
+::X|FR|file.self.update.091|                     1854 LF isoles, alors que la copie
+::X|FR|file.self.update.092|                     raw.githubusercontent.com arrive avec 3530 CR et
+::X|FR|file.self.update.093|                     aucun LF isole. CMD calcule l adresse de retour de
+::X|FR|file.self.update.094|                     call et goto :eof comme un decalage en octets en
+::X|FR|file.self.update.095|                     supposant des CRLF de 2 octets : un OPTY.bat en LF
+::X|FR|file.self.update.096|                     seul derive donc vers la mauvaise section au milieu
+::X|FR|file.self.update.097|                     d une longue execution. C est exactement le « parfois
+::X|FR|file.self.update.098|                     ca marche, parfois ca saute n importe ou » que
+::X|FR|file.self.update.099|                     l etape de normalisation CRLF evite desormais. Par
+::X|FR|file.self.update.100|                     ailleurs, derriere une IP partagee ou en NAT, l API
+::X|FR|file.self.update.101|                     GitHub non authentifiee peut atteindre sa limite de
+::X|FR|file.self.update.102|                     60 requetes/heure ; le controle affiche alors « Could
+::X|FR|file.self.update.103|                     not check for updates » et continue sur la version
+::X|FR|file.self.update.104|                     actuelle, donc une mise a jour disponible n est
+::X|FR|file.self.update.105|                     simplement pas proposee cette fois-la.
+::X|FR|file.self.update.106|
+::X|FR|file.self.update.107|  Non verifie (en)  : The transfer is HTTPS to GitHub, but nothing
+::X|FR|file.self.update.108|                      verifies who built the release - no signature, no
+::X|FR|file.self.update.109|                      checksum. Whether the releases asset still ships LF-
+::X|FR|file.self.update.110|                      only today was measured once, on the version quoted
+::X|FR|file.self.update.111|                      in the code comments; GitHub could change that at
+::X|FR|file.self.update.112|                      any time, which is precisely why the script
+::X|FR|file.self.update.113|                      normalises rather than trusting the server.
+::X|FR|file.self.update.114|
+::X|FR|file.self.update.115|  Cible           : :update_opty (controle de version, :ask
+::X|FR|file.self.update.116|                    "file.self.update") et :update_found_and_accepted :
+::X|FR|file.self.update.117|                    curl -s %GitHubApiLatest% (l URL API par identifiant
+::X|FR|file.self.update.118|                    numerique) pour tag_name, puis curl -f -L -o
+::X|FR|file.self.update.119|                    "%~dp0new_OPTY.bat" %GitHubLatestLink%OPTY.bat
+::X|FR|file.self.update.120|                    (github.com/YannD-Delta/OPTY/releases/latest/
+::X|FR|file.self.update.121|                    download/), validation par find /c
+::X|FR|file.self.update.122|                    "set current_version=", normalisation CRLF par type /
+::X|FR|file.self.update.123|                    find /v "", copy /y OPTY.bat OPTY_rollback.bat, move
+::X|FR|file.self.update.124|                    /y new_OPTY.bat OPTY.bat, start "" OPTY.bat. Les
+::X|FR|file.self.update.125|                    echecs vont a :update_download_failed ; un controle
+::X|FR|file.self.update.126|                    illisible va a :update_unknown ; un depot git va a
+::X|FR|file.self.update.127|                    :update_checkout.
 ::
 :: ---- regsvr32.update.dlls (repair) ------------------------------
 ::P|regsvr32.update.dlls|SKIP|SKIP|SKIP|SKIP|SKIP|
@@ -12644,105 +12827,116 @@ goto :eof
 :: ---- helper.drivesweep.upgrade.staging (risky) -----------------
 ::P|helper.drivesweep.upgrade.staging|RUN|RUN|RUN|RUN|SKIP|
 ::T|EN|helper.drivesweep.upgrade.staging.001|REMOVE FEATURE-UPDATE STAGING FOLDERS
-::T|EN|helper.drivesweep.upgrade.staging.002|Deletes leftover Windows-upgrade folders to free several GB of disk space - but do it mid-upgrade or during the 10-day rollback window and Windows redownloads the whole update and the go-back option disappears.
+::T|EN|helper.drivesweep.upgrade.staging.002|Deletes leftover Windows-upgrade folders to free several GB of disk space - they are kept while an update waits for its restart, but deleting them during the 10-day rollback window makes the go-back option disappear.
 ::T|FR|helper.drivesweep.upgrade.staging.001|SUPPRIMER LES DOSSIERS DE MISE A NIVEAU WINDOWS
-::T|FR|helper.drivesweep.upgrade.staging.002|Supprime les dossiers residuels de mise a niveau Windows pour liberer plusieurs Go - mais le faire en pleine mise a niveau ou pendant la fenetre de retour arriere de 10 jours force Windows a tout retelecharger et fait disparaitre l option de retour en arriere.
+::T|FR|helper.drivesweep.upgrade.staging.002|Supprime les dossiers residuels de mise a niveau Windows pour liberer plusieurs Go - ils sont conserves tant qu une mise a jour attend son redemarrage, mais les supprimer pendant la fenetre de retour arriere de 10 jours fait disparaitre l option de retour en arriere.
 ::X|EN|helper.drivesweep.upgrade.staging.001|  What it is      : $WINDOWS.~BT, $Windows.~WS and $WinREAgent at the root
 ::X|EN|helper.drivesweep.upgrade.staging.002|                    of every fixed drive. They are the working folders for
 ::X|EN|helper.drivesweep.upgrade.staging.003|                    an in-place Windows upgrade and for WinRE servicing.
 ::X|EN|helper.drivesweep.upgrade.staging.004|                    Windows puts them on whichever volume it picked, not
 ::X|EN|helper.drivesweep.upgrade.staging.005|                    always C:, which is why the sweep runs per drive.
 ::X|EN|helper.drivesweep.upgrade.staging.006|
-::X|EN|helper.drivesweep.upgrade.staging.007|  Actual effect   : rd /S /Q on each of them, unconditionally when
-::X|EN|helper.drivesweep.upgrade.staging.008|                    present. Typically frees several GB. It also removes
-::X|EN|helper.drivesweep.upgrade.staging.009|                    what the 'Go back to the previous version of Windows'
-::X|EN|helper.drivesweep.upgrade.staging.010|                    option depends on, where that option is still
-::X|EN|helper.drivesweep.upgrade.staging.011|                    available.
-::X|EN|helper.drivesweep.upgrade.staging.012|
-::X|EN|helper.drivesweep.upgrade.staging.013|  Gain            : A large one-off space recovery after a completed or
-::X|EN|helper.drivesweep.upgrade.staging.014|                    failed feature update, where these folders are pure
-::X|EN|helper.drivesweep.upgrade.staging.015|                    leftovers with no further purpose. On a 256 GB laptop
-::X|EN|helper.drivesweep.upgrade.staging.016|                    several GB is the difference between a disk that can
-::X|EN|helper.drivesweep.upgrade.staging.017|                    take the next update and one that cannot.
-::X|EN|helper.drivesweep.upgrade.staging.018|
-::X|EN|helper.drivesweep.upgrade.staging.019|  Cost            : The real risk is timing: there is no guard against an
-::X|EN|helper.drivesweep.upgrade.staging.020|                    upgrade that is currently staged and waiting for a
-::X|EN|helper.drivesweep.upgrade.staging.021|                    reboot. Delete these mid-upgrade and Windows re-
-::X|EN|helper.drivesweep.upgrade.staging.022|                    downloads the entire feature update - several GB and a
-::X|EN|helper.drivesweep.upgrade.staging.023|                    long wait. On a machine that has just taken a feature
-::X|EN|helper.drivesweep.upgrade.staging.024|                    update, it also removes the 10-day rollback path,
-::X|EN|helper.drivesweep.upgrade.staging.025|                    deliberately and on the maintainer's explicit
-::X|EN|helper.drivesweep.upgrade.staging.026|                    instruction.
-::X|EN|helper.drivesweep.upgrade.staging.027|
-::X|EN|helper.drivesweep.upgrade.staging.028|  Windows default : Not applicable - these are transient staging folders.
-::X|EN|helper.drivesweep.upgrade.staging.029|                    Windows normally removes $WINDOWS.~BT itself about 10
-::X|EN|helper.drivesweep.upgrade.staging.030|                    days after an upgrade, and $WinREAgent once WinRE
-::X|EN|helper.drivesweep.upgrade.staging.031|                    servicing completes.
-::X|EN|helper.drivesweep.upgrade.staging.032|
-::X|EN|helper.drivesweep.upgrade.staging.033|  Possible values:
-::X|EN|helper.drivesweep.upgrade.staging.034|    RUN                  : rd /S /Q on each folder that exists, on every
-::X|EN|helper.drivesweep.upgrade.staging.035|                           fixed drive, with no condition beyond
-::X|EN|helper.drivesweep.upgrade.staging.036|                           existence. $WINDOWS.~BT and $Windows.~WS are
-::X|EN|helper.drivesweep.upgrade.staging.037|                           the working folders an in-place upgrade uses to
-::X|EN|helper.drivesweep.upgrade.staging.038|                           stage the new build; $WinREAgent is scratch
-::X|EN|helper.drivesweep.upgrade.staging.039|                           space for WinRE servicing. Typically several
-::X|EN|helper.drivesweep.upgrade.staging.040|                           GB. All three regenerate on their own the next
-::X|EN|helper.drivesweep.upgrade.staging.041|                           time they are needed, which is why they pass
-::X|EN|helper.drivesweep.upgrade.staging.042|                           the maintainer's regeneration-time test - what
-::X|EN|helper.drivesweep.upgrade.staging.043|                           they do not regenerate is the Go back to the
-::X|EN|helper.drivesweep.upgrade.staging.044|                           previous version of Windows path.
-::X|EN|helper.drivesweep.upgrade.staging.045|    SKIP                 : Leave them. Windows removes $WINDOWS.~BT and
-::X|EN|helper.drivesweep.upgrade.staging.046|                           $Windows.~WS by itself about ten days after an
-::X|EN|helper.drivesweep.upgrade.staging.047|                           upgrade, once the rollback window closes, and
-::X|EN|helper.drivesweep.upgrade.staging.048|                           $WinREAgent once WinRE servicing finishes.
-::X|EN|helper.drivesweep.upgrade.staging.049|                           Doing nothing costs you the disk space for
-::X|EN|helper.drivesweep.upgrade.staging.050|                           those ten days and nothing else.
-::X|EN|helper.drivesweep.upgrade.staging.051|
-::X|EN|helper.drivesweep.upgrade.staging.052|  Why these profiles : Four profiles run it and they do so for the same
-::X|EN|helper.drivesweep.upgrade.staging.053|                       reason, which is not a performance reason: several
-::X|EN|helper.drivesweep.upgrade.staging.054|                       GB of dead staging data is worth the same on a
-::X|EN|helper.drivesweep.upgrade.staging.055|                       gaming rig, a media server, an office desktop and a
-::X|EN|helper.drivesweep.upgrade.staging.056|                       laptop, and by the maintainer's own rule - it comes
-::X|EN|helper.drivesweep.upgrade.staging.057|                       back on its own and loses no user data - these
-::X|EN|helper.drivesweep.upgrade.staging.058|                       folders are in scope. WINDOWS is the odd one out
-::X|EN|helper.drivesweep.upgrade.staging.059|                       and genuinely so: the shipped behaviour is to leave
-::X|EN|helper.drivesweep.upgrade.staging.060|                       them and let Windows clear them itself around day
-::X|EN|helper.drivesweep.upgrade.staging.061|                       ten, which is a real, different answer rather than
-::X|EN|helper.drivesweep.upgrade.staging.062|                       a placeholder. Note that the profile is not the
-::X|EN|helper.drivesweep.upgrade.staging.063|                       actual gate here. The gate is machine state - fully
-::X|EN|helper.drivesweep.upgrade.staging.064|                       updated, rebooted since, more than 10 days since a
-::X|EN|helper.drivesweep.upgrade.staging.065|                       feature update - and OPTY does not test any of it.
-::X|EN|helper.drivesweep.upgrade.staging.066|                       This card has no question of its own either: the
-::X|EN|helper.drivesweep.upgrade.staging.067|                       three folders go whenever the per-drive junk step
-::X|EN|helper.drivesweep.upgrade.staging.068|                       (cl.drivesweep.fixed) runs, which is asked in the
-::X|EN|helper.drivesweep.upgrade.staging.069|                       manual cleanup and runs without a question in the
-::X|EN|helper.drivesweep.upgrade.staging.070|                       automatic cleanup modes.
-::X|EN|helper.drivesweep.upgrade.staging.071|
-::X|EN|helper.drivesweep.upgrade.staging.072|  Known problems  : Concrete and reproducible: delete $WINDOWS.~BT while a
-::X|EN|helper.drivesweep.upgrade.staging.073|                    feature update is downloaded and waiting for a
-::X|EN|helper.drivesweep.upgrade.staging.074|                    restart, and the 'Restart now' button in Settings >
-::X|EN|helper.drivesweep.upgrade.staging.075|                    Windows Update no longer completes the upgrade -
-::X|EN|helper.drivesweep.upgrade.staging.076|                    Windows Update starts the multi-gigabyte download
-::X|EN|helper.drivesweep.upgrade.staging.077|                    again from zero, with no message explaining why.
-::X|EN|helper.drivesweep.upgrade.staging.078|                    Separately, Settings > System > Recovery loses the Go
-::X|EN|helper.drivesweep.upgrade.staging.079|                    back button, which then reads 'This option is no
-::X|EN|helper.drivesweep.upgrade.staging.080|                    longer available on this PC'. A cheap guard exists and
-::X|EN|helper.drivesweep.upgrade.staging.081|                    is not implemented: skip the three deletes when HKLM\S
-::X|EN|helper.drivesweep.upgrade.staging.082|                    OFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate
-::X|EN|helper.drivesweep.upgrade.staging.083|                    \Auto Update\RebootRequired or ...\Component Based
-::X|EN|helper.drivesweep.upgrade.staging.084|                    Servicing\RebootPending is present.
-::X|EN|helper.drivesweep.upgrade.staging.085|
-::X|EN|helper.drivesweep.upgrade.staging.086|  Unverified      : Whether removing $WinREAgent while a WinRE servicing
-::X|EN|helper.drivesweep.upgrade.staging.087|                    update is mid-flight causes that update to fail rather
-::X|EN|helper.drivesweep.upgrade.staging.088|                    than simply restart was not reproduced. The claim made
-::X|EN|helper.drivesweep.upgrade.staging.089|                    here is the conservative one: it starts over.
-::X|EN|helper.drivesweep.upgrade.staging.090|
-::X|EN|helper.drivesweep.upgrade.staging.091|  Target          : :drivesweep, the three if exist ... rd /S /Q lines at
-::X|EN|helper.drivesweep.upgrade.staging.092|                    its end, called once per fixed drive from the
-::X|EN|helper.drivesweep.upgrade.staging.093|                    FIXEDLIST loop under :dl_drives_go: if exist
-::X|EN|helper.drivesweep.upgrade.staging.094|                    "%~1:\$WINDOWS.~BT" rd /S /Q ... ; if exist
-::X|EN|helper.drivesweep.upgrade.staging.095|                    "%~1:\$Windows.~WS" rd /S /Q ... ; if exist
-::X|EN|helper.drivesweep.upgrade.staging.096|                    "%~1:\$WinREAgent" rd /S /Q ...
+::X|EN|helper.drivesweep.upgrade.staging.007|  Actual effect   : rd /S /Q on each of them when present, unless
+::X|EN|helper.drivesweep.upgrade.staging.008|                    :rebootpending reports that Windows is waiting for a
+::X|EN|helper.drivesweep.upgrade.staging.009|                    restart - then all three are kept on that drive and
+::X|EN|helper.drivesweep.upgrade.staging.010|                    the log says so. Typically frees several GB. It also
+::X|EN|helper.drivesweep.upgrade.staging.011|                    removes
+::X|EN|helper.drivesweep.upgrade.staging.012|                    what the 'Go back to the previous version of Windows'
+::X|EN|helper.drivesweep.upgrade.staging.013|                    option depends on, where that option is still
+::X|EN|helper.drivesweep.upgrade.staging.014|                    available.
+::X|EN|helper.drivesweep.upgrade.staging.015|
+::X|EN|helper.drivesweep.upgrade.staging.016|  Gain            : A large one-off space recovery after a completed or
+::X|EN|helper.drivesweep.upgrade.staging.017|                    failed feature update, where these folders are pure
+::X|EN|helper.drivesweep.upgrade.staging.018|                    leftovers with no further purpose. On a 256 GB laptop
+::X|EN|helper.drivesweep.upgrade.staging.019|                    several GB is the difference between a disk that can
+::X|EN|helper.drivesweep.upgrade.staging.020|                    take the next update and one that cannot.
+::X|EN|helper.drivesweep.upgrade.staging.021|
+::X|EN|helper.drivesweep.upgrade.staging.022|  Cost            : The real risk is timing. An upgrade that is staged and
+::X|EN|helper.drivesweep.upgrade.staging.023|                    waiting for a reboot is now guarded: while RebootRequired
+::X|EN|helper.drivesweep.upgrade.staging.024|                    or RebootPending is present the folders are kept. An
+::X|EN|helper.drivesweep.upgrade.staging.025|                    upgrade that is still preparing and has not yet asked
+::X|EN|helper.drivesweep.upgrade.staging.026|                    for a restart is not detected; delete these then and
+::X|EN|helper.drivesweep.upgrade.staging.027|                    Windows re-downloads the entire feature update -
+::X|EN|helper.drivesweep.upgrade.staging.028|                    several GB and a long wait. On a machine that has just
+::X|EN|helper.drivesweep.upgrade.staging.029|                    taken a feature
+::X|EN|helper.drivesweep.upgrade.staging.030|                    update, it also removes the 10-day rollback path,
+::X|EN|helper.drivesweep.upgrade.staging.031|                    deliberately and on the maintainer's explicit
+::X|EN|helper.drivesweep.upgrade.staging.032|                    instruction.
+::X|EN|helper.drivesweep.upgrade.staging.033|
+::X|EN|helper.drivesweep.upgrade.staging.034|  Windows default : Not applicable - these are transient staging folders.
+::X|EN|helper.drivesweep.upgrade.staging.035|                    Windows normally removes $WINDOWS.~BT itself about 10
+::X|EN|helper.drivesweep.upgrade.staging.036|                    days after an upgrade, and $WinREAgent once WinRE
+::X|EN|helper.drivesweep.upgrade.staging.037|                    servicing completes.
+::X|EN|helper.drivesweep.upgrade.staging.038|
+::X|EN|helper.drivesweep.upgrade.staging.039|  Possible values:
+::X|EN|helper.drivesweep.upgrade.staging.040|    RUN                  : rd /S /Q on each folder that exists, on every
+::X|EN|helper.drivesweep.upgrade.staging.041|                           fixed drive, unless a restart is pending.
+::X|EN|helper.drivesweep.upgrade.staging.042|                           $WINDOWS.~BT and $Windows.~WS are
+::X|EN|helper.drivesweep.upgrade.staging.043|                           the working folders an in-place upgrade uses to
+::X|EN|helper.drivesweep.upgrade.staging.044|                           stage the new build; $WinREAgent is scratch
+::X|EN|helper.drivesweep.upgrade.staging.045|                           space for WinRE servicing. Typically several
+::X|EN|helper.drivesweep.upgrade.staging.046|                           GB. All three regenerate on their own the next
+::X|EN|helper.drivesweep.upgrade.staging.047|                           time they are needed, which is why they pass
+::X|EN|helper.drivesweep.upgrade.staging.048|                           the maintainer's regeneration-time test - what
+::X|EN|helper.drivesweep.upgrade.staging.049|                           they do not regenerate is the Go back to the
+::X|EN|helper.drivesweep.upgrade.staging.050|                           previous version of Windows path.
+::X|EN|helper.drivesweep.upgrade.staging.051|    SKIP                 : Leave them. Windows removes $WINDOWS.~BT and
+::X|EN|helper.drivesweep.upgrade.staging.052|                           $Windows.~WS by itself about ten days after an
+::X|EN|helper.drivesweep.upgrade.staging.053|                           upgrade, once the rollback window closes, and
+::X|EN|helper.drivesweep.upgrade.staging.054|                           $WinREAgent once WinRE servicing finishes.
+::X|EN|helper.drivesweep.upgrade.staging.055|                           Doing nothing costs you the disk space for
+::X|EN|helper.drivesweep.upgrade.staging.056|                           those ten days and nothing else.
+::X|EN|helper.drivesweep.upgrade.staging.057|
+::X|EN|helper.drivesweep.upgrade.staging.058|  Why these profiles : Four profiles run it and they do so for the same
+::X|EN|helper.drivesweep.upgrade.staging.059|                       reason, which is not a performance reason: several
+::X|EN|helper.drivesweep.upgrade.staging.060|                       GB of dead staging data is worth the same on a
+::X|EN|helper.drivesweep.upgrade.staging.061|                       gaming rig, a media server, an office desktop and a
+::X|EN|helper.drivesweep.upgrade.staging.062|                       laptop, and by the maintainer's own rule - it comes
+::X|EN|helper.drivesweep.upgrade.staging.063|                       back on its own and loses no user data - these
+::X|EN|helper.drivesweep.upgrade.staging.064|                       folders are in scope. WINDOWS is the odd one out
+::X|EN|helper.drivesweep.upgrade.staging.065|                       and genuinely so: the shipped behaviour is to leave
+::X|EN|helper.drivesweep.upgrade.staging.066|                       them and let Windows clear them itself around day
+::X|EN|helper.drivesweep.upgrade.staging.067|                       ten, which is a real, different answer rather than
+::X|EN|helper.drivesweep.upgrade.staging.068|                       a placeholder. Note that the profile is not the
+::X|EN|helper.drivesweep.upgrade.staging.069|                       actual gate here. The gate is machine state - fully
+::X|EN|helper.drivesweep.upgrade.staging.070|                       updated, rebooted since, more than 10 days since a
+::X|EN|helper.drivesweep.upgrade.staging.071|                       feature update. OPTY tests only the second (a
+::X|EN|helper.drivesweep.upgrade.staging.072|                       pending restart); it does not check how long ago
+::X|EN|helper.drivesweep.upgrade.staging.073|                       the last feature update was.
+::X|EN|helper.drivesweep.upgrade.staging.074|                       This card has no question of its own either: the
+::X|EN|helper.drivesweep.upgrade.staging.075|                       three folders go whenever the per-drive junk step
+::X|EN|helper.drivesweep.upgrade.staging.076|                       (cl.drivesweep.fixed) runs, which is asked in the
+::X|EN|helper.drivesweep.upgrade.staging.077|                       manual cleanup and runs without a question in the
+::X|EN|helper.drivesweep.upgrade.staging.078|                       automatic cleanup modes.
+::X|EN|helper.drivesweep.upgrade.staging.079|
+::X|EN|helper.drivesweep.upgrade.staging.080|  Known problems  : Concrete and reproducible: delete $WINDOWS.~BT while a
+::X|EN|helper.drivesweep.upgrade.staging.081|                    feature update is downloaded and waiting for a
+::X|EN|helper.drivesweep.upgrade.staging.082|                    restart, and the 'Restart now' button in Settings >
+::X|EN|helper.drivesweep.upgrade.staging.083|                    Windows Update no longer completes the upgrade -
+::X|EN|helper.drivesweep.upgrade.staging.084|                    Windows Update starts the multi-gigabyte download
+::X|EN|helper.drivesweep.upgrade.staging.085|                    again from zero, with no message explaining why. The
+::X|EN|helper.drivesweep.upgrade.staging.086|                    guard for that case is now implemented: :rebootpending
+::X|EN|helper.drivesweep.upgrade.staging.087|                    skips the three deletes when HKLM\SOFTWARE\Microsoft\
+::X|EN|helper.drivesweep.upgrade.staging.088|                    Windows\CurrentVersion\WindowsUpdate\Auto Update\
+::X|EN|helper.drivesweep.upgrade.staging.089|                    RebootRequired or ...\Component Based Servicing\
+::X|EN|helper.drivesweep.upgrade.staging.090|                    RebootPending is present. Separately, Settings >
+::X|EN|helper.drivesweep.upgrade.staging.091|                    System > Recovery loses the Go back button, which then
+::X|EN|helper.drivesweep.upgrade.staging.092|                    reads 'This option is no longer available on this PC';
+::X|EN|helper.drivesweep.upgrade.staging.093|                    nothing guards the rollback window.
+::X|EN|helper.drivesweep.upgrade.staging.094|
+::X|EN|helper.drivesweep.upgrade.staging.095|  Unverified      : Whether removing $WinREAgent while a WinRE servicing
+::X|EN|helper.drivesweep.upgrade.staging.096|                    update is mid-flight causes that update to fail rather
+::X|EN|helper.drivesweep.upgrade.staging.097|                    than simply restart was not reproduced. The claim made
+::X|EN|helper.drivesweep.upgrade.staging.098|                    here is the conservative one: it starts over.
+::X|EN|helper.drivesweep.upgrade.staging.099|
+::X|EN|helper.drivesweep.upgrade.staging.100|  Target          : :drivesweep, the three if exist ... rd /S /Q lines at
+::X|EN|helper.drivesweep.upgrade.staging.101|                    its end (after call :rebootpending, which jumps to
+::X|EN|helper.drivesweep.upgrade.staging.102|                    :ds_staged_done when REBOOTPEND is set), called once
+::X|EN|helper.drivesweep.upgrade.staging.103|                    per fixed drive from the
+::X|EN|helper.drivesweep.upgrade.staging.104|                    FIXEDLIST loop under :dl_drives_go: if exist
+::X|EN|helper.drivesweep.upgrade.staging.105|                    "%~1:\$WINDOWS.~BT" rd /S /Q ... ; if exist
+::X|EN|helper.drivesweep.upgrade.staging.106|                    "%~1:\$Windows.~WS" rd /S /Q ... ; if exist
+::X|EN|helper.drivesweep.upgrade.staging.107|                    "%~1:\$WinREAgent" rd /S /Q ...
 ::X|FR|helper.drivesweep.upgrade.staging.001|  Ce que c est    : $WINDOWS.~BT, $Windows.~WS et $WinREAgent a la racine
 ::X|FR|helper.drivesweep.upgrade.staging.002|                    de chaque disque fixe. Ce sont les dossiers de travail
 ::X|FR|helper.drivesweep.upgrade.staging.003|                    d une mise a niveau de Windows sur place et de la
@@ -12750,109 +12944,121 @@ goto :eof
 ::X|FR|helper.drivesweep.upgrade.staging.005|                    qu il a choisi, pas toujours C:, d ou un balayage
 ::X|FR|helper.drivesweep.upgrade.staging.006|                    disque par disque.
 ::X|FR|helper.drivesweep.upgrade.staging.007|
-::X|FR|helper.drivesweep.upgrade.staging.008|  Effet reel      : rd /S /Q sur chacun, sans condition des qu il est
-::X|FR|helper.drivesweep.upgrade.staging.009|                    present. Libere typiquement plusieurs Go. Ca supprime
-::X|FR|helper.drivesweep.upgrade.staging.010|                    aussi ce dont depend l option « Revenir a la version
-::X|FR|helper.drivesweep.upgrade.staging.011|                    precedente de Windows », la ou elle est encore
-::X|FR|helper.drivesweep.upgrade.staging.012|                    disponible.
-::X|FR|helper.drivesweep.upgrade.staging.013|
-::X|FR|helper.drivesweep.upgrade.staging.014|  Gain            : Une grosse recuperation d espace ponctuelle apres une
-::X|FR|helper.drivesweep.upgrade.staging.015|                    mise a niveau reussie ou ratee, ou ces dossiers ne
-::X|FR|helper.drivesweep.upgrade.staging.016|                    sont plus que des restes sans aucune utilite. Sur un
-::X|FR|helper.drivesweep.upgrade.staging.017|                    portable de 256 Go, quelques Go font la difference
-::X|FR|helper.drivesweep.upgrade.staging.018|                    entre un disque capable d encaisser la prochaine mise
-::X|FR|helper.drivesweep.upgrade.staging.019|                    a jour et un disque qui n y arrive pas.
-::X|FR|helper.drivesweep.upgrade.staging.020|
-::X|FR|helper.drivesweep.upgrade.staging.021|  Cout            : Le vrai risque, c est le moment : rien ne protege
-::X|FR|helper.drivesweep.upgrade.staging.022|                    contre une mise a niveau actuellement preparee et en
-::X|FR|helper.drivesweep.upgrade.staging.023|                    attente de redemarrage. Supprimez ces dossiers en
-::X|FR|helper.drivesweep.upgrade.staging.024|                    pleine mise a niveau et Windows retelecharge toute la
-::X|FR|helper.drivesweep.upgrade.staging.025|                    mise a jour de fonctionnalite - plusieurs Go et une
-::X|FR|helper.drivesweep.upgrade.staging.026|                    longue attente. Sur une machine qui vient de faire une
-::X|FR|helper.drivesweep.upgrade.staging.027|                    mise a niveau, ca supprime aussi le retour arriere de
-::X|FR|helper.drivesweep.upgrade.staging.028|                    10 jours, deliberement et sur instruction explicite du
-::X|FR|helper.drivesweep.upgrade.staging.029|                    mainteneur.
-::X|FR|helper.drivesweep.upgrade.staging.030|
-::X|FR|helper.drivesweep.upgrade.staging.031|  Defaut Windows  : Sans objet - ce sont des dossiers de preparation
-::X|FR|helper.drivesweep.upgrade.staging.032|                    temporaires. Windows supprime normalement $WINDOWS.~BT
-::X|FR|helper.drivesweep.upgrade.staging.033|                    lui-meme une dizaine de jours apres une mise a niveau,
-::X|FR|helper.drivesweep.upgrade.staging.034|                    et $WinREAgent une fois la maintenance de WinRE
-::X|FR|helper.drivesweep.upgrade.staging.035|                    terminee.
+::X|FR|helper.drivesweep.upgrade.staging.008|  Effet reel      : rd /S /Q sur chacun des qu il est present, sauf si
+::X|FR|helper.drivesweep.upgrade.staging.009|                    :rebootpending signale que Windows attend un
+::X|FR|helper.drivesweep.upgrade.staging.010|                    redemarrage - les trois sont alors conserves sur ce
+::X|FR|helper.drivesweep.upgrade.staging.011|                    disque et le journal le dit. Libere typiquement
+::X|FR|helper.drivesweep.upgrade.staging.012|                    plusieurs Go. Ca supprime
+::X|FR|helper.drivesweep.upgrade.staging.013|                    aussi ce dont depend l option « Revenir a la version
+::X|FR|helper.drivesweep.upgrade.staging.014|                    precedente de Windows », la ou elle est encore
+::X|FR|helper.drivesweep.upgrade.staging.015|                    disponible.
+::X|FR|helper.drivesweep.upgrade.staging.016|
+::X|FR|helper.drivesweep.upgrade.staging.017|  Gain            : Une grosse recuperation d espace ponctuelle apres une
+::X|FR|helper.drivesweep.upgrade.staging.018|                    mise a niveau reussie ou ratee, ou ces dossiers ne
+::X|FR|helper.drivesweep.upgrade.staging.019|                    sont plus que des restes sans aucune utilite. Sur un
+::X|FR|helper.drivesweep.upgrade.staging.020|                    portable de 256 Go, quelques Go font la difference
+::X|FR|helper.drivesweep.upgrade.staging.021|                    entre un disque capable d encaisser la prochaine mise
+::X|FR|helper.drivesweep.upgrade.staging.022|                    a jour et un disque qui n y arrive pas.
+::X|FR|helper.drivesweep.upgrade.staging.023|
+::X|FR|helper.drivesweep.upgrade.staging.024|  Cout            : Le vrai risque, c est le moment. Une mise a niveau
+::X|FR|helper.drivesweep.upgrade.staging.025|                    preparee et en attente de redemarrage est desormais
+::X|FR|helper.drivesweep.upgrade.staging.026|                    protegee : tant que RebootRequired ou RebootPending
+::X|FR|helper.drivesweep.upgrade.staging.027|                    existe, les dossiers sont conserves. Une mise a niveau
+::X|FR|helper.drivesweep.upgrade.staging.028|                    encore en preparation, qui n a pas encore demande de
+::X|FR|helper.drivesweep.upgrade.staging.029|                    redemarrage, n est pas detectee ; supprimez ces
+::X|FR|helper.drivesweep.upgrade.staging.030|                    dossiers a ce moment-la et Windows retelecharge toute
+::X|FR|helper.drivesweep.upgrade.staging.031|                    la mise a jour de fonctionnalite - plusieurs Go et une
+::X|FR|helper.drivesweep.upgrade.staging.032|                    longue attente. Sur une machine qui vient de faire une
+::X|FR|helper.drivesweep.upgrade.staging.033|                    mise a niveau, ca supprime aussi le retour arriere de
+::X|FR|helper.drivesweep.upgrade.staging.034|                    10 jours, deliberement et sur instruction explicite du
+::X|FR|helper.drivesweep.upgrade.staging.035|                    mainteneur.
 ::X|FR|helper.drivesweep.upgrade.staging.036|
-::X|FR|helper.drivesweep.upgrade.staging.037|  Valeurs possibles :
-::X|FR|helper.drivesweep.upgrade.staging.038|    RUN                  : rd /S /Q sur chaque dossier present, sur tous
-::X|FR|helper.drivesweep.upgrade.staging.039|                           les disques fixes, sans autre condition que
-::X|FR|helper.drivesweep.upgrade.staging.040|                           l existence. $WINDOWS.~BT et $Windows.~WS sont
-::X|FR|helper.drivesweep.upgrade.staging.041|                           les dossiers de travail qu une mise a niveau
-::X|FR|helper.drivesweep.upgrade.staging.042|                           sur place utilise pour preparer la nouvelle
-::X|FR|helper.drivesweep.upgrade.staging.043|                           version ; $WinREAgent est l espace de travail
-::X|FR|helper.drivesweep.upgrade.staging.044|                           de la maintenance de WinRE. Plusieurs Go en
-::X|FR|helper.drivesweep.upgrade.staging.045|                           general. Les trois se recreent tout seuls a la
-::X|FR|helper.drivesweep.upgrade.staging.046|                           prochaine occasion, ce qui leur fait passer le
-::X|FR|helper.drivesweep.upgrade.staging.047|                           test « temps de regeneration » du mainteneur -
-::X|FR|helper.drivesweep.upgrade.staging.048|                           ce qui ne se recree pas, c est le chemin
-::X|FR|helper.drivesweep.upgrade.staging.049|                           « Revenir a la version precedente de Windows ».
-::X|FR|helper.drivesweep.upgrade.staging.050|    SKIP                 : Les laisser. Windows supprime $WINDOWS.~BT et
-::X|FR|helper.drivesweep.upgrade.staging.051|                           $Windows.~WS tout seul une dizaine de jours
-::X|FR|helper.drivesweep.upgrade.staging.052|                           apres une mise a niveau, une fois la fenetre de
-::X|FR|helper.drivesweep.upgrade.staging.053|                           retour arriere fermee, et $WinREAgent une fois
-::X|FR|helper.drivesweep.upgrade.staging.054|                           la maintenance de WinRE terminee. Ne rien faire
-::X|FR|helper.drivesweep.upgrade.staging.055|                           vous coute la place disque pendant ces dix
-::X|FR|helper.drivesweep.upgrade.staging.056|                           jours, et rien d autre.
-::X|FR|helper.drivesweep.upgrade.staging.057|
-::X|FR|helper.drivesweep.upgrade.staging.058|  Pourquoi ces profils : Quatre profils l executent, et pour la meme
-::X|FR|helper.drivesweep.upgrade.staging.059|                         raison, qui n a rien a voir avec la performance :
-::X|FR|helper.drivesweep.upgrade.staging.060|                         plusieurs Go de donnees de preparation mortes
-::X|FR|helper.drivesweep.upgrade.staging.061|                         valent autant sur une machine de jeu, un serveur
-::X|FR|helper.drivesweep.upgrade.staging.062|                         multimedia, un poste bureautique ou un portable,
-::X|FR|helper.drivesweep.upgrade.staging.063|                         et selon la regle du mainteneur lui-meme - ca
-::X|FR|helper.drivesweep.upgrade.staging.064|                         revient tout seul, aucune donnee utilisateur
-::X|FR|helper.drivesweep.upgrade.staging.065|                         n est perdue - ces dossiers sont dans le
-::X|FR|helper.drivesweep.upgrade.staging.066|                         perimetre. WINDOWS fait exception, et pour de bon :
-::X|FR|helper.drivesweep.upgrade.staging.067|                         le comportement d origine est de les laisser et
-::X|FR|helper.drivesweep.upgrade.staging.068|                         de laisser Windows les effacer vers le dixieme
-::X|FR|helper.drivesweep.upgrade.staging.069|                         jour, ce qui est une vraie reponse differente et
-::X|FR|helper.drivesweep.upgrade.staging.070|                         non un remplissage. A noter : le profil n est pas
-::X|FR|helper.drivesweep.upgrade.staging.071|                         le vrai garde-fou ici. Le garde-fou, c est l etat
-::X|FR|helper.drivesweep.upgrade.staging.072|                         de la machine - entierement a jour, redemarree
-::X|FR|helper.drivesweep.upgrade.staging.073|                         depuis, plus de 10 jours apres une mise a niveau
-::X|FR|helper.drivesweep.upgrade.staging.074|                         - et OPTY n en teste aucun. Cette fiche n a pas
-::X|FR|helper.drivesweep.upgrade.staging.075|                         non plus de question propre : les trois dossiers
-::X|FR|helper.drivesweep.upgrade.staging.076|                         partent chaque fois que l etape des residus par
-::X|FR|helper.drivesweep.upgrade.staging.077|                         disque (cl.drivesweep.fixed) s execute, posee
-::X|FR|helper.drivesweep.upgrade.staging.078|                         dans le nettoyage manuel et executee sans
-::X|FR|helper.drivesweep.upgrade.staging.079|                         question dans les modes de nettoyage
-::X|FR|helper.drivesweep.upgrade.staging.080|                         automatiques.
-::X|FR|helper.drivesweep.upgrade.staging.081|
-::X|FR|helper.drivesweep.upgrade.staging.082|  Problemes connus : Concret et reproductible : supprimez $WINDOWS.~BT
-::X|FR|helper.drivesweep.upgrade.staging.083|                     alors qu une mise a jour de fonctionnalite est
-::X|FR|helper.drivesweep.upgrade.staging.084|                     telechargee et attend un redemarrage, et le bouton
-::X|FR|helper.drivesweep.upgrade.staging.085|                     « Redemarrer maintenant » de Parametres > Windows
-::X|FR|helper.drivesweep.upgrade.staging.086|                     Update ne termine plus la mise a niveau - Windows
-::X|FR|helper.drivesweep.upgrade.staging.087|                     Update relance le telechargement de plusieurs
-::X|FR|helper.drivesweep.upgrade.staging.088|                     gigaoctets depuis zero, sans aucun message expliquant
-::X|FR|helper.drivesweep.upgrade.staging.089|                     pourquoi. Par ailleurs, Parametres > Systeme >
-::X|FR|helper.drivesweep.upgrade.staging.090|                     Recuperation perd le bouton « Revenir en arriere »,
-::X|FR|helper.drivesweep.upgrade.staging.091|                     qui affiche alors « Cette option n est plus
-::X|FR|helper.drivesweep.upgrade.staging.092|                     disponible sur ce PC ». Un garde-fou peu couteux
-::X|FR|helper.drivesweep.upgrade.staging.093|                     existe et n est pas implemente : sauter les trois
-::X|FR|helper.drivesweep.upgrade.staging.094|                     suppressions quand HKLM\SOFTWARE\Microsoft\Windows\Cu
-::X|FR|helper.drivesweep.upgrade.staging.095|                     rrentVersion\WindowsUpdate\Auto Update\RebootRequired
-::X|FR|helper.drivesweep.upgrade.staging.096|                     ou ...\Component Based Servicing\RebootPending est
-::X|FR|helper.drivesweep.upgrade.staging.097|                     present.
-::X|FR|helper.drivesweep.upgrade.staging.098|
-::X|FR|helper.drivesweep.upgrade.staging.099|  Non verifie (en)  : Whether removing $WinREAgent while a WinRE servicing
-::X|FR|helper.drivesweep.upgrade.staging.100|                      update is mid-flight causes that update to fail
-::X|FR|helper.drivesweep.upgrade.staging.101|                      rather than simply restart was not reproduced. The
-::X|FR|helper.drivesweep.upgrade.staging.102|                      claim made here is the conservative one: it starts
-::X|FR|helper.drivesweep.upgrade.staging.103|                      over.
-::X|FR|helper.drivesweep.upgrade.staging.104|
-::X|FR|helper.drivesweep.upgrade.staging.105|  Cible           : :drivesweep, les trois lignes if exist ... rd /S /Q a
-::X|FR|helper.drivesweep.upgrade.staging.106|                    sa fin, appelee une fois par disque fixe depuis la
-::X|FR|helper.drivesweep.upgrade.staging.107|                    boucle FIXEDLIST sous :dl_drives_go : if exist
-::X|FR|helper.drivesweep.upgrade.staging.108|                    "%~1:\$WINDOWS.~BT" rd /S /Q ... ; if exist
-::X|FR|helper.drivesweep.upgrade.staging.109|                    "%~1:\$Windows.~WS" rd /S /Q ... ; if exist
-::X|FR|helper.drivesweep.upgrade.staging.110|                    "%~1:\$WinREAgent" rd /S /Q ...
+::X|FR|helper.drivesweep.upgrade.staging.037|  Defaut Windows  : Sans objet - ce sont des dossiers de preparation
+::X|FR|helper.drivesweep.upgrade.staging.038|                    temporaires. Windows supprime normalement $WINDOWS.~BT
+::X|FR|helper.drivesweep.upgrade.staging.039|                    lui-meme une dizaine de jours apres une mise a niveau,
+::X|FR|helper.drivesweep.upgrade.staging.040|                    et $WinREAgent une fois la maintenance de WinRE
+::X|FR|helper.drivesweep.upgrade.staging.041|                    terminee.
+::X|FR|helper.drivesweep.upgrade.staging.042|
+::X|FR|helper.drivesweep.upgrade.staging.043|  Valeurs possibles :
+::X|FR|helper.drivesweep.upgrade.staging.044|    RUN                  : rd /S /Q sur chaque dossier present, sur tous
+::X|FR|helper.drivesweep.upgrade.staging.045|                           les disques fixes, sauf si un redemarrage est
+::X|FR|helper.drivesweep.upgrade.staging.046|                           en attente. $WINDOWS.~BT et $Windows.~WS sont
+::X|FR|helper.drivesweep.upgrade.staging.047|                           les dossiers de travail qu une mise a niveau
+::X|FR|helper.drivesweep.upgrade.staging.048|                           sur place utilise pour preparer la nouvelle
+::X|FR|helper.drivesweep.upgrade.staging.049|                           version ; $WinREAgent est l espace de travail
+::X|FR|helper.drivesweep.upgrade.staging.050|                           de la maintenance de WinRE. Plusieurs Go en
+::X|FR|helper.drivesweep.upgrade.staging.051|                           general. Les trois se recreent tout seuls a la
+::X|FR|helper.drivesweep.upgrade.staging.052|                           prochaine occasion, ce qui leur fait passer le
+::X|FR|helper.drivesweep.upgrade.staging.053|                           test « temps de regeneration » du mainteneur -
+::X|FR|helper.drivesweep.upgrade.staging.054|                           ce qui ne se recree pas, c est le chemin
+::X|FR|helper.drivesweep.upgrade.staging.055|                           « Revenir a la version precedente de Windows ».
+::X|FR|helper.drivesweep.upgrade.staging.056|    SKIP                 : Les laisser. Windows supprime $WINDOWS.~BT et
+::X|FR|helper.drivesweep.upgrade.staging.057|                           $Windows.~WS tout seul une dizaine de jours
+::X|FR|helper.drivesweep.upgrade.staging.058|                           apres une mise a niveau, une fois la fenetre de
+::X|FR|helper.drivesweep.upgrade.staging.059|                           retour arriere fermee, et $WinREAgent une fois
+::X|FR|helper.drivesweep.upgrade.staging.060|                           la maintenance de WinRE terminee. Ne rien faire
+::X|FR|helper.drivesweep.upgrade.staging.061|                           vous coute la place disque pendant ces dix
+::X|FR|helper.drivesweep.upgrade.staging.062|                           jours, et rien d autre.
+::X|FR|helper.drivesweep.upgrade.staging.063|
+::X|FR|helper.drivesweep.upgrade.staging.064|  Pourquoi ces profils : Quatre profils l executent, et pour la meme
+::X|FR|helper.drivesweep.upgrade.staging.065|                         raison, qui n a rien a voir avec la performance :
+::X|FR|helper.drivesweep.upgrade.staging.066|                         plusieurs Go de donnees de preparation mortes
+::X|FR|helper.drivesweep.upgrade.staging.067|                         valent autant sur une machine de jeu, un serveur
+::X|FR|helper.drivesweep.upgrade.staging.068|                         multimedia, un poste bureautique ou un portable,
+::X|FR|helper.drivesweep.upgrade.staging.069|                         et selon la regle du mainteneur lui-meme - ca
+::X|FR|helper.drivesweep.upgrade.staging.070|                         revient tout seul, aucune donnee utilisateur
+::X|FR|helper.drivesweep.upgrade.staging.071|                         n est perdue - ces dossiers sont dans le
+::X|FR|helper.drivesweep.upgrade.staging.072|                         perimetre. WINDOWS fait exception, et pour de bon :
+::X|FR|helper.drivesweep.upgrade.staging.073|                         le comportement d origine est de les laisser et
+::X|FR|helper.drivesweep.upgrade.staging.074|                         de laisser Windows les effacer vers le dixieme
+::X|FR|helper.drivesweep.upgrade.staging.075|                         jour, ce qui est une vraie reponse differente et
+::X|FR|helper.drivesweep.upgrade.staging.076|                         non un remplissage. A noter : le profil n est pas
+::X|FR|helper.drivesweep.upgrade.staging.077|                         le vrai garde-fou ici. Le garde-fou, c est l etat
+::X|FR|helper.drivesweep.upgrade.staging.078|                         de la machine - entierement a jour, redemarree
+::X|FR|helper.drivesweep.upgrade.staging.079|                         depuis, plus de 10 jours apres une mise a niveau.
+::X|FR|helper.drivesweep.upgrade.staging.080|                         OPTY ne teste que le deuxieme point (un
+::X|FR|helper.drivesweep.upgrade.staging.081|                         redemarrage en attente) ; il ne verifie pas depuis
+::X|FR|helper.drivesweep.upgrade.staging.082|                         quand date la derniere mise a niveau. Cette
+::X|FR|helper.drivesweep.upgrade.staging.083|                         fiche n a pas non plus de question propre : les
+::X|FR|helper.drivesweep.upgrade.staging.084|                         trois dossiers partent chaque fois que l etape
+::X|FR|helper.drivesweep.upgrade.staging.085|                         des residus par disque (cl.drivesweep.fixed)
+::X|FR|helper.drivesweep.upgrade.staging.086|                         s execute, posee
+::X|FR|helper.drivesweep.upgrade.staging.087|                         dans le nettoyage manuel et executee sans
+::X|FR|helper.drivesweep.upgrade.staging.088|                         question dans les modes de nettoyage
+::X|FR|helper.drivesweep.upgrade.staging.089|                         automatiques.
+::X|FR|helper.drivesweep.upgrade.staging.090|
+::X|FR|helper.drivesweep.upgrade.staging.091|  Problemes connus : Concret et reproductible : supprimez $WINDOWS.~BT
+::X|FR|helper.drivesweep.upgrade.staging.092|                     alors qu une mise a jour de fonctionnalite est
+::X|FR|helper.drivesweep.upgrade.staging.093|                     telechargee et attend un redemarrage, et le bouton
+::X|FR|helper.drivesweep.upgrade.staging.094|                     « Redemarrer maintenant » de Parametres > Windows
+::X|FR|helper.drivesweep.upgrade.staging.095|                     Update ne termine plus la mise a niveau - Windows
+::X|FR|helper.drivesweep.upgrade.staging.096|                     Update relance le telechargement de plusieurs
+::X|FR|helper.drivesweep.upgrade.staging.097|                     gigaoctets depuis zero, sans aucun message expliquant
+::X|FR|helper.drivesweep.upgrade.staging.098|                     pourquoi. Le garde-fou pour ce cas est desormais
+::X|FR|helper.drivesweep.upgrade.staging.099|                     implemente : :rebootpending saute les trois
+::X|FR|helper.drivesweep.upgrade.staging.100|                     suppressions quand HKLM\SOFTWARE\Microsoft\Windows\Cu
+::X|FR|helper.drivesweep.upgrade.staging.101|                     rrentVersion\WindowsUpdate\Auto Update\RebootRequired
+::X|FR|helper.drivesweep.upgrade.staging.102|                     ou ...\Component Based Servicing\RebootPending est
+::X|FR|helper.drivesweep.upgrade.staging.103|                     present. Par ailleurs, Parametres > Systeme >
+::X|FR|helper.drivesweep.upgrade.staging.104|                     Recuperation perd le bouton « Revenir en arriere »,
+::X|FR|helper.drivesweep.upgrade.staging.105|                     qui affiche alors « Cette option n est plus
+::X|FR|helper.drivesweep.upgrade.staging.106|                     disponible sur ce PC » ; rien ne protege la fenetre
+::X|FR|helper.drivesweep.upgrade.staging.107|                     de retour arriere.
+::X|FR|helper.drivesweep.upgrade.staging.108|
+::X|FR|helper.drivesweep.upgrade.staging.109|  Non verifie (en)  : Whether removing $WinREAgent while a WinRE servicing
+::X|FR|helper.drivesweep.upgrade.staging.110|                      update is mid-flight causes that update to fail
+::X|FR|helper.drivesweep.upgrade.staging.111|                      rather than simply restart was not reproduced. The
+::X|FR|helper.drivesweep.upgrade.staging.112|                      claim made here is the conservative one: it starts
+::X|FR|helper.drivesweep.upgrade.staging.113|                      over.
+::X|FR|helper.drivesweep.upgrade.staging.114|
+::X|FR|helper.drivesweep.upgrade.staging.115|  Cible           : :drivesweep, les trois lignes if exist ... rd /S /Q a
+::X|FR|helper.drivesweep.upgrade.staging.116|                    sa fin (apres call :rebootpending, qui saute a
+::X|FR|helper.drivesweep.upgrade.staging.117|                    :ds_staged_done si REBOOTPEND est defini), appelee une
+::X|FR|helper.drivesweep.upgrade.staging.118|                    fois par disque fixe depuis la
+::X|FR|helper.drivesweep.upgrade.staging.119|                    boucle FIXEDLIST sous :dl_drives_go : if exist
+::X|FR|helper.drivesweep.upgrade.staging.120|                    "%~1:\$WINDOWS.~BT" rd /S /Q ... ; if exist
+::X|FR|helper.drivesweep.upgrade.staging.121|                    "%~1:\$Windows.~WS" rd /S /Q ... ; if exist
+::X|FR|helper.drivesweep.upgrade.staging.122|                    "%~1:\$WinREAgent" rd /S /Q ...
 ::
 :: ---- reg.srp.creation.frequency (repair) ------------------------
 ::P|reg.srp.creation.frequency|DELETE|DELETE|DELETE|DELETE|DELETE|
@@ -15747,92 +15953,97 @@ goto :eof
 ::X|EN|rad.hwschmode.018|                    AMD and NVIDIA drivers are developed and validated
 ::X|EN|rad.hwschmode.019|                    with it enabled. If a specific feature on your card
 ::X|EN|rad.hwschmode.020|                    lists HAGS as a requirement, that feature's own
-::X|EN|rad.hwschmode.021|                    release notes are the authority - this card does not
-::X|EN|rad.hwschmode.022|                    claim one on AMD's behalf.
-::X|EN|rad.hwschmode.023|
-::X|EN|rad.hwschmode.024|  Cost            : A reboot. Drivers from the 2020-2021 era were
-::X|EN|rad.hwschmode.025|                    associated with stutter and with capture software
-::X|EN|rad.hwschmode.026|                    losing track of the game window; those reports have
-::X|EN|rad.hwschmode.027|                    largely stopped. On a GPU or driver without hardware
-::X|EN|rad.hwschmode.028|                    scheduling support, writing 2 is inert rather than
-::X|EN|rad.hwschmode.029|                    harmful - dxgkrnl checks the driver's capability and
-::X|EN|rad.hwschmode.030|                    ignores the value.
-::X|EN|rad.hwschmode.031|
-::X|EN|rad.hwschmode.032|  Windows default : 2 wherever the GPU and driver support hardware
-::X|EN|rad.hwschmode.033|                    scheduling, 1 where they do not. The value is present
-::X|EN|rad.hwschmode.034|                    on a stock machine, so the default here is a value,
-::X|EN|rad.hwschmode.035|                    not an absence.
-::X|EN|rad.hwschmode.036|
-::X|EN|rad.hwschmode.037|  Possible values:
-::X|EN|rad.hwschmode.038|    2                    : Hardware scheduling. A scheduling processor on
-::X|EN|rad.hwschmode.039|                           the GPU owns the work queue; the CPU-side
-::X|EN|rad.hwschmode.040|                           driver only hands work over instead of batching
-::X|EN|rad.hwschmode.041|                           and pacing every submission itself. Removes
-::X|EN|rad.hwschmode.042|                           some per-submission CPU work and a layer of
-::X|EN|rad.hwschmode.043|                           buffering. Requires a WDDM 2.7 or newer driver
-::X|EN|rad.hwschmode.044|                           that reports the capability - on hardware that
-::X|EN|rad.hwschmode.045|                           does not, dxgkrnl ignores the value entirely
-::X|EN|rad.hwschmode.046|                           and the Graphics settings toggle is not even
-::X|EN|rad.hwschmode.047|                           shown. Reboot to take effect.
-::X|EN|rad.hwschmode.048|    1                    : Software scheduling - the pre-WDDM-2.7
-::X|EN|rad.hwschmode.049|                           arrangement, where the driver's kernel-mode
-::X|EN|rad.hwschmode.050|                           component on the CPU batches command buffers
-::X|EN|rad.hwschmode.051|                           and decides when they go to the GPU. This is
-::X|EN|rad.hwschmode.052|                           what Windows leaves on hardware that cannot do
-::X|EN|rad.hwschmode.053|                           more, and it is the value the A/B diagnostic
-::X|EN|rad.hwschmode.054|                           writes. It is not the Windows default on a
-::X|EN|rad.hwschmode.055|                           modern GPU.
-::X|EN|rad.hwschmode.056|    DELETE               : Not a restore here, unlike the overlay values.
-::X|EN|rad.hwschmode.057|                           HwSchMode is a value Windows and the driver
-::X|EN|rad.hwschmode.058|                           installer write themselves, so a stock machine
-::X|EN|rad.hwschmode.059|                           has it present. Deleting it leaves dxgkrnl on
-::X|EN|rad.hwschmode.060|                           its built-in fallback and the Graphics settings
-::X|EN|rad.hwschmode.061|                           page with nothing selected - a state a fresh
-::X|EN|rad.hwschmode.062|                           install does not produce. OPTY writes 2 rather
-::X|EN|rad.hwschmode.063|                           than deleting for exactly this reason.
-::X|EN|rad.hwschmode.064|
-::X|EN|rad.hwschmode.065|  Why these profiles : All five write 2, and that is a finding rather than
-::X|EN|rad.hwschmode.066|                       a shrug. Two is what a supported machine ships
-::X|EN|rad.hwschmode.067|                       with, and on unsupported hardware the value is
-::X|EN|rad.hwschmode.068|                       ignored, so there is no profile where having 2 on
-::X|EN|rad.hwschmode.069|                       disk is wrong. Nobody has published a power or
-::X|EN|rad.hwschmode.070|                       battery delta for hardware scheduling in either
-::X|EN|rad.hwschmode.071|                       direction, so the laptop profile gets the same
-::X|EN|rad.hwschmode.072|                       answer instead of an invented one - claiming a
-::X|EN|rad.hwschmode.073|                       battery cost here would be exactly the folklore
-::X|EN|rad.hwschmode.074|                       this rewrite exists to remove. Server writes it
-::X|EN|rad.hwschmode.075|                       too: a box transcoding in Plex runs the same driver
-::X|EN|rad.hwschmode.076|                       stack that ships validated with it on. The only
-::X|EN|rad.hwschmode.077|                       real reason to hold 1 is a stutter or capture bug
-::X|EN|rad.hwschmode.078|                       you have bisected yourself, and that lives on the
-::X|EN|rad.hwschmode.079|                       A/B card.
-::X|EN|rad.hwschmode.080|
-::X|EN|rad.hwschmode.081|  Known problems  : Nothing current. The historical report worth knowing:
-::X|EN|rad.hwschmode.082|                    on early HAGS drivers, OBS and similar capture tools
-::X|EN|rad.hwschmode.083|                    could lose the game capture source after enabling it.
-::X|EN|rad.hwschmode.084|                    If you hit that today, the A/B card is how you confirm
-::X|EN|rad.hwschmode.085|                    it before blaming anything else.
-::X|EN|rad.hwschmode.086|
-::X|EN|rad.hwschmode.087|  Unverified      : Two things worth fixing in the source, not in the
-::X|EN|rad.hwschmode.088|                    card. First, the question is now asked in :setup_gpu,
-::X|EN|rad.hwschmode.089|                    but :reassert_defaults still writes 2 without asking,
-::X|EN|rad.hwschmode.090|                    although choosing a GPU scheduling mode is a
-::X|EN|rad.hwschmode.091|                    preference by the project's own rule. Second, the
-::X|EN|rad.hwschmode.092|                    comment above that write in :reassert_defaults still
-::X|EN|rad.hwschmode.093|                    reads 'HAGS is driver-assumed on RDNA3 since Adrenalin
-::X|EN|rad.hwschmode.094|                    23.12.1 and Anti-Lag 2 needs it' - that is the exact
-::X|EN|rad.hwschmode.095|                    claim the audit refuted and it should be replaced with
-::X|EN|rad.hwschmode.096|                    the DLSS Frame Generation wording. Separately, I have not
-::X|EN|rad.hwschmode.097|                    verified byte-for-byte that HwSchMode is present on a
-::X|EN|rad.hwschmode.098|                    fresh 25H2 install before any vendor driver is
-::X|EN|rad.hwschmode.099|                    installed, and machines do turn up with HwSchMode=0,
-::X|EN|rad.hwschmode.100|                    whose meaning I could not confirm; OPTY should never
-::X|EN|rad.hwschmode.101|                    write 0.
-::X|EN|rad.hwschmode.102|
-::X|EN|rad.hwschmode.103|  Target          : HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers
-::X|EN|rad.hwschmode.104|                    HwSchMode REG_DWORD - asked through call :askreg
-::X|EN|rad.hwschmode.105|                    "rad.hwschmode" in :setup_gpu, and written as 2 by
-::X|EN|rad.hwschmode.106|                    call :regset in :reassert_defaults
+::X|EN|rad.hwschmode.021|                    release notes are the authority. On AMD: Anti-Lag 2
+::X|EN|rad.hwschmode.022|                    does not need HAGS - its SDK lists no HAGS requirement
+::X|EN|rad.hwschmode.023|                    and supports the RX 5000 series, which has no HAGS
+::X|EN|rad.hwschmode.024|                    (Source: AMD GPUOpen, Anti-Lag 2 SDK). Adrenalin
+::X|EN|rad.hwschmode.025|                    23.12.1 only added HAGS support for the RX 7700 to
+::X|EN|rad.hwschmode.026|                    7900 on Windows 11 22H2 or later (Source: AMD, 23.12.1
+::X|EN|rad.hwschmode.027|                    release notes, 2023-12). GPUOpen does ask for HAGS
+::X|EN|rad.hwschmode.028|                    with FSR 3 frame generation on RX 7000 (Source: AMD
+::X|EN|rad.hwschmode.029|                    GPUOpen, FSR 3 documentation).
+::X|EN|rad.hwschmode.030|
+::X|EN|rad.hwschmode.031|  Cost            : A reboot. Drivers from the 2020-2021 era were
+::X|EN|rad.hwschmode.032|                    associated with stutter and with capture software
+::X|EN|rad.hwschmode.033|                    losing track of the game window; those reports have
+::X|EN|rad.hwschmode.034|                    largely stopped. On a GPU or driver without hardware
+::X|EN|rad.hwschmode.035|                    scheduling support, writing 2 is inert rather than
+::X|EN|rad.hwschmode.036|                    harmful - dxgkrnl checks the driver's capability and
+::X|EN|rad.hwschmode.037|                    ignores the value.
+::X|EN|rad.hwschmode.038|
+::X|EN|rad.hwschmode.039|  Windows default : 2 wherever the GPU and driver support hardware
+::X|EN|rad.hwschmode.040|                    scheduling, 1 where they do not. The value is present
+::X|EN|rad.hwschmode.041|                    on a stock machine, so the default here is a value,
+::X|EN|rad.hwschmode.042|                    not an absence.
+::X|EN|rad.hwschmode.043|
+::X|EN|rad.hwschmode.044|  Possible values:
+::X|EN|rad.hwschmode.045|    2                    : Hardware scheduling. A scheduling processor on
+::X|EN|rad.hwschmode.046|                           the GPU owns the work queue; the CPU-side
+::X|EN|rad.hwschmode.047|                           driver only hands work over instead of batching
+::X|EN|rad.hwschmode.048|                           and pacing every submission itself. Removes
+::X|EN|rad.hwschmode.049|                           some per-submission CPU work and a layer of
+::X|EN|rad.hwschmode.050|                           buffering. Requires a WDDM 2.7 or newer driver
+::X|EN|rad.hwschmode.051|                           that reports the capability - on hardware that
+::X|EN|rad.hwschmode.052|                           does not, dxgkrnl ignores the value entirely
+::X|EN|rad.hwschmode.053|                           and the Graphics settings toggle is not even
+::X|EN|rad.hwschmode.054|                           shown. Reboot to take effect.
+::X|EN|rad.hwschmode.055|    1                    : Software scheduling - the pre-WDDM-2.7
+::X|EN|rad.hwschmode.056|                           arrangement, where the driver's kernel-mode
+::X|EN|rad.hwschmode.057|                           component on the CPU batches command buffers
+::X|EN|rad.hwschmode.058|                           and decides when they go to the GPU. This is
+::X|EN|rad.hwschmode.059|                           what Windows leaves on hardware that cannot do
+::X|EN|rad.hwschmode.060|                           more, and it is the value the A/B diagnostic
+::X|EN|rad.hwschmode.061|                           writes. It is not the Windows default on a
+::X|EN|rad.hwschmode.062|                           modern GPU.
+::X|EN|rad.hwschmode.063|    DELETE               : Not a restore here, unlike the overlay values.
+::X|EN|rad.hwschmode.064|                           HwSchMode is a value Windows and the driver
+::X|EN|rad.hwschmode.065|                           installer write themselves, so a stock machine
+::X|EN|rad.hwschmode.066|                           has it present. Deleting it leaves dxgkrnl on
+::X|EN|rad.hwschmode.067|                           its built-in fallback and the Graphics settings
+::X|EN|rad.hwschmode.068|                           page with nothing selected - a state a fresh
+::X|EN|rad.hwschmode.069|                           install does not produce. OPTY writes 2 rather
+::X|EN|rad.hwschmode.070|                           than deleting for exactly this reason.
+::X|EN|rad.hwschmode.071|
+::X|EN|rad.hwschmode.072|  Why these profiles : All five write 2, and that is a finding rather than
+::X|EN|rad.hwschmode.073|                       a shrug. Two is what a supported machine ships
+::X|EN|rad.hwschmode.074|                       with, and on unsupported hardware the value is
+::X|EN|rad.hwschmode.075|                       ignored, so there is no profile where having 2 on
+::X|EN|rad.hwschmode.076|                       disk is wrong. Nobody has published a power or
+::X|EN|rad.hwschmode.077|                       battery delta for hardware scheduling in either
+::X|EN|rad.hwschmode.078|                       direction, so the laptop profile gets the same
+::X|EN|rad.hwschmode.079|                       answer instead of an invented one - claiming a
+::X|EN|rad.hwschmode.080|                       battery cost here would be exactly the folklore
+::X|EN|rad.hwschmode.081|                       this rewrite exists to remove. Server writes it
+::X|EN|rad.hwschmode.082|                       too: a box transcoding in Plex runs the same driver
+::X|EN|rad.hwschmode.083|                       stack that ships validated with it on. The only
+::X|EN|rad.hwschmode.084|                       real reason to hold 1 is a stutter or capture bug
+::X|EN|rad.hwschmode.085|                       you have bisected yourself, and that lives on the
+::X|EN|rad.hwschmode.086|                       A/B card.
+::X|EN|rad.hwschmode.087|
+::X|EN|rad.hwschmode.088|  Known problems  : Nothing current. The historical report worth knowing:
+::X|EN|rad.hwschmode.089|                    on early HAGS drivers, OBS and similar capture tools
+::X|EN|rad.hwschmode.090|                    could lose the game capture source after enabling it.
+::X|EN|rad.hwschmode.091|                    If you hit that today, the A/B card is how you confirm
+::X|EN|rad.hwschmode.092|                    it before blaming anything else.
+::X|EN|rad.hwschmode.093|
+::X|EN|rad.hwschmode.094|  Unverified      : One thing worth fixing in the source, not in the
+::X|EN|rad.hwschmode.095|                    card: the question is now asked in :setup_gpu,
+::X|EN|rad.hwschmode.096|                    but :reassert_defaults still writes 2 without asking,
+::X|EN|rad.hwschmode.097|                    although choosing a GPU scheduling mode is a
+::X|EN|rad.hwschmode.098|                    preference by the project's own rule. The old comment
+::X|EN|rad.hwschmode.099|                    above that write, which claimed Anti-Lag 2 needs HAGS,
+::X|EN|rad.hwschmode.100|                    is gone from the code; that claim was wrong (see
+::X|EN|rad.hwschmode.101|                    gain). Separately, I have not
+::X|EN|rad.hwschmode.102|                    verified byte-for-byte that HwSchMode is present on a
+::X|EN|rad.hwschmode.103|                    fresh 25H2 install before any vendor driver is
+::X|EN|rad.hwschmode.104|                    installed, and machines do turn up with HwSchMode=0,
+::X|EN|rad.hwschmode.105|                    whose meaning I could not confirm; OPTY should never
+::X|EN|rad.hwschmode.106|                    write 0.
+::X|EN|rad.hwschmode.107|
+::X|EN|rad.hwschmode.108|  Target          : HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers
+::X|EN|rad.hwschmode.109|                    HwSchMode REG_DWORD - asked through call :askreg
+::X|EN|rad.hwschmode.110|                    "rad.hwschmode" in :setup_gpu, and written as 2 by
+::X|EN|rad.hwschmode.111|                    call :regset in :reassert_defaults
 ::X|FR|rad.hwschmode.001|  Ce que c est    : HwSchMode designe qui possede la file de travail du
 ::X|FR|rad.hwschmode.002|                    GPU : le pilote cote CPU (1) ou un processeur
 ::X|FR|rad.hwschmode.003|                    d ordonnancement sur le GPU lui-meme (2).
@@ -15856,102 +16067,107 @@ goto :eof
 ::X|FR|rad.hwschmode.021|                    pilotes AMD et NVIDIA actuels sont developpes et
 ::X|FR|rad.hwschmode.022|                    valides avec elle active. Si une fonction precise de
 ::X|FR|rad.hwschmode.023|                    votre carte exige HAGS, ce sont ses propres notes de
-::X|FR|rad.hwschmode.024|                    version qui font foi : cette carte n invente rien au
-::X|FR|rad.hwschmode.025|                    nom d AMD.
-::X|FR|rad.hwschmode.026|
-::X|FR|rad.hwschmode.027|  Cout            : Un redemarrage. Les pilotes de la periode 2020-2021
-::X|FR|rad.hwschmode.028|                    ont ete associes a des saccades et a des logiciels de
-::X|FR|rad.hwschmode.029|                    capture qui perdaient la fenetre du jeu ; ces
-::X|FR|rad.hwschmode.030|                    signalements ont largement cesse. Sur un GPU ou un
-::X|FR|rad.hwschmode.031|                    pilote sans support de la planification materielle,
-::X|FR|rad.hwschmode.032|                    ecrire 2 est inerte plutot que nuisible : dxgkrnl
-::X|FR|rad.hwschmode.033|                    consulte la capacite du pilote et ignore la valeur.
+::X|FR|rad.hwschmode.024|                    version qui font foi. Cote AMD : Anti-Lag 2 n a pas
+::X|FR|rad.hwschmode.025|                    besoin de HAGS - son SDK ne cite aucune exigence HAGS
+::X|FR|rad.hwschmode.026|                    et prend en charge la serie RX 5000, qui n a pas de
+::X|FR|rad.hwschmode.027|                    HAGS (Source : AMD GPUOpen, SDK Anti-Lag 2). Adrenalin
+::X|FR|rad.hwschmode.028|                    23.12.1 a seulement ajoute la prise en charge de HAGS
+::X|FR|rad.hwschmode.029|                    pour les RX 7700 a 7900 sous Windows 11 22H2 ou plus
+::X|FR|rad.hwschmode.030|                    recent (Source : AMD, notes de version 23.12.1,
+::X|FR|rad.hwschmode.031|                    2023-12). GPUOpen demande bien HAGS pour la generation
+::X|FR|rad.hwschmode.032|                    d images FSR 3 sur RX 7000 (Source : AMD GPUOpen,
+::X|FR|rad.hwschmode.033|                    documentation FSR 3).
 ::X|FR|rad.hwschmode.034|
-::X|FR|rad.hwschmode.035|  Defaut Windows  : 2 partout ou le GPU et le pilote gerent la
-::X|FR|rad.hwschmode.036|                    planification materielle, 1 la ou ils ne la gerent
-::X|FR|rad.hwschmode.037|                    pas. La valeur est presente sur une machine d origine
-::X|FR|rad.hwschmode.038|                    : ici le defaut est une valeur, pas une absence.
-::X|FR|rad.hwschmode.039|
-::X|FR|rad.hwschmode.040|  Valeurs possibles :
-::X|FR|rad.hwschmode.041|    2                    : Planification materielle. Un processeur
-::X|FR|rad.hwschmode.042|                           d ordonnancement sur le GPU possede la file de
-::X|FR|rad.hwschmode.043|                           travail ; le pilote cote CPU se contente de lui
-::X|FR|rad.hwschmode.044|                           passer le travail au lieu de regrouper et de
-::X|FR|rad.hwschmode.045|                           cadencer lui-meme chaque soumission. Cela
-::X|FR|rad.hwschmode.046|                           retire un peu de travail CPU par soumission et
-::X|FR|rad.hwschmode.047|                           un etage de tampon. Il faut un pilote WDDM 2.7
-::X|FR|rad.hwschmode.048|                           ou plus recent qui declare la capacite : sur un
-::X|FR|rad.hwschmode.049|                           materiel qui ne la declare pas, dxgkrnl ignore
-::X|FR|rad.hwschmode.050|                           purement et simplement la valeur et
-::X|FR|rad.hwschmode.051|                           l interrupteur des Parametres graphiques
-::X|FR|rad.hwschmode.052|                           n apparait meme pas. Redemarrage requis.
-::X|FR|rad.hwschmode.053|    1                    : Planification logicielle : l organisation
-::X|FR|rad.hwschmode.054|                           d avant WDDM 2.7, ou le composant noyau du
-::X|FR|rad.hwschmode.055|                           pilote, cote CPU, regroupe les tampons de
-::X|FR|rad.hwschmode.056|                           commandes et decide quand ils partent vers le
-::X|FR|rad.hwschmode.057|                           GPU. C est ce que Windows laisse sur un
-::X|FR|rad.hwschmode.058|                           materiel incapable de mieux, et c est la valeur
-::X|FR|rad.hwschmode.059|                           qu ecrit le test A/B. Ce n est pas le defaut
-::X|FR|rad.hwschmode.060|                           Windows sur un GPU moderne.
-::X|FR|rad.hwschmode.061|    DELETE               : Ici, contrairement aux valeurs d overlay, ce
-::X|FR|rad.hwschmode.062|                           n est pas un retour a l origine. HwSchMode est
-::X|FR|rad.hwschmode.063|                           une valeur que Windows et l installateur du
-::X|FR|rad.hwschmode.064|                           pilote ecrivent eux-memes : une machine
-::X|FR|rad.hwschmode.065|                           d origine la possede. La supprimer laisse
-::X|FR|rad.hwschmode.066|                           dxgkrnl sur son repli interne et la page des
-::X|FR|rad.hwschmode.067|                           Parametres graphiques sans rien de selectionne,
-::X|FR|rad.hwschmode.068|                           un etat qu une installation neuve ne produit
-::X|FR|rad.hwschmode.069|                           pas. C est precisement pour cela qu OPTY ecrit
-::X|FR|rad.hwschmode.070|                           2 plutot que de supprimer.
-::X|FR|rad.hwschmode.071|
-::X|FR|rad.hwschmode.072|  Pourquoi ces profils : Les cinq ecrivent 2, et c est un constat, pas un
-::X|FR|rad.hwschmode.073|                         haussement d epaules. 2 est ce qu embarque une
-::X|FR|rad.hwschmode.074|                         machine compatible, et sur un materiel
-::X|FR|rad.hwschmode.075|                         incompatible la valeur est ignoree : il n existe
-::X|FR|rad.hwschmode.076|                         aucun profil pour lequel avoir 2 sur le disque
-::X|FR|rad.hwschmode.077|                         soit une erreur. Personne n a publie d ecart de
-::X|FR|rad.hwschmode.078|                         consommation ou d autonomie lie a la
-::X|FR|rad.hwschmode.079|                         planification materielle, dans un sens ou dans
-::X|FR|rad.hwschmode.080|                         l autre : le profil portable recoit donc la meme
-::X|FR|rad.hwschmode.081|                         reponse plutot qu une reponse inventee -
-::X|FR|rad.hwschmode.082|                         pretendre a un cout en batterie ici serait
-::X|FR|rad.hwschmode.083|                         exactement le folklore que cette reecriture
-::X|FR|rad.hwschmode.084|                         cherche a eliminer. Le serveur l ecrit aussi :
-::X|FR|rad.hwschmode.085|                         une machine qui transcode sous Plex fait tourner
-::X|FR|rad.hwschmode.086|                         la meme pile de pilotes, livree validee avec
-::X|FR|rad.hwschmode.087|                         l option active. La seule vraie raison de rester
-::X|FR|rad.hwschmode.088|                         a 1, c est une saccade ou un bug de capture que
-::X|FR|rad.hwschmode.089|                         vous avez vous-meme isole, et cela releve de la
-::X|FR|rad.hwschmode.090|                         carte de test A/B.
-::X|FR|rad.hwschmode.091|
-::X|FR|rad.hwschmode.092|  Problemes connus : Rien d actuel. Le signalement historique a connaitre
-::X|FR|rad.hwschmode.093|                     : sur les premiers pilotes HAGS, OBS et les outils de
-::X|FR|rad.hwschmode.094|                     capture equivalents pouvaient perdre la source de
-::X|FR|rad.hwschmode.095|                     capture du jeu apres activation. Si cela vous arrive
-::X|FR|rad.hwschmode.096|                     aujourd hui, la carte de test A/B est le moyen de le
-::X|FR|rad.hwschmode.097|                     confirmer avant d accuser autre chose.
-::X|FR|rad.hwschmode.098|
-::X|FR|rad.hwschmode.099|  Non verifie (en)  : Two things worth fixing in the source, not in the
-::X|FR|rad.hwschmode.100|                      card. First, the question is now asked in
-::X|FR|rad.hwschmode.101|                      :setup_gpu, but :reassert_defaults still writes 2
-::X|FR|rad.hwschmode.102|                      without asking, although choosing a GPU scheduling
-::X|FR|rad.hwschmode.103|                      mode is a preference by the project s own rule.
-::X|FR|rad.hwschmode.104|                      Second, the comment above that write in
-::X|FR|rad.hwschmode.105|                      :reassert_defaults still reads  HAGS is
-::X|FR|rad.hwschmode.106|                      driver-assumed on RDNA3 since Adrenalin 23.12.1 and
-::X|FR|rad.hwschmode.107|                      Anti-Lag 2 needs it  - that is the exact claim the
-::X|FR|rad.hwschmode.108|                      audit refuted and it should be replaced with the
-::X|FR|rad.hwschmode.109|                      DLSS Frame Generation wording. Separately,
-::X|FR|rad.hwschmode.110|                      I have not verified byte-for-byte that HwSchMode is
-::X|FR|rad.hwschmode.111|                      present on a fresh 25H2 install before any vendor
-::X|FR|rad.hwschmode.112|                      driver is installed, and machines do turn up with
-::X|FR|rad.hwschmode.113|                      HwSchMode=0, whose meaning I could not confirm; OPTY
-::X|FR|rad.hwschmode.114|                      should never write 0.
-::X|FR|rad.hwschmode.115|
-::X|FR|rad.hwschmode.116|  Cible           : HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers
-::X|FR|rad.hwschmode.117|                    HwSchMode REG_DWORD - demandee via call :askreg
-::X|FR|rad.hwschmode.118|                    "rad.hwschmode" dans :setup_gpu, et ecrite a 2 par
-::X|FR|rad.hwschmode.119|                    call :regset dans :reassert_defaults
+::X|FR|rad.hwschmode.035|  Cout            : Un redemarrage. Les pilotes de la periode 2020-2021
+::X|FR|rad.hwschmode.036|                    ont ete associes a des saccades et a des logiciels de
+::X|FR|rad.hwschmode.037|                    capture qui perdaient la fenetre du jeu ; ces
+::X|FR|rad.hwschmode.038|                    signalements ont largement cesse. Sur un GPU ou un
+::X|FR|rad.hwschmode.039|                    pilote sans support de la planification materielle,
+::X|FR|rad.hwschmode.040|                    ecrire 2 est inerte plutot que nuisible : dxgkrnl
+::X|FR|rad.hwschmode.041|                    consulte la capacite du pilote et ignore la valeur.
+::X|FR|rad.hwschmode.042|
+::X|FR|rad.hwschmode.043|  Defaut Windows  : 2 partout ou le GPU et le pilote gerent la
+::X|FR|rad.hwschmode.044|                    planification materielle, 1 la ou ils ne la gerent
+::X|FR|rad.hwschmode.045|                    pas. La valeur est presente sur une machine d origine
+::X|FR|rad.hwschmode.046|                    : ici le defaut est une valeur, pas une absence.
+::X|FR|rad.hwschmode.047|
+::X|FR|rad.hwschmode.048|  Valeurs possibles :
+::X|FR|rad.hwschmode.049|    2                    : Planification materielle. Un processeur
+::X|FR|rad.hwschmode.050|                           d ordonnancement sur le GPU possede la file de
+::X|FR|rad.hwschmode.051|                           travail ; le pilote cote CPU se contente de lui
+::X|FR|rad.hwschmode.052|                           passer le travail au lieu de regrouper et de
+::X|FR|rad.hwschmode.053|                           cadencer lui-meme chaque soumission. Cela
+::X|FR|rad.hwschmode.054|                           retire un peu de travail CPU par soumission et
+::X|FR|rad.hwschmode.055|                           un etage de tampon. Il faut un pilote WDDM 2.7
+::X|FR|rad.hwschmode.056|                           ou plus recent qui declare la capacite : sur un
+::X|FR|rad.hwschmode.057|                           materiel qui ne la declare pas, dxgkrnl ignore
+::X|FR|rad.hwschmode.058|                           purement et simplement la valeur et
+::X|FR|rad.hwschmode.059|                           l interrupteur des Parametres graphiques
+::X|FR|rad.hwschmode.060|                           n apparait meme pas. Redemarrage requis.
+::X|FR|rad.hwschmode.061|    1                    : Planification logicielle : l organisation
+::X|FR|rad.hwschmode.062|                           d avant WDDM 2.7, ou le composant noyau du
+::X|FR|rad.hwschmode.063|                           pilote, cote CPU, regroupe les tampons de
+::X|FR|rad.hwschmode.064|                           commandes et decide quand ils partent vers le
+::X|FR|rad.hwschmode.065|                           GPU. C est ce que Windows laisse sur un
+::X|FR|rad.hwschmode.066|                           materiel incapable de mieux, et c est la valeur
+::X|FR|rad.hwschmode.067|                           qu ecrit le test A/B. Ce n est pas le defaut
+::X|FR|rad.hwschmode.068|                           Windows sur un GPU moderne.
+::X|FR|rad.hwschmode.069|    DELETE               : Ici, contrairement aux valeurs d overlay, ce
+::X|FR|rad.hwschmode.070|                           n est pas un retour a l origine. HwSchMode est
+::X|FR|rad.hwschmode.071|                           une valeur que Windows et l installateur du
+::X|FR|rad.hwschmode.072|                           pilote ecrivent eux-memes : une machine
+::X|FR|rad.hwschmode.073|                           d origine la possede. La supprimer laisse
+::X|FR|rad.hwschmode.074|                           dxgkrnl sur son repli interne et la page des
+::X|FR|rad.hwschmode.075|                           Parametres graphiques sans rien de selectionne,
+::X|FR|rad.hwschmode.076|                           un etat qu une installation neuve ne produit
+::X|FR|rad.hwschmode.077|                           pas. C est precisement pour cela qu OPTY ecrit
+::X|FR|rad.hwschmode.078|                           2 plutot que de supprimer.
+::X|FR|rad.hwschmode.079|
+::X|FR|rad.hwschmode.080|  Pourquoi ces profils : Les cinq ecrivent 2, et c est un constat, pas un
+::X|FR|rad.hwschmode.081|                         haussement d epaules. 2 est ce qu embarque une
+::X|FR|rad.hwschmode.082|                         machine compatible, et sur un materiel
+::X|FR|rad.hwschmode.083|                         incompatible la valeur est ignoree : il n existe
+::X|FR|rad.hwschmode.084|                         aucun profil pour lequel avoir 2 sur le disque
+::X|FR|rad.hwschmode.085|                         soit une erreur. Personne n a publie d ecart de
+::X|FR|rad.hwschmode.086|                         consommation ou d autonomie lie a la
+::X|FR|rad.hwschmode.087|                         planification materielle, dans un sens ou dans
+::X|FR|rad.hwschmode.088|                         l autre : le profil portable recoit donc la meme
+::X|FR|rad.hwschmode.089|                         reponse plutot qu une reponse inventee -
+::X|FR|rad.hwschmode.090|                         pretendre a un cout en batterie ici serait
+::X|FR|rad.hwschmode.091|                         exactement le folklore que cette reecriture
+::X|FR|rad.hwschmode.092|                         cherche a eliminer. Le serveur l ecrit aussi :
+::X|FR|rad.hwschmode.093|                         une machine qui transcode sous Plex fait tourner
+::X|FR|rad.hwschmode.094|                         la meme pile de pilotes, livree validee avec
+::X|FR|rad.hwschmode.095|                         l option active. La seule vraie raison de rester
+::X|FR|rad.hwschmode.096|                         a 1, c est une saccade ou un bug de capture que
+::X|FR|rad.hwschmode.097|                         vous avez vous-meme isole, et cela releve de la
+::X|FR|rad.hwschmode.098|                         carte de test A/B.
+::X|FR|rad.hwschmode.099|
+::X|FR|rad.hwschmode.100|  Problemes connus : Rien d actuel. Le signalement historique a connaitre
+::X|FR|rad.hwschmode.101|                     : sur les premiers pilotes HAGS, OBS et les outils de
+::X|FR|rad.hwschmode.102|                     capture equivalents pouvaient perdre la source de
+::X|FR|rad.hwschmode.103|                     capture du jeu apres activation. Si cela vous arrive
+::X|FR|rad.hwschmode.104|                     aujourd hui, la carte de test A/B est le moyen de le
+::X|FR|rad.hwschmode.105|                     confirmer avant d accuser autre chose.
+::X|FR|rad.hwschmode.106|
+::X|FR|rad.hwschmode.107|  Non verifie (en)  : One thing worth fixing in the source, not in the
+::X|FR|rad.hwschmode.108|                      card: the question is now asked in
+::X|FR|rad.hwschmode.109|                      :setup_gpu, but :reassert_defaults still writes 2
+::X|FR|rad.hwschmode.110|                      without asking, although choosing a GPU scheduling
+::X|FR|rad.hwschmode.111|                      mode is a preference by the project s own rule.
+::X|FR|rad.hwschmode.112|                      The old comment above that write, which claimed
+::X|FR|rad.hwschmode.113|                      Anti-Lag 2 needs HAGS, is gone from the code; that
+::X|FR|rad.hwschmode.114|                      claim was wrong (see Gain). Separately,
+::X|FR|rad.hwschmode.115|                      I have not verified byte-for-byte that HwSchMode is
+::X|FR|rad.hwschmode.116|                      present on a fresh 25H2 install before any vendor
+::X|FR|rad.hwschmode.117|                      driver is installed, and machines do turn up with
+::X|FR|rad.hwschmode.118|                      HwSchMode=0, whose meaning I could not confirm; OPTY
+::X|FR|rad.hwschmode.119|                      should never write 0.
+::X|FR|rad.hwschmode.120|
+::X|FR|rad.hwschmode.121|  Cible           : HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers
+::X|FR|rad.hwschmode.122|                    HwSchMode REG_DWORD - demandee via call :askreg
+::X|FR|rad.hwschmode.123|                    "rad.hwschmode" dans :setup_gpu, et ecrite a 2 par
+::X|FR|rad.hwschmode.124|                    call :regset dans :reassert_defaults
 ::
 :: ---- rad.gpu.tdr.killkeys (repair) ------------------------------
 ::P|rad.gpu.tdr.killkeys|DELETE|DELETE|DELETE|DELETE|DELETE|
@@ -17682,6 +17898,125 @@ goto :eof
 ::X|FR|rad.uac.on.148|                    Les trois sont des ecritures, jamais des suppressions :
 ::X|FR|rad.uac.on.149|                    Windows les livre presentes.
 ::
+:: ---- hvci.off (risky) ----------------------------------------
+::P|hvci.off|0|0|0|0|SKIP|
+::T|EN|hvci.off.001|MEMORY INTEGRITY (HVCI): OFF
+::T|EN|hvci.off.002|Turns Memory Integrity off explicitly and keeps it off - games get back the few percent it costs (about 8 percent measured on a 5800X3D), but the kernel loses a protection against malicious or vulnerable drivers.
+::T|FR|hvci.off.001|INTEGRITE DE LA MEMOIRE (HVCI) : DESACTIVEE
+::T|FR|hvci.off.002|Desactive explicitement l integrite de la memoire et la garde desactivee - les jeux recuperent les quelques pour cent qu elle coute (environ 8 pour cent mesures sur un 5800X3D), mais le noyau perd une protection contre les pilotes malveillants ou vulnerables.
+::X|EN|hvci.off.001|  What it is      : Memory Integrity (Hypervisor-protected Code Integrity)
+::X|EN|hvci.off.002|                    runs the kernel code-integrity check inside a Hyper-V
+::X|EN|hvci.off.003|                    enclave, so a driver cannot load or patch kernel code
+::X|EN|hvci.off.004|                    that is not signed. It is the switch under Windows
+::X|EN|hvci.off.005|                    Security > Device security > Core isolation.
+::X|EN|hvci.off.006|
+::X|EN|hvci.off.007|  Actual effect   : writes HypervisorEnforcedCodeIntegrity\Enabled = 0
+::X|EN|hvci.off.008|                    (REG_DWORD) under DeviceGuard\Scenarios. It takes
+::X|EN|hvci.off.009|                    effect after the next restart. The Windows Security
+::X|EN|hvci.off.010|                    toggle can switch it back on at any time.
+::X|EN|hvci.off.011|
+::X|EN|hvci.off.012|  Why explicit 0  : Microsoft announced (Windows IT Pro blog, 2026-09-01,
+::X|EN|hvci.off.013|                    MC1465669, release start 2026-10-01) that quality
+::X|EN|hvci.off.014|                    updates gradually turn Memory Integrity on for eligible
+::X|EN|hvci.off.015|                    devices, and that devices where it was explicitly
+::X|EN|hvci.off.016|                    disabled are not changed. An absent value is exactly
+::X|EN|hvci.off.017|                    what that rollout switches on, so OPTY writes 0 and
+::X|EN|hvci.off.018|                    neither restore path deletes it any more.
+::X|EN|hvci.off.019|
+::X|EN|hvci.off.020|  Gain            : the performance Memory Integrity costs. ComputerBase
+::X|EN|hvci.off.021|                    measured about 8 percent in games on a Ryzen 7 5800X3D
+::X|EN|hvci.off.022|                    under 24H2 (reported by Neowin); XDA measured 1.6 to
+::X|EN|hvci.off.023|                    2.5 percent on a Ryzen 5 7600X. Nothing else.
+::X|EN|hvci.off.024|
+::X|EN|hvci.off.025|  Cost            : a real security layer is gone. A vulnerable signed
+::X|EN|hvci.off.026|                    driver - the kind some monitoring, RGB and anti-cheat
+::X|EN|hvci.off.027|                    tools ship - can be abused to run code in the kernel
+::X|EN|hvci.off.028|                    again. Some anti-cheat and corporate policies require
+::X|EN|hvci.off.029|                    Memory Integrity on.
+::X|EN|hvci.off.030|
+::X|EN|hvci.off.031|  Windows default : on for new installs on capable hardware, off on many
+::X|EN|hvci.off.032|                    upgraded PCs, and switched on by updates from October
+::X|EN|hvci.off.033|                    2026 unless explicitly disabled.
+::X|EN|hvci.off.034|
+::X|EN|hvci.off.035|  Possible values:
+::X|EN|hvci.off.036|    0                    : Memory Integrity off, explicitly. Restart needed.
+::X|EN|hvci.off.037|    SKIP                 : nothing is written - Windows keeps whatever it
+::X|EN|hvci.off.038|                           has, including the October 2026 rollout.
+::X|EN|hvci.off.039|
+::X|EN|hvci.off.040|  Why these profiles : the four use profiles turn it off on the owner's
+::X|EN|hvci.off.041|                       explicit instruction ("desactive le, quoi qu il
+::X|EN|hvci.off.042|                       arrive"). WINDOWS is SKIP: it leaves the setting to
+::X|EN|hvci.off.043|                       Windows.
+::X|EN|hvci.off.044|
+::X|EN|hvci.off.045|  Unverified      : how Windows recognises "explicitly disabled" is not
+::X|EN|hvci.off.046|                    documented. Enabled = 0 is what the Windows Security
+::X|EN|hvci.off.047|                    toggle writes, which is the most likely marker. If
+::X|EN|hvci.off.048|                    Memory Integrity was turned on with a UEFI lock, the
+::X|EN|hvci.off.049|                    registry value alone does not turn it off.
+::X|EN|hvci.off.050|
+::X|EN|hvci.off.051|  Target          : :askreg "hvci.off" in :setup_system (after the power
+::X|EN|hvci.off.052|                    throttling question). :hvcistate reports it in both
+::X|EN|hvci.off.053|                    restore paths without changing it.
+::X|FR|hvci.off.001|  Ce que c est    : l integrite de la memoire (Hypervisor-protected Code
+::X|FR|hvci.off.002|                    Integrity) execute le controle d integrite du code du
+::X|FR|hvci.off.003|                    noyau dans une enclave Hyper-V, pour qu un pilote ne
+::X|FR|hvci.off.004|                    puisse ni charger ni modifier du code noyau non signe.
+::X|FR|hvci.off.005|                    C est l interrupteur de Securite Windows > Securite de
+::X|FR|hvci.off.006|                    l appareil > Isolation du noyau.
+::X|FR|hvci.off.007|
+::X|FR|hvci.off.008|  Effet reel      : ecrit HypervisorEnforcedCodeIntegrity\Enabled = 0
+::X|FR|hvci.off.009|                    (REG_DWORD) sous DeviceGuard\Scenarios. Prend effet
+::X|FR|hvci.off.010|                    au prochain redemarrage. L interrupteur de Securite
+::X|FR|hvci.off.011|                    Windows peut la reactiver a tout moment.
+::X|FR|hvci.off.012|
+::X|FR|hvci.off.013|  Pourquoi 0      : Microsoft a annonce (blog Windows IT Pro, 2026-09-01,
+::X|FR|hvci.off.014|                    MC1465669, debut le 2026-10-01) que les mises a jour
+::X|FR|hvci.off.015|                    de qualite activeront progressivement l integrite de
+::X|FR|hvci.off.016|                    la memoire sur les appareils compatibles, sauf la ou
+::X|FR|hvci.off.017|                    elle a ete desactivee explicitement. Une valeur
+::X|FR|hvci.off.018|                    absente est justement ce que ce deploiement active :
+::X|FR|hvci.off.019|                    OPTY ecrit donc 0, et aucune restauration ne la
+::X|FR|hvci.off.020|                    supprime plus.
+::X|FR|hvci.off.021|
+::X|FR|hvci.off.022|  Gain            : les performances qu elle coute. ComputerBase a mesure
+::X|FR|hvci.off.023|                    environ 8 pour cent en jeu sur un Ryzen 7 5800X3D sous
+::X|FR|hvci.off.024|                    24H2 (rapporte par Neowin) ; XDA 1,6 a 2,5 pour cent
+::X|FR|hvci.off.025|                    sur un Ryzen 5 7600X. Rien d autre.
+::X|FR|hvci.off.026|
+::X|FR|hvci.off.027|  Cout            : une vraie couche de securite disparait. Un pilote
+::X|FR|hvci.off.028|                    signe mais vulnerable - comme en livrent certains
+::X|FR|hvci.off.029|                    outils de monitoring, de RGB ou d anti-triche - peut
+::X|FR|hvci.off.030|                    de nouveau servir a executer du code dans le noyau.
+::X|FR|hvci.off.031|                    Certains anti-triches et certaines strategies
+::X|FR|hvci.off.032|                    d entreprise exigent l integrite de la memoire.
+::X|FR|hvci.off.033|
+::X|FR|hvci.off.034|  Defaut Windows  : active sur les installations neuves avec un materiel
+::X|FR|hvci.off.035|                    compatible, desactive sur beaucoup de PC mis a jour,
+::X|FR|hvci.off.036|                    et activee par les mises a jour a partir d octobre
+::X|FR|hvci.off.037|                    2026 sauf desactivation explicite.
+::X|FR|hvci.off.038|
+::X|FR|hvci.off.039|  Valeurs possibles :
+::X|FR|hvci.off.040|    0                    : integrite de la memoire desactivee,
+::X|FR|hvci.off.041|                           explicitement. Redemarrage necessaire.
+::X|FR|hvci.off.042|    SKIP                 : rien n est ecrit - Windows garde ce qu il a, y
+::X|FR|hvci.off.043|                           compris le deploiement d octobre 2026.
+::X|FR|hvci.off.044|
+::X|FR|hvci.off.045|  Pourquoi ces profils : les quatre profils d usage la desactivent, sur
+::X|FR|hvci.off.046|                         instruction explicite du proprietaire
+::X|FR|hvci.off.047|                         (« desactive le, quoi qu il arrive »). WINDOWS est
+::X|FR|hvci.off.048|                         a SKIP : il laisse le reglage a Windows.
+::X|FR|hvci.off.049|
+::X|FR|hvci.off.050|  Non verifie     : la facon dont Windows reconnait une desactivation
+::X|FR|hvci.off.051|                    explicite n est pas documentee. Enabled = 0 est ce
+::X|FR|hvci.off.052|                    qu ecrit l interrupteur de Securite Windows, le
+::X|FR|hvci.off.053|                    marqueur le plus probable. Si l integrite de la
+::X|FR|hvci.off.054|                    memoire a ete activee avec un verrou UEFI, la valeur
+::X|FR|hvci.off.055|                    de registre seule ne la desactive pas.
+::X|FR|hvci.off.056|
+::X|FR|hvci.off.057|  Cible           : :askreg "hvci.off" dans :setup_system (apres la
+::X|FR|hvci.off.058|                    question du power throttling). :hvcistate l affiche
+::X|FR|hvci.off.059|                    dans les deux restaurations sans la modifier.
+::
 :: ---- rad.hvci.killkey (risky) ----------------------------------
 ::P|rad.hvci.killkey|0|DELETE|DELETE|DELETE|DELETE|
 ::T|EN|rad.hvci.killkey.001|SET THE MEMORY INTEGRITY (CORE ISOLATION) OVERRIDE
@@ -17718,128 +18053,148 @@ goto :eof
 ::X|EN|rad.hvci.killkey.028|                    and HVCI adds verification work on kernel code pages),
 ::X|EN|rad.hvci.killkey.029|                    but published measurements range from nothing to about
 ::X|EN|rad.hvci.killkey.030|                    ten percent, and it is close to nothing whenever you
-::X|EN|rad.hvci.killkey.031|                    are GPU-bound. Measure your own game before you
-::X|EN|rad.hvci.killkey.032|                    assume. And if WSL2, Docker, Hyper-V or Windows
-::X|EN|rad.hvci.killkey.033|                    Sandbox is installed, the hypervisor runs anyway and
-::X|EN|rad.hvci.killkey.034|                    you recover very little.
-::X|EN|rad.hvci.killkey.035|
-::X|EN|rad.hvci.killkey.036|  Cost            : Letting VBS come back starts the hypervisor. Older
-::X|EN|rad.hvci.killkey.037|                    VMware Workstation and VirtualBox versions, some
-::X|EN|rad.hvci.killkey.038|                    Android emulators and other nested-virtualisation
-::X|EN|rad.hvci.killkey.039|                    setups run badly or refuse to start with it active -
-::X|EN|rad.hvci.killkey.040|                    which is very often exactly why someone disabled it in
-::X|EN|rad.hvci.killkey.041|                    the first place. And because the change only takes
-::X|EN|rad.hvci.killkey.042|                    effect at the next reboot, you discover the conflict
-::X|EN|rad.hvci.killkey.043|                    then, not now. Separately, an unsigned or old kernel
-::X|EN|rad.hvci.killkey.044|                    driver may fail to load once Memory Integrity is on;
-::X|EN|rad.hvci.killkey.045|                    Windows Security names the driver when it blocks the
-::X|EN|rad.hvci.killkey.046|                    toggle. If a VM tool stops working afterwards, update
-::X|EN|rad.hvci.killkey.047|                    it - current VMware Workstation and VirtualBox 7 use
-::X|EN|rad.hvci.killkey.048|                    the Windows Hypervisor Platform and coexist with VBS -
-::X|EN|rad.hvci.killkey.049|                    or turn Memory Integrity back off in Windows Security.
-::X|EN|rad.hvci.killkey.050|
-::X|EN|rad.hvci.killkey.051|  Windows default : Both values absent. What that produces is not fixed: a
-::X|EN|rad.hvci.killkey.052|                    clean install on qualifying hardware usually comes up
-::X|EN|rad.hvci.killkey.053|                    with VBS and Memory Integrity on, a machine upgraded
-::X|EN|rad.hvci.killkey.054|                    from Windows 10 usually comes up with them off. Absent
-::X|EN|rad.hvci.killkey.055|                    is still the default; the state that follows is a
-::X|EN|rad.hvci.killkey.056|                    hardware and image question, not a registry one.
-::X|EN|rad.hvci.killkey.057|
-::X|EN|rad.hvci.killkey.058|  Possible values:
-::X|EN|rad.hvci.killkey.059|    0                    : Written to both values, this is an explicit
-::X|EN|rad.hvci.killkey.060|                           "stay off".
-::X|EN|rad.hvci.killkey.061|                           HypervisorEnforcedCodeIntegrity\Enabled=0 stops
-::X|EN|rad.hvci.killkey.062|                           the hypervisor validating kernel-mode code
-::X|EN|rad.hvci.killkey.063|                           pages; EnableVirtualizationBasedSecurity=0
-::X|EN|rad.hvci.killkey.064|                           tears down the VBS layer itself, which also
-::X|EN|rad.hvci.killkey.065|                           takes Credential Guard and the rest of Core
-::X|EN|rad.hvci.killkey.066|                           Isolation with it. Takes effect at the next
-::X|EN|rad.hvci.killkey.067|                           boot. Important caveat: if Hyper-V, WSL2,
-::X|EN|rad.hvci.killkey.068|                           Docker Desktop, Windows Sandbox or Virtual
-::X|EN|rad.hvci.killkey.069|                           Machine Platform is installed, the hypervisor
-::X|EN|rad.hvci.killkey.070|                           still launches for those, and the CPU overhead
-::X|EN|rad.hvci.killkey.071|                           you were trying to remove largely stays.
-::X|EN|rad.hvci.killkey.072|    1                    : An explicit "force on", and the script
-::X|EN|rad.hvci.killkey.073|                           deliberately never writes it. The Windows
-::X|EN|rad.hvci.killkey.074|                           Security toggle checks driver compatibility
-::X|EN|rad.hvci.killkey.075|                           before enabling Memory Integrity; a registry
-::X|EN|rad.hvci.killkey.076|                           write does not. Forcing 1 on a machine with an
-::X|EN|rad.hvci.killkey.077|                           incompatible kernel driver means that driver
-::X|EN|rad.hvci.killkey.078|                           fails to load at boot - and if it is a storage
-::X|EN|rad.hvci.killkey.079|                           or network driver, you find out the hard way.
-::X|EN|rad.hvci.killkey.080|                           Use the Core Isolation page in Windows Security
-::X|EN|rad.hvci.killkey.081|                           to turn it on, not this key.
-::X|EN|rad.hvci.killkey.082|    DELETE               : Both values absent - the real Windows default.
-::X|EN|rad.hvci.killkey.083|                           The effective state then comes from the image,
-::X|EN|rad.hvci.killkey.084|                           the firmware (VT-x/AMD-V plus SLAT and, for the
-::X|EN|rad.hvci.killkey.085|                           full feature set, Secure Boot) and the driver
-::X|EN|rad.hvci.killkey.086|                           set, and the Core Isolation toggle in Windows
-::X|EN|rad.hvci.killkey.087|                           Security governs it again. Note that a sibling
-::X|EN|rad.hvci.killkey.088|                           value, Locked=1 under the same Scenarios key,
-::X|EN|rad.hvci.killkey.089|                           pins Memory Integrity so the UI cannot change
-::X|EN|rad.hvci.killkey.090|                           it; the script does not write or remove it, so
-::X|EN|rad.hvci.killkey.091|                           if the toggle is still greyed out after this,
-::X|EN|rad.hvci.killkey.092|                           that is what to look at.
-::X|EN|rad.hvci.killkey.093|
-::X|EN|rad.hvci.killkey.094|  Why these profiles : Only gaming differs, and it differs for something
-::X|EN|rad.hvci.killkey.095|                       measurable rather than asserted. 1 lists 0/0
-::X|EN|rad.hvci.killkey.096|                       because the VBS overhead is real in CPU-bound
-::X|EN|rad.hvci.killkey.097|                       titles and a gaming desktop is where you might
-::X|EN|rad.hvci.killkey.098|                       reasonably trade it - be clear that this is a
-::X|EN|rad.hvci.killkey.099|                       security downgrade you are choosing, not a free
-::X|EN|rad.hvci.killkey.100|                       win. 2, 3, 4 and 5 all delete. Server: the box
-::X|EN|rad.hvci.killkey.101|                       takes untrusted content in from the internet all
-::X|EN|rad.hvci.killkey.102|                       day and uptime is the point, so it keeps the
-::X|EN|rad.hvci.killkey.103|                       protection; if it hosts VMs under VMware or
-::X|EN|rad.hvci.killkey.104|                       VirtualBox, answer 1 instead - that conflict is the
-::X|EN|rad.hvci.killkey.105|                       one thing that actually justifies switching VBS off
-::X|EN|rad.hvci.killkey.106|                       on a server. Office: nothing to trade, the CPU cost
-::X|EN|rad.hvci.killkey.107|                       is invisible outside games. Laptop: I found no
-::X|EN|rad.hvci.killkey.108|                       measurable battery gain from switching VBS off, and
-::X|EN|rad.hvci.killkey.109|                       a laptop is the machine most likely to be stolen,
-::X|EN|rad.hvci.killkey.110|                       so it keeps it - claiming a battery win here would
-::X|EN|rad.hvci.killkey.111|                       be exactly the kind of unsupported line this
-::X|EN|rad.hvci.killkey.112|                       rewrite exists to remove. 5 deletes because absent
-::X|EN|rad.hvci.killkey.113|                       is the shipped state. Be aware that no code applies
-::X|EN|rad.hvci.killkey.114|                       this row today: the card is never asked, and the
-::X|EN|rad.hvci.killkey.115|                       only code deletes both values whatever the profile.
-::X|EN|rad.hvci.killkey.116|
-::X|EN|rad.hvci.killkey.117|  Known problems  : Concrete and both directions. Memory Integrity
-::X|EN|rad.hvci.killkey.118|                    refusing to switch on and naming an incompatible
-::X|EN|rad.hvci.killkey.119|                    driver is common with older motherboard-vendor
-::X|EN|rad.hvci.killkey.120|                    overclocking and monitoring drivers (ASUS, Gigabyte,
-::X|EN|rad.hvci.killkey.121|                    MSI utilities) and old RGB control drivers. In the
-::X|EN|rad.hvci.killkey.122|                    other direction, VirtualBox 6.0/6.1 and VMware
-::X|EN|rad.hvci.killkey.123|                    Workstation before 16.x drop to a very slow emulation
-::X|EN|rad.hvci.killkey.124|                    path or fail to start a VM once the hypervisor is up.
-::X|EN|rad.hvci.killkey.125|
-::X|EN|rad.hvci.killkey.126|  Unverified      : Two things I cannot substantiate. First, whether these
-::X|EN|rad.hvci.killkey.127|                    values ship absent or present depends on the image: a
-::X|EN|rad.hvci.killkey.128|                    clean Windows 11 install on qualifying hardware
-::X|EN|rad.hvci.killkey.129|                    normally comes up with VBS and Memory Integrity on and
-::X|EN|rad.hvci.killkey.130|                    no override written, while a machine upgraded from
-::X|EN|rad.hvci.killkey.131|                    Windows 10 normally comes up with them off - so
-::X|EN|rad.hvci.killkey.132|                    deleting the overrides may well leave Memory Integrity
-::X|EN|rad.hvci.killkey.133|                    off, and the card should not promise it comes back.
-::X|EN|rad.hvci.killkey.134|                    Second, an older version of the script carried a
-::X|EN|rad.hvci.killkey.135|                    comment claiming some anti-cheats (Vanguard, FACEIT)
-::X|EN|rad.hvci.killkey.136|                    require Memory Integrity ON; that comment is gone and
-::X|EN|rad.hvci.killkey.137|                    I could not substantiate the claim. What those
-::X|EN|rad.hvci.killkey.138|                    anti-cheats actually require on Windows 11 is Secure
-::X|EN|rad.hvci.killkey.139|                    Boot and TPM 2.0, which are firmware settings and have
-::X|EN|rad.hvci.killkey.140|                    nothing to do with this key. Treat "anticheat needs
-::X|EN|rad.hvci.killkey.141|                    HVCI" as unverified folklore until someone tests it.
-::X|EN|rad.hvci.killkey.142|
-::X|EN|rad.hvci.killkey.143|  Target          : HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scen
-::X|EN|rad.hvci.killkey.144|                    arios\HypervisorEnforcedCodeIntegrity /v Enabled
-::X|EN|rad.hvci.killkey.145|                    (REG_DWORD) and
-::X|EN|rad.hvci.killkey.146|                    HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard /v
-::X|EN|rad.hvci.killkey.147|                    EnableVirtualizationBasedSecurity (REG_DWORD). Deleted
-::X|EN|rad.hvci.killkey.148|                    through :killkey, without a question, in
-::X|EN|rad.hvci.killkey.149|                    :reassert_defaults and in :gaming_restore. No code
-::X|EN|rad.hvci.killkey.150|                    asks this card and no code writes 0 to either value
-::X|EN|rad.hvci.killkey.151|                    any more. Sibling value Locked under the same
-::X|EN|rad.hvci.killkey.152|                    Scenarios key is NOT touched.
+::X|EN|rad.hvci.killkey.031|                    are GPU-bound. Two examples: ComputerBase measured
+::X|EN|rad.hvci.killkey.032|                    about 8 percent in games on a Ryzen 7 5800X3D under
+::X|EN|rad.hvci.killkey.033|                    24H2 (Source: ComputerBase, as reported by Neowin);
+::X|EN|rad.hvci.killkey.034|                    XDA measured 1.6 to 2.5 percent on a Ryzen 5 7600X
+::X|EN|rad.hvci.killkey.035|                    (Source: XDA Developers). Measure your own game before you
+::X|EN|rad.hvci.killkey.036|                    assume. And if WSL2, Docker, Hyper-V or Windows
+::X|EN|rad.hvci.killkey.037|                    Sandbox is installed, the hypervisor runs anyway and
+::X|EN|rad.hvci.killkey.038|                    you recover very little.
+::X|EN|rad.hvci.killkey.039|
+::X|EN|rad.hvci.killkey.040|  Cost            : Letting VBS come back starts the hypervisor. Older
+::X|EN|rad.hvci.killkey.041|                    VMware Workstation and VirtualBox versions, some
+::X|EN|rad.hvci.killkey.042|                    Android emulators and other nested-virtualisation
+::X|EN|rad.hvci.killkey.043|                    setups run badly or refuse to start with it active -
+::X|EN|rad.hvci.killkey.044|                    which is very often exactly why someone disabled it in
+::X|EN|rad.hvci.killkey.045|                    the first place. And because the change only takes
+::X|EN|rad.hvci.killkey.046|                    effect at the next reboot, you discover the conflict
+::X|EN|rad.hvci.killkey.047|                    then, not now. Separately, an unsigned or old kernel
+::X|EN|rad.hvci.killkey.048|                    driver may fail to load once Memory Integrity is on;
+::X|EN|rad.hvci.killkey.049|                    Windows Security names the driver when it blocks the
+::X|EN|rad.hvci.killkey.050|                    toggle. If a VM tool stops working afterwards, update
+::X|EN|rad.hvci.killkey.051|                    it - current VMware Workstation and VirtualBox 7 use
+::X|EN|rad.hvci.killkey.052|                    the Windows Hypervisor Platform and coexist with VBS -
+::X|EN|rad.hvci.killkey.053|                    or turn Memory Integrity back off in Windows Security.
+::X|EN|rad.hvci.killkey.054|
+::X|EN|rad.hvci.killkey.055|  Windows default : Both values absent. What that produces is not fixed: a
+::X|EN|rad.hvci.killkey.056|                    clean install on qualifying hardware usually comes up
+::X|EN|rad.hvci.killkey.057|                    with VBS and Memory Integrity on, a machine upgraded
+::X|EN|rad.hvci.killkey.058|                    from Windows 10 usually comes up with them off. Absent
+::X|EN|rad.hvci.killkey.059|                    is still the default; the state that follows is a
+::X|EN|rad.hvci.killkey.060|                    hardware and image question, not a registry one.
+::X|EN|rad.hvci.killkey.061|
+::X|EN|rad.hvci.killkey.062|  Possible values:
+::X|EN|rad.hvci.killkey.063|    0                    : Written to both values, this is an explicit
+::X|EN|rad.hvci.killkey.064|                           "stay off".
+::X|EN|rad.hvci.killkey.065|                           HypervisorEnforcedCodeIntegrity\Enabled=0 stops
+::X|EN|rad.hvci.killkey.066|                           the hypervisor validating kernel-mode code
+::X|EN|rad.hvci.killkey.067|                           pages; EnableVirtualizationBasedSecurity=0
+::X|EN|rad.hvci.killkey.068|                           tears down the VBS layer itself, which also
+::X|EN|rad.hvci.killkey.069|                           takes Credential Guard and the rest of Core
+::X|EN|rad.hvci.killkey.070|                           Isolation with it. Takes effect at the next
+::X|EN|rad.hvci.killkey.071|                           boot. Important caveat: if Hyper-V, WSL2,
+::X|EN|rad.hvci.killkey.072|                           Docker Desktop, Windows Sandbox or Virtual
+::X|EN|rad.hvci.killkey.073|                           Machine Platform is installed, the hypervisor
+::X|EN|rad.hvci.killkey.074|                           still launches for those, and the CPU overhead
+::X|EN|rad.hvci.killkey.075|                           you were trying to remove largely stays.
+::X|EN|rad.hvci.killkey.076|    1                    : An explicit "force on", and the script
+::X|EN|rad.hvci.killkey.077|                           deliberately never writes it. The Windows
+::X|EN|rad.hvci.killkey.078|                           Security toggle checks driver compatibility
+::X|EN|rad.hvci.killkey.079|                           before enabling Memory Integrity; a registry
+::X|EN|rad.hvci.killkey.080|                           write does not. Forcing 1 on a machine with an
+::X|EN|rad.hvci.killkey.081|                           incompatible kernel driver means that driver
+::X|EN|rad.hvci.killkey.082|                           fails to load at boot - and if it is a storage
+::X|EN|rad.hvci.killkey.083|                           or network driver, you find out the hard way.
+::X|EN|rad.hvci.killkey.084|                           Use the Core Isolation page in Windows Security
+::X|EN|rad.hvci.killkey.085|                           to turn it on, not this key.
+::X|EN|rad.hvci.killkey.086|    DELETE               : Both values absent - the real Windows default.
+::X|EN|rad.hvci.killkey.087|                           The effective state then comes from the image,
+::X|EN|rad.hvci.killkey.088|                           the firmware (VT-x/AMD-V plus SLAT and, for the
+::X|EN|rad.hvci.killkey.089|                           full feature set, Secure Boot) and the driver
+::X|EN|rad.hvci.killkey.090|                           set, and the Core Isolation toggle in Windows
+::X|EN|rad.hvci.killkey.091|                           Security governs it again. Note that a sibling
+::X|EN|rad.hvci.killkey.092|                           value, Locked=1 under the same Scenarios key,
+::X|EN|rad.hvci.killkey.093|                           pins Memory Integrity so the UI cannot change
+::X|EN|rad.hvci.killkey.094|                           it; the script does not write or remove it, so
+::X|EN|rad.hvci.killkey.095|                           if the toggle is still greyed out after this,
+::X|EN|rad.hvci.killkey.096|                           that is what to look at.
+::X|EN|rad.hvci.killkey.097|
+::X|EN|rad.hvci.killkey.098|  Why these profiles : Only gaming differs, and it differs for something
+::X|EN|rad.hvci.killkey.099|                       measurable rather than asserted. 1 lists 0/0
+::X|EN|rad.hvci.killkey.100|                       because the VBS overhead is real in CPU-bound
+::X|EN|rad.hvci.killkey.101|                       titles and a gaming desktop is where you might
+::X|EN|rad.hvci.killkey.102|                       reasonably trade it - be clear that this is a
+::X|EN|rad.hvci.killkey.103|                       security downgrade you are choosing, not a free
+::X|EN|rad.hvci.killkey.104|                       win. 2, 3, 4 and 5 all delete. Server: the box
+::X|EN|rad.hvci.killkey.105|                       takes untrusted content in from the internet all
+::X|EN|rad.hvci.killkey.106|                       day and uptime is the point, so it keeps the
+::X|EN|rad.hvci.killkey.107|                       protection; if it hosts VMs under VMware or
+::X|EN|rad.hvci.killkey.108|                       VirtualBox, answer 1 instead - that conflict is the
+::X|EN|rad.hvci.killkey.109|                       one thing that actually justifies switching VBS off
+::X|EN|rad.hvci.killkey.110|                       on a server. Office: nothing to trade, the CPU cost
+::X|EN|rad.hvci.killkey.111|                       is invisible outside games. Laptop: I found no
+::X|EN|rad.hvci.killkey.112|                       measurable battery gain from switching VBS off, and
+::X|EN|rad.hvci.killkey.113|                       a laptop is the machine most likely to be stolen,
+::X|EN|rad.hvci.killkey.114|                       so it keeps it - claiming a battery win here would
+::X|EN|rad.hvci.killkey.115|                       be exactly the kind of unsupported line this
+::X|EN|rad.hvci.killkey.116|                       rewrite exists to remove. 5 deletes because absent
+::X|EN|rad.hvci.killkey.117|                       is the shipped state. Be aware that no code applies
+::X|EN|rad.hvci.killkey.118|                       this row today: the card is never asked, and the
+::X|EN|rad.hvci.killkey.119|                       only code deletes both values whatever the profile.
+::X|EN|rad.hvci.killkey.120|
+::X|EN|rad.hvci.killkey.121|  Known problems  : Concrete and both directions. Memory Integrity
+::X|EN|rad.hvci.killkey.122|                    refusing to switch on and naming an incompatible
+::X|EN|rad.hvci.killkey.123|                    driver is common with older motherboard-vendor
+::X|EN|rad.hvci.killkey.124|                    overclocking and monitoring drivers (ASUS, Gigabyte,
+::X|EN|rad.hvci.killkey.125|                    MSI utilities) and old RGB control drivers. In the
+::X|EN|rad.hvci.killkey.126|                    other direction, VirtualBox 6.0/6.1 and VMware
+::X|EN|rad.hvci.killkey.127|                    Workstation before 16.x drop to a very slow emulation
+::X|EN|rad.hvci.killkey.128|                    path or fail to start a VM once the hypervisor is up.
+::X|EN|rad.hvci.killkey.129|                    Automatic enablement: Microsoft announced that quality
+::X|EN|rad.hvci.killkey.130|                    updates will gradually turn Memory Integrity on for
+::X|EN|rad.hvci.killkey.131|                    eligible devices, and that devices where it was
+::X|EN|rad.hvci.killkey.132|                    explicitly disabled are not changed (Source: Windows
+::X|EN|rad.hvci.killkey.133|                    IT Pro Blog, 2026-09-01; message center MC1465669;
+::X|EN|rad.hvci.killkey.134|                    release start 2026-10-01). Deleting the Enabled value,
+::X|EN|rad.hvci.killkey.135|                    which both restore paths do, returns the machine to
+::X|EN|rad.hvci.killkey.136|                    the default, so it becomes eligible for that automatic
+::X|EN|rad.hvci.killkey.137|                    enablement. If you want Memory Integrity to stay off,
+::X|EN|rad.hvci.killkey.138|                    turn it off yourself in Windows Security after the
+::X|EN|rad.hvci.killkey.139|                    restore rather than relying on the old value.
+::X|EN|rad.hvci.killkey.140|
+::X|EN|rad.hvci.killkey.141|  Unverified      : Two things I cannot substantiate. First, whether these
+::X|EN|rad.hvci.killkey.142|                    values ship absent or present depends on the image: a
+::X|EN|rad.hvci.killkey.143|                    clean Windows 11 install on qualifying hardware
+::X|EN|rad.hvci.killkey.144|                    normally comes up with VBS and Memory Integrity on and
+::X|EN|rad.hvci.killkey.145|                    no override written, while a machine upgraded from
+::X|EN|rad.hvci.killkey.146|                    Windows 10 normally comes up with them off - so
+::X|EN|rad.hvci.killkey.147|                    deleting the overrides may well leave Memory Integrity
+::X|EN|rad.hvci.killkey.148|                    off, and the card should not promise it comes back.
+::X|EN|rad.hvci.killkey.149|                    Second, an older version of the script carried a
+::X|EN|rad.hvci.killkey.150|                    comment claiming some anti-cheats (Vanguard, FACEIT)
+::X|EN|rad.hvci.killkey.151|                    require Memory Integrity ON; that comment is gone and
+::X|EN|rad.hvci.killkey.152|                    I could not substantiate the claim. What those
+::X|EN|rad.hvci.killkey.153|                    anti-cheats actually require on Windows 11 is Secure
+::X|EN|rad.hvci.killkey.154|                    Boot and TPM 2.0, which are firmware settings and have
+::X|EN|rad.hvci.killkey.155|                    nothing to do with this key. Treat "anticheat needs
+::X|EN|rad.hvci.killkey.156|                    HVCI" as unverified folklore until someone tests it.
+::X|EN|rad.hvci.killkey.157|                    Third, Microsoft does not document how Windows decides
+::X|EN|rad.hvci.killkey.158|                    that Memory Integrity was "explicitly disabled" for the
+::X|EN|rad.hvci.killkey.159|                    automatic rollout, so whether switching it off in
+::X|EN|rad.hvci.killkey.160|                    Windows Security after the restore is enough to be
+::X|EN|rad.hvci.killkey.161|                    left alone is UNVERIFIED.
+::X|EN|rad.hvci.killkey.162|
+::X|EN|rad.hvci.killkey.163|  Target          : HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scen
+::X|EN|rad.hvci.killkey.164|                    arios\HypervisorEnforcedCodeIntegrity /v Enabled
+::X|EN|rad.hvci.killkey.165|                    (REG_DWORD) and
+::X|EN|rad.hvci.killkey.166|                    HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard /v
+::X|EN|rad.hvci.killkey.167|                    EnableVirtualizationBasedSecurity (REG_DWORD). Deleted
+::X|EN|rad.hvci.killkey.168|                    through :killkey, without a question, in
+::X|EN|rad.hvci.killkey.169|                    :reassert_defaults and in :gaming_restore. No code
+::X|EN|rad.hvci.killkey.170|                    asks this card and no code writes 0 to either value
+::X|EN|rad.hvci.killkey.171|                    any more. Sibling value Locked under the same
+::X|EN|rad.hvci.killkey.172|                    Scenarios key is NOT touched.
 ::X|FR|rad.hvci.killkey.001|  Ce que c est    : Deux REG_DWORD qui epinglent la pile de securite par
 ::X|FR|rad.hvci.killkey.002|                    hyperviseur en position eteinte : DeviceGuard\Scenario
 ::X|FR|rad.hvci.killkey.003|                    s\HypervisorEnforcedCodeIntegrity\Enabled, ce que
@@ -17874,147 +18229,169 @@ goto :eof
 ::X|FR|rad.hvci.killkey.032|                    travail de verification sur les pages de code noyau),
 ::X|FR|rad.hvci.killkey.033|                    mais les mesures publiees vont de rien du tout a une
 ::X|FR|rad.hvci.killkey.034|                    dizaine de pour cent, et c est quasi nul des que vous
-::X|FR|rad.hvci.killkey.035|                    etes limite par le GPU. Mesurez votre jeu avant de
-::X|FR|rad.hvci.killkey.036|                    supposer. Et si WSL2, Docker, Hyper-V ou le bac a
-::X|FR|rad.hvci.killkey.037|                    sable Windows sont installes, l hyperviseur tourne de
-::X|FR|rad.hvci.killkey.038|                    toute facon et vous ne recuperez presque rien.
-::X|FR|rad.hvci.killkey.039|
-::X|FR|rad.hvci.killkey.040|  Cout            : Laisser VBS revenir demarre l hyperviseur. Les
-::X|FR|rad.hvci.killkey.041|                    anciennes versions de VMware Workstation et
-::X|FR|rad.hvci.killkey.042|                    VirtualBox, certains emulateurs Android et d autres
-::X|FR|rad.hvci.killkey.043|                    montages de virtualisation imbriquee tournent tres mal
-::X|FR|rad.hvci.killkey.044|                    ou refusent de demarrer quand il est actif - et c est
-::X|FR|rad.hvci.killkey.045|                    tres souvent exactement la raison pour laquelle
-::X|FR|rad.hvci.killkey.046|                    quelqu un l avait desactive. Comme le changement ne
-::X|FR|rad.hvci.killkey.047|                    prend effet qu au prochain redemarrage, vous
-::X|FR|rad.hvci.killkey.048|                    decouvrirez le conflit a ce moment-la, pas maintenant.
-::X|FR|rad.hvci.killkey.049|                    Par ailleurs, un pilote noyau ancien ou non signe peut
-::X|FR|rad.hvci.killkey.050|                    refuser de se charger une fois l integrite de la
-::X|FR|rad.hvci.killkey.051|                    memoire active ; Securite Windows nomme le pilote
-::X|FR|rad.hvci.killkey.052|                    fautif quand il bloque l activation. Si un outil de VM
-::X|FR|rad.hvci.killkey.053|                    cesse de fonctionner apres coup : mettez-le a jour -
-::X|FR|rad.hvci.killkey.054|                    VMware Workstation actuel et VirtualBox 7 passent par
-::X|FR|rad.hvci.killkey.055|                    la plateforme d hyperviseur Windows et cohabitent avec
-::X|FR|rad.hvci.killkey.056|                    VBS - ou recoupez l integrite de la memoire dans
-::X|FR|rad.hvci.killkey.057|                    Securite Windows.
-::X|FR|rad.hvci.killkey.058|
-::X|FR|rad.hvci.killkey.059|  Defaut Windows  : Les deux valeurs absentes. Ce que cela produit n est
-::X|FR|rad.hvci.killkey.060|                    pas fixe : une installation propre sur du materiel
-::X|FR|rad.hvci.killkey.061|                    eligible demarre generalement avec VBS et l integrite
-::X|FR|rad.hvci.killkey.062|                    de la memoire actives, une machine mise a niveau
-::X|FR|rad.hvci.killkey.063|                    depuis Windows 10 demarre generalement avec les deux
-::X|FR|rad.hvci.killkey.064|                    eteints. L absence reste le defaut ; l etat qui en
-::X|FR|rad.hvci.killkey.065|                    decoule est une question de materiel et d image, pas
-::X|FR|rad.hvci.killkey.066|                    de registre.
-::X|FR|rad.hvci.killkey.067|
-::X|FR|rad.hvci.killkey.068|  Valeurs possibles :
-::X|FR|rad.hvci.killkey.069|    0                    : Ecrit sur les deux valeurs, c est un « reste
-::X|FR|rad.hvci.killkey.070|                           eteint » explicite.
-::X|FR|rad.hvci.killkey.071|                           HypervisorEnforcedCodeIntegrity\Enabled=0
-::X|FR|rad.hvci.killkey.072|                           empeche l hyperviseur de valider les pages de
-::X|FR|rad.hvci.killkey.073|                           code noyau ;
-::X|FR|rad.hvci.killkey.074|                           EnableVirtualizationBasedSecurity=0 demonte la
-::X|FR|rad.hvci.killkey.075|                           couche VBS elle-meme, et emporte au passage
-::X|FR|rad.hvci.killkey.076|                           Credential Guard et le reste de l isolation du
-::X|FR|rad.hvci.killkey.077|                           noyau. Effet au prochain demarrage. Reserve
-::X|FR|rad.hvci.killkey.078|                           importante : si Hyper-V, WSL2, Docker Desktop,
-::X|FR|rad.hvci.killkey.079|                           le bac a sable Windows ou la plateforme de
-::X|FR|rad.hvci.killkey.080|                           machine virtuelle sont installes, l hyperviseur
-::X|FR|rad.hvci.killkey.081|                           demarre quand meme pour eux et le surcout CPU
-::X|FR|rad.hvci.killkey.082|                           que vous vouliez supprimer reste en grande
-::X|FR|rad.hvci.killkey.083|                           partie la.
-::X|FR|rad.hvci.killkey.084|    1                    : Un « force a l allumage » explicite, et le
-::X|FR|rad.hvci.killkey.085|                           script ne l ecrit jamais volontairement. Le
-::X|FR|rad.hvci.killkey.086|                           bouton de Securite Windows verifie la
-::X|FR|rad.hvci.killkey.087|                           compatibilite des pilotes avant d activer
-::X|FR|rad.hvci.killkey.088|                           l integrite de la memoire ; une ecriture
-::X|FR|rad.hvci.killkey.089|                           registre, non. Forcer 1 sur une machine dont un
-::X|FR|rad.hvci.killkey.090|                           pilote noyau est incompatible signifie que ce
-::X|FR|rad.hvci.killkey.091|                           pilote ne se charge pas au demarrage - et si
-::X|FR|rad.hvci.killkey.092|                           c est un pilote de stockage ou de reseau, vous
-::X|FR|rad.hvci.killkey.093|                           l apprenez de la pire facon. Passez par la page
-::X|FR|rad.hvci.killkey.094|                           Isolation du noyau de Securite Windows, pas par
-::X|FR|rad.hvci.killkey.095|                           cette cle.
-::X|FR|rad.hvci.killkey.096|    DELETE               : Les deux valeurs absentes : le vrai defaut
-::X|FR|rad.hvci.killkey.097|                           Windows. L etat reel decoule alors de l image,
-::X|FR|rad.hvci.killkey.098|                           du firmware (VT-x/AMD-V avec SLAT, et le
-::X|FR|rad.hvci.killkey.099|                           demarrage securise pour l ensemble des
-::X|FR|rad.hvci.killkey.100|                           fonctions) et des pilotes presents, et le
-::X|FR|rad.hvci.killkey.101|                           bouton Isolation du noyau de Securite Windows
-::X|FR|rad.hvci.killkey.102|                           reprend la main. A savoir : une valeur voisine,
-::X|FR|rad.hvci.killkey.103|                           Locked=1 dans la meme cle Scenarios, epingle
-::X|FR|rad.hvci.killkey.104|                           l integrite de la memoire pour que l interface
-::X|FR|rad.hvci.killkey.105|                           ne puisse plus la changer ; le script ne
-::X|FR|rad.hvci.killkey.106|                           l ecrit ni ne la supprime, donc si le bouton
-::X|FR|rad.hvci.killkey.107|                           reste grise apres coup, c est la qu il faut
-::X|FR|rad.hvci.killkey.108|                           regarder.
-::X|FR|rad.hvci.killkey.109|
-::X|FR|rad.hvci.killkey.110|  Pourquoi ces profils : Seul le profil gaming differe, et il differe pour
-::X|FR|rad.hvci.killkey.111|                         quelque chose de mesurable, pas d affirme. 1
-::X|FR|rad.hvci.killkey.112|                         prevoit 0/0 parce que le surcout VBS est reel dans
-::X|FR|rad.hvci.killkey.113|                         les jeux limites par le CPU et qu un PC de jeu
-::X|FR|rad.hvci.killkey.114|                         est l endroit ou l echange se defend - en sachant
-::X|FR|rad.hvci.killkey.115|                         que c est une baisse de securite que vous
-::X|FR|rad.hvci.killkey.116|                         choisissez, pas un gain gratuit. 2, 3, 4 et 5
-::X|FR|rad.hvci.killkey.117|                         suppriment. Serveur : la machine ingere du
-::X|FR|rad.hvci.killkey.118|                         contenu non fiable venu d Internet toute la
-::X|FR|rad.hvci.killkey.119|                         journee et la disponibilite est le sujet, donc
-::X|FR|rad.hvci.killkey.120|                         elle garde la protection ; si elle heberge des VM
-::X|FR|rad.hvci.killkey.121|                         sous VMware ou VirtualBox, repondez 1 - ce
-::X|FR|rad.hvci.killkey.122|                         conflit est la seule chose qui justifie vraiment
-::X|FR|rad.hvci.killkey.123|                         de couper VBS sur un serveur. Bureautique : rien
-::X|FR|rad.hvci.killkey.124|                         a echanger, le cout CPU est invisible hors des
-::X|FR|rad.hvci.killkey.125|                         jeux. Portable : je n ai trouve aucun gain
-::X|FR|rad.hvci.killkey.126|                         d autonomie mesurable a couper VBS, et un
-::X|FR|rad.hvci.killkey.127|                         portable est la machine la plus susceptible
-::X|FR|rad.hvci.killkey.128|                         d etre volee, donc il garde - pretendre un gain
-::X|FR|rad.hvci.killkey.129|                         de batterie ici serait exactement le genre de
-::X|FR|rad.hvci.killkey.130|                         phrase invérifiable que cette reecriture cherche
-::X|FR|rad.hvci.killkey.131|                         a supprimer. 5 supprime parce que l absence est
-::X|FR|rad.hvci.killkey.132|                         l etat livre. Sachez qu aucun code n applique
-::X|FR|rad.hvci.killkey.133|                         cette ligne aujourd hui : la fiche n est jamais
-::X|FR|rad.hvci.killkey.134|                         posee, et le seul code supprime les deux valeurs
-::X|FR|rad.hvci.killkey.135|                         quel que soit le profil.
-::X|FR|rad.hvci.killkey.136|
-::X|FR|rad.hvci.killkey.137|  Problemes connus : Concret, et dans les deux sens. L integrite de la
-::X|FR|rad.hvci.killkey.138|                     memoire qui refuse de s activer en nommant un pilote
-::X|FR|rad.hvci.killkey.139|                     incompatible : classique avec les vieux pilotes
-::X|FR|rad.hvci.killkey.140|                     d overclocking et de monitoring des fabricants de
-::X|FR|rad.hvci.killkey.141|                     cartes meres (utilitaires ASUS, Gigabyte, MSI) et les
-::X|FR|rad.hvci.killkey.142|                     anciens pilotes de controle RGB. Dans l autre sens,
-::X|FR|rad.hvci.killkey.143|                     VirtualBox 6.0/6.1 et VMware Workstation anterieur a
-::X|FR|rad.hvci.killkey.144|                     16.x retombent sur un mode d emulation tres lent ou
-::X|FR|rad.hvci.killkey.145|                     n arrivent plus a demarrer une VM une fois
-::X|FR|rad.hvci.killkey.146|                     l hyperviseur en place.
-::X|FR|rad.hvci.killkey.147|
-::X|FR|rad.hvci.killkey.148|  Non verifie (en)  : Two things I cannot substantiate. First, whether
-::X|FR|rad.hvci.killkey.149|                      these values ship absent or present depends on the
-::X|FR|rad.hvci.killkey.150|                      image: a clean Windows 11 install on qualifying
-::X|FR|rad.hvci.killkey.151|                      hardware normally comes up with VBS and Memory
-::X|FR|rad.hvci.killkey.152|                      Integrity on and no override written, while a
-::X|FR|rad.hvci.killkey.153|                      machine upgraded from Windows 10 normally comes up
-::X|FR|rad.hvci.killkey.154|                      with them off - so deleting the overrides may well
-::X|FR|rad.hvci.killkey.155|                      leave Memory Integrity off, and the card should not
-::X|FR|rad.hvci.killkey.156|                      promise it comes back. Second, an older version of
-::X|FR|rad.hvci.killkey.157|                      the script carried a comment claiming some
-::X|FR|rad.hvci.killkey.158|                      anti-cheats (Vanguard, FACEIT) require Memory
-::X|FR|rad.hvci.killkey.159|                      Integrity ON; that comment is gone and I could not
-::X|FR|rad.hvci.killkey.160|                      substantiate the claim. What those anti-cheats
-::X|FR|rad.hvci.killkey.161|                      actually require on Windows 11 is Secure Boot and
-::X|FR|rad.hvci.killkey.162|                      TPM 2.0, which are firmware settings and have
-::X|FR|rad.hvci.killkey.163|                      nothing to do with this key. Treat "anticheat needs
-::X|FR|rad.hvci.killkey.164|                      HVCI" as unverified folklore until someone tests it.
-::X|FR|rad.hvci.killkey.165|
-::X|FR|rad.hvci.killkey.166|  Cible           : HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scen
-::X|FR|rad.hvci.killkey.167|                    arios\HypervisorEnforcedCodeIntegrity /v Enabled
-::X|FR|rad.hvci.killkey.168|                    (REG_DWORD) et
-::X|FR|rad.hvci.killkey.169|                    HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard /v
-::X|FR|rad.hvci.killkey.170|                    EnableVirtualizationBasedSecurity (REG_DWORD).
-::X|FR|rad.hvci.killkey.171|                    Supprimees via :killkey, sans question, dans
-::X|FR|rad.hvci.killkey.172|                    :reassert_defaults et dans :gaming_restore. Aucun code
-::X|FR|rad.hvci.killkey.173|                    ne pose cette fiche et plus aucun code n ecrit 0 sur
-::X|FR|rad.hvci.killkey.174|                    l une ou l autre valeur. La valeur voisine Locked sous
-::X|FR|rad.hvci.killkey.175|                    la meme cle Scenarios n est PAS touchee.
+::X|FR|rad.hvci.killkey.035|                    etes limite par le GPU. Deux exemples : ComputerBase a
+::X|FR|rad.hvci.killkey.036|                    mesure environ 8 pour cent en jeu sur un Ryzen 7
+::X|FR|rad.hvci.killkey.037|                    5800X3D sous 24H2 (Source : ComputerBase, repris par
+::X|FR|rad.hvci.killkey.038|                    Neowin) ; XDA a mesure 1,6 a 2,5 pour cent sur un Ryzen
+::X|FR|rad.hvci.killkey.039|                    5 7600X (Source : XDA Developers). Mesurez votre jeu
+::X|FR|rad.hvci.killkey.040|                    avant de supposer. Et si WSL2, Docker, Hyper-V ou le bac a
+::X|FR|rad.hvci.killkey.041|                    sable Windows sont installes, l hyperviseur tourne de
+::X|FR|rad.hvci.killkey.042|                    toute facon et vous ne recuperez presque rien.
+::X|FR|rad.hvci.killkey.043|
+::X|FR|rad.hvci.killkey.044|  Cout            : Laisser VBS revenir demarre l hyperviseur. Les
+::X|FR|rad.hvci.killkey.045|                    anciennes versions de VMware Workstation et
+::X|FR|rad.hvci.killkey.046|                    VirtualBox, certains emulateurs Android et d autres
+::X|FR|rad.hvci.killkey.047|                    montages de virtualisation imbriquee tournent tres mal
+::X|FR|rad.hvci.killkey.048|                    ou refusent de demarrer quand il est actif - et c est
+::X|FR|rad.hvci.killkey.049|                    tres souvent exactement la raison pour laquelle
+::X|FR|rad.hvci.killkey.050|                    quelqu un l avait desactive. Comme le changement ne
+::X|FR|rad.hvci.killkey.051|                    prend effet qu au prochain redemarrage, vous
+::X|FR|rad.hvci.killkey.052|                    decouvrirez le conflit a ce moment-la, pas maintenant.
+::X|FR|rad.hvci.killkey.053|                    Par ailleurs, un pilote noyau ancien ou non signe peut
+::X|FR|rad.hvci.killkey.054|                    refuser de se charger une fois l integrite de la
+::X|FR|rad.hvci.killkey.055|                    memoire active ; Securite Windows nomme le pilote
+::X|FR|rad.hvci.killkey.056|                    fautif quand il bloque l activation. Si un outil de VM
+::X|FR|rad.hvci.killkey.057|                    cesse de fonctionner apres coup : mettez-le a jour -
+::X|FR|rad.hvci.killkey.058|                    VMware Workstation actuel et VirtualBox 7 passent par
+::X|FR|rad.hvci.killkey.059|                    la plateforme d hyperviseur Windows et cohabitent avec
+::X|FR|rad.hvci.killkey.060|                    VBS - ou recoupez l integrite de la memoire dans
+::X|FR|rad.hvci.killkey.061|                    Securite Windows.
+::X|FR|rad.hvci.killkey.062|
+::X|FR|rad.hvci.killkey.063|  Defaut Windows  : Les deux valeurs absentes. Ce que cela produit n est
+::X|FR|rad.hvci.killkey.064|                    pas fixe : une installation propre sur du materiel
+::X|FR|rad.hvci.killkey.065|                    eligible demarre generalement avec VBS et l integrite
+::X|FR|rad.hvci.killkey.066|                    de la memoire actives, une machine mise a niveau
+::X|FR|rad.hvci.killkey.067|                    depuis Windows 10 demarre generalement avec les deux
+::X|FR|rad.hvci.killkey.068|                    eteints. L absence reste le defaut ; l etat qui en
+::X|FR|rad.hvci.killkey.069|                    decoule est une question de materiel et d image, pas
+::X|FR|rad.hvci.killkey.070|                    de registre.
+::X|FR|rad.hvci.killkey.071|
+::X|FR|rad.hvci.killkey.072|  Valeurs possibles :
+::X|FR|rad.hvci.killkey.073|    0                    : Ecrit sur les deux valeurs, c est un « reste
+::X|FR|rad.hvci.killkey.074|                           eteint » explicite.
+::X|FR|rad.hvci.killkey.075|                           HypervisorEnforcedCodeIntegrity\Enabled=0
+::X|FR|rad.hvci.killkey.076|                           empeche l hyperviseur de valider les pages de
+::X|FR|rad.hvci.killkey.077|                           code noyau ;
+::X|FR|rad.hvci.killkey.078|                           EnableVirtualizationBasedSecurity=0 demonte la
+::X|FR|rad.hvci.killkey.079|                           couche VBS elle-meme, et emporte au passage
+::X|FR|rad.hvci.killkey.080|                           Credential Guard et le reste de l isolation du
+::X|FR|rad.hvci.killkey.081|                           noyau. Effet au prochain demarrage. Reserve
+::X|FR|rad.hvci.killkey.082|                           importante : si Hyper-V, WSL2, Docker Desktop,
+::X|FR|rad.hvci.killkey.083|                           le bac a sable Windows ou la plateforme de
+::X|FR|rad.hvci.killkey.084|                           machine virtuelle sont installes, l hyperviseur
+::X|FR|rad.hvci.killkey.085|                           demarre quand meme pour eux et le surcout CPU
+::X|FR|rad.hvci.killkey.086|                           que vous vouliez supprimer reste en grande
+::X|FR|rad.hvci.killkey.087|                           partie la.
+::X|FR|rad.hvci.killkey.088|    1                    : Un « force a l allumage » explicite, et le
+::X|FR|rad.hvci.killkey.089|                           script ne l ecrit jamais volontairement. Le
+::X|FR|rad.hvci.killkey.090|                           bouton de Securite Windows verifie la
+::X|FR|rad.hvci.killkey.091|                           compatibilite des pilotes avant d activer
+::X|FR|rad.hvci.killkey.092|                           l integrite de la memoire ; une ecriture
+::X|FR|rad.hvci.killkey.093|                           registre, non. Forcer 1 sur une machine dont un
+::X|FR|rad.hvci.killkey.094|                           pilote noyau est incompatible signifie que ce
+::X|FR|rad.hvci.killkey.095|                           pilote ne se charge pas au demarrage - et si
+::X|FR|rad.hvci.killkey.096|                           c est un pilote de stockage ou de reseau, vous
+::X|FR|rad.hvci.killkey.097|                           l apprenez de la pire facon. Passez par la page
+::X|FR|rad.hvci.killkey.098|                           Isolation du noyau de Securite Windows, pas par
+::X|FR|rad.hvci.killkey.099|                           cette cle.
+::X|FR|rad.hvci.killkey.100|    DELETE               : Les deux valeurs absentes : le vrai defaut
+::X|FR|rad.hvci.killkey.101|                           Windows. L etat reel decoule alors de l image,
+::X|FR|rad.hvci.killkey.102|                           du firmware (VT-x/AMD-V avec SLAT, et le
+::X|FR|rad.hvci.killkey.103|                           demarrage securise pour l ensemble des
+::X|FR|rad.hvci.killkey.104|                           fonctions) et des pilotes presents, et le
+::X|FR|rad.hvci.killkey.105|                           bouton Isolation du noyau de Securite Windows
+::X|FR|rad.hvci.killkey.106|                           reprend la main. A savoir : une valeur voisine,
+::X|FR|rad.hvci.killkey.107|                           Locked=1 dans la meme cle Scenarios, epingle
+::X|FR|rad.hvci.killkey.108|                           l integrite de la memoire pour que l interface
+::X|FR|rad.hvci.killkey.109|                           ne puisse plus la changer ; le script ne
+::X|FR|rad.hvci.killkey.110|                           l ecrit ni ne la supprime, donc si le bouton
+::X|FR|rad.hvci.killkey.111|                           reste grise apres coup, c est la qu il faut
+::X|FR|rad.hvci.killkey.112|                           regarder.
+::X|FR|rad.hvci.killkey.113|
+::X|FR|rad.hvci.killkey.114|  Pourquoi ces profils : Seul le profil gaming differe, et il differe pour
+::X|FR|rad.hvci.killkey.115|                         quelque chose de mesurable, pas d affirme. 1
+::X|FR|rad.hvci.killkey.116|                         prevoit 0/0 parce que le surcout VBS est reel dans
+::X|FR|rad.hvci.killkey.117|                         les jeux limites par le CPU et qu un PC de jeu
+::X|FR|rad.hvci.killkey.118|                         est l endroit ou l echange se defend - en sachant
+::X|FR|rad.hvci.killkey.119|                         que c est une baisse de securite que vous
+::X|FR|rad.hvci.killkey.120|                         choisissez, pas un gain gratuit. 2, 3, 4 et 5
+::X|FR|rad.hvci.killkey.121|                         suppriment. Serveur : la machine ingere du
+::X|FR|rad.hvci.killkey.122|                         contenu non fiable venu d Internet toute la
+::X|FR|rad.hvci.killkey.123|                         journee et la disponibilite est le sujet, donc
+::X|FR|rad.hvci.killkey.124|                         elle garde la protection ; si elle heberge des VM
+::X|FR|rad.hvci.killkey.125|                         sous VMware ou VirtualBox, repondez 1 - ce
+::X|FR|rad.hvci.killkey.126|                         conflit est la seule chose qui justifie vraiment
+::X|FR|rad.hvci.killkey.127|                         de couper VBS sur un serveur. Bureautique : rien
+::X|FR|rad.hvci.killkey.128|                         a echanger, le cout CPU est invisible hors des
+::X|FR|rad.hvci.killkey.129|                         jeux. Portable : je n ai trouve aucun gain
+::X|FR|rad.hvci.killkey.130|                         d autonomie mesurable a couper VBS, et un
+::X|FR|rad.hvci.killkey.131|                         portable est la machine la plus susceptible
+::X|FR|rad.hvci.killkey.132|                         d etre volee, donc il garde - pretendre un gain
+::X|FR|rad.hvci.killkey.133|                         de batterie ici serait exactement le genre de
+::X|FR|rad.hvci.killkey.134|                         phrase invérifiable que cette reecriture cherche
+::X|FR|rad.hvci.killkey.135|                         a supprimer. 5 supprime parce que l absence est
+::X|FR|rad.hvci.killkey.136|                         l etat livre. Sachez qu aucun code n applique
+::X|FR|rad.hvci.killkey.137|                         cette ligne aujourd hui : la fiche n est jamais
+::X|FR|rad.hvci.killkey.138|                         posee, et le seul code supprime les deux valeurs
+::X|FR|rad.hvci.killkey.139|                         quel que soit le profil.
+::X|FR|rad.hvci.killkey.140|
+::X|FR|rad.hvci.killkey.141|  Problemes connus : Concret, et dans les deux sens. L integrite de la
+::X|FR|rad.hvci.killkey.142|                     memoire qui refuse de s activer en nommant un pilote
+::X|FR|rad.hvci.killkey.143|                     incompatible : classique avec les vieux pilotes
+::X|FR|rad.hvci.killkey.144|                     d overclocking et de monitoring des fabricants de
+::X|FR|rad.hvci.killkey.145|                     cartes meres (utilitaires ASUS, Gigabyte, MSI) et les
+::X|FR|rad.hvci.killkey.146|                     anciens pilotes de controle RGB. Dans l autre sens,
+::X|FR|rad.hvci.killkey.147|                     VirtualBox 6.0/6.1 et VMware Workstation anterieur a
+::X|FR|rad.hvci.killkey.148|                     16.x retombent sur un mode d emulation tres lent ou
+::X|FR|rad.hvci.killkey.149|                     n arrivent plus a demarrer une VM une fois
+::X|FR|rad.hvci.killkey.150|                     l hyperviseur en place. Activation automatique :
+::X|FR|rad.hvci.killkey.151|                     Microsoft a annonce que les mises a jour qualite
+::X|FR|rad.hvci.killkey.152|                     activeront progressivement l integrite de la memoire
+::X|FR|rad.hvci.killkey.153|                     sur les appareils eligibles, et que les appareils ou
+::X|FR|rad.hvci.killkey.154|                     elle a ete EXPLICITEMENT desactivee ne sont pas
+::X|FR|rad.hvci.killkey.155|                     modifies (Source : Windows IT Pro Blog, 2026-09-01 ;
+::X|FR|rad.hvci.killkey.156|                     centre de messages MC1465669 ; debut du deploiement
+::X|FR|rad.hvci.killkey.157|                     2026-10-01). Supprimer la valeur Enabled, ce que font
+::X|FR|rad.hvci.killkey.158|                     les deux chemins de restauration, ramene la machine
+::X|FR|rad.hvci.killkey.159|                     au defaut : elle devient donc eligible a cette
+::X|FR|rad.hvci.killkey.160|                     activation automatique. Si vous voulez que
+::X|FR|rad.hvci.killkey.161|                     l integrite de la memoire reste coupee, coupez-la
+::X|FR|rad.hvci.killkey.162|                     vous-meme dans Securite Windows apres la restauration
+::X|FR|rad.hvci.killkey.163|                     plutot que de compter sur l ancienne valeur.
+::X|FR|rad.hvci.killkey.164|
+::X|FR|rad.hvci.killkey.165|  Non verifie (en)  : Two things I cannot substantiate. First, whether
+::X|FR|rad.hvci.killkey.166|                      these values ship absent or present depends on the
+::X|FR|rad.hvci.killkey.167|                      image: a clean Windows 11 install on qualifying
+::X|FR|rad.hvci.killkey.168|                      hardware normally comes up with VBS and Memory
+::X|FR|rad.hvci.killkey.169|                      Integrity on and no override written, while a
+::X|FR|rad.hvci.killkey.170|                      machine upgraded from Windows 10 normally comes up
+::X|FR|rad.hvci.killkey.171|                      with them off - so deleting the overrides may well
+::X|FR|rad.hvci.killkey.172|                      leave Memory Integrity off, and the card should not
+::X|FR|rad.hvci.killkey.173|                      promise it comes back. Second, an older version of
+::X|FR|rad.hvci.killkey.174|                      the script carried a comment claiming some
+::X|FR|rad.hvci.killkey.175|                      anti-cheats (Vanguard, FACEIT) require Memory
+::X|FR|rad.hvci.killkey.176|                      Integrity ON; that comment is gone and I could not
+::X|FR|rad.hvci.killkey.177|                      substantiate the claim. What those anti-cheats
+::X|FR|rad.hvci.killkey.178|                      actually require on Windows 11 is Secure Boot and
+::X|FR|rad.hvci.killkey.179|                      TPM 2.0, which are firmware settings and have
+::X|FR|rad.hvci.killkey.180|                      nothing to do with this key. Treat "anticheat needs
+::X|FR|rad.hvci.killkey.181|                      HVCI" as unverified folklore until someone tests it.
+::X|FR|rad.hvci.killkey.182|                      Third, Microsoft does not document how Windows
+::X|FR|rad.hvci.killkey.183|                      decides that Memory Integrity was "explicitly
+::X|FR|rad.hvci.killkey.184|                      disabled" for the automatic rollout, so whether
+::X|FR|rad.hvci.killkey.185|                      switching it off in Windows Security after the
+::X|FR|rad.hvci.killkey.186|                      restore is enough to be left alone is UNVERIFIED.
+::X|FR|rad.hvci.killkey.187|
+::X|FR|rad.hvci.killkey.188|  Cible           : HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scen
+::X|FR|rad.hvci.killkey.189|                    arios\HypervisorEnforcedCodeIntegrity /v Enabled
+::X|FR|rad.hvci.killkey.190|                    (REG_DWORD) et
+::X|FR|rad.hvci.killkey.191|                    HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard /v
+::X|FR|rad.hvci.killkey.192|                    EnableVirtualizationBasedSecurity (REG_DWORD).
+::X|FR|rad.hvci.killkey.193|                    Supprimees via :killkey, sans question, dans
+::X|FR|rad.hvci.killkey.194|                    :reassert_defaults et dans :gaming_restore. Aucun code
+::X|FR|rad.hvci.killkey.195|                    ne pose cette fiche et plus aucun code n ecrit 0 sur
+::X|FR|rad.hvci.killkey.196|                    l une ou l autre valeur. La valeur voisine Locked sous
+::X|FR|rad.hvci.killkey.197|                    la meme cle Scenarios n est PAS touchee.
 ::
 :: ---- rad.bcd.residue (risky) -----------------------------------
 ::P|rad.bcd.residue|DELETE|DELETE|DELETE|DELETE|DELETE|
@@ -19220,70 +19597,82 @@ goto :eof
 ::X|EN|net.svc.dnscache.auto.004|
 ::X|EN|net.svc.dnscache.auto.005|  Actual effect   : sc config Dnscache start= auto. Lookups are cached
 ::X|EN|net.svc.dnscache.auto.006|                    again, and ipconfig /flushdns has something to flush.
-::X|EN|net.svc.dnscache.auto.007|
-::X|EN|net.svc.dnscache.auto.008|  Gain            : Fewer repeated DNS round trips, and split-DNS or VPN
-::X|EN|net.svc.dnscache.auto.009|                    name resolution behaves properly. This is a
-::X|EN|net.svc.dnscache.auto.010|                    correctness feature more than a speed one - you will
-::X|EN|net.svc.dnscache.auto.011|                    not feel it on a normal page load, you will feel it
-::X|EN|net.svc.dnscache.auto.012|                    when an internal hostname stops resolving over the
-::X|EN|net.svc.dnscache.auto.013|                    VPN.
-::X|EN|net.svc.dnscache.auto.014|
-::X|EN|net.svc.dnscache.auto.015|  Cost            : None; it is the shipped value. If you turned it off as
-::X|EN|net.svc.dnscache.auto.016|                    a privacy measure, note that it hides nothing from
-::X|EN|net.svc.dnscache.auto.017|                    your resolver - without the cache, MORE queries leave
-::X|EN|net.svc.dnscache.auto.018|                    the machine, not fewer.
-::X|EN|net.svc.dnscache.auto.019|
-::X|EN|net.svc.dnscache.auto.020|  Windows default : 2 (Automatic).
-::X|EN|net.svc.dnscache.auto.021|
-::X|EN|net.svc.dnscache.auto.022|  Possible values:
-::X|EN|net.svc.dnscache.auto.023|    auto (Start=2)       : Shipped value. The DNS Client starts at boot,
-::X|EN|net.svc.dnscache.auto.024|                           caches answers for the whole machine, and
-::X|EN|net.svc.dnscache.auto.025|                           applies the name resolution policy table -
-::X|EN|net.svc.dnscache.auto.026|                           which is where per-interface rules and VPN
-::X|EN|net.svc.dnscache.auto.027|                           split-DNS live.
-::X|EN|net.svc.dnscache.auto.028|    delayed-auto (Start=2 plus DelayedAutostart=1) :
-::X|EN|net.svc.dnscache.auto.029|        Starts a couple of minutes after boot, at low I/O priority. Until
-::X|EN|net.svc.dnscache.auto.030|        it comes up, lookups bypass the shared cache and the policy table
-::X|EN|net.svc.dnscache.auto.031|        - the wrong trade for a service everything on the machine resolves
-::X|EN|net.svc.dnscache.auto.032|        through.
-::X|EN|net.svc.dnscache.auto.033|    demand (Start=3)     : Nothing in a normal session starts it. Name
-::X|EN|net.svc.dnscache.auto.034|                           resolution still works, because dnsapi.dll
-::X|EN|net.svc.dnscache.auto.035|                           falls back to resolving inside each process,
-::X|EN|net.svc.dnscache.auto.036|                           but you lose the shared cache and the policy
-::X|EN|net.svc.dnscache.auto.037|                           rules that make split-DNS and VPN name
-::X|EN|net.svc.dnscache.auto.038|                           resolution correct. This is the case that
-::X|EN|net.svc.dnscache.auto.039|                           actually matters: demand here behaves like
-::X|EN|net.svc.dnscache.auto.040|                           disabled.
-::X|EN|net.svc.dnscache.auto.041|    disabled (Start=4)   : Same practical effect as demand, and in
-::X|EN|net.svc.dnscache.auto.042|                           addition any component that does try to start
-::X|EN|net.svc.dnscache.auto.043|                           it fails outright.
-::X|EN|net.svc.dnscache.auto.044|
-::X|EN|net.svc.dnscache.auto.045|  Why these profiles : Five identical columns at auto. Every profile
-::X|EN|net.svc.dnscache.auto.046|                       resolves names and none of them gains anything from
-::X|EN|net.svc.dnscache.auto.047|                       resolving without a cache or without the policy
-::X|EN|net.svc.dnscache.auto.048|                       table. If one column had more to lose it would be
-::X|EN|net.svc.dnscache.auto.049|                       the laptop, because that is the machine most likely
-::X|EN|net.svc.dnscache.auto.050|                       to use a VPN with split-DNS - but the answer is the
-::X|EN|net.svc.dnscache.auto.051|                       same for all five, so there is no distinction to
-::X|EN|net.svc.dnscache.auto.052|                       invent.
-::X|EN|net.svc.dnscache.auto.053|
-::X|EN|net.svc.dnscache.auto.054|  Known problems  : None in the write itself. Be aware of where it runs:
-::X|EN|net.svc.dnscache.auto.055|                    only in the Ethernet setup, as one of the values all
-::X|EN|net.svc.dnscache.auto.056|                    five profiles agree on, so it is re-asserted without
-::X|EN|net.svc.dnscache.auto.057|                    being asked. A machine that only goes through the
-::X|EN|net.svc.dnscache.auto.058|                    Wi-Fi or services steps never has Dnscache repaired.
-::X|EN|net.svc.dnscache.auto.059|
-::X|EN|net.svc.dnscache.auto.060|  Unverified      : Whether any service trigger in Windows 11 25H2 demand-
-::X|EN|net.svc.dnscache.auto.061|                    starts Dnscache was not verified on the live machine.
-::X|EN|net.svc.dnscache.auto.062|                    The description of what demand means assumes nothing
-::X|EN|net.svc.dnscache.auto.063|                    does, which is the case that matters.
-::X|EN|net.svc.dnscache.auto.064|
-::X|EN|net.svc.dnscache.auto.065|  Target          : sc config Dnscache start= auto, i.e.
-::X|EN|net.svc.dnscache.auto.066|                    HKLM\SYSTEM\CurrentControlSet\Services\Dnscache
-::X|EN|net.svc.dnscache.auto.067|                    Start=2, written by call :svcset "Dnscache" auto 2 in
-::X|EN|net.svc.dnscache.auto.068|                    :se_picked (part of :setup_ethernet), right after the
-::X|EN|net.svc.dnscache.auto.069|                    TCP globals are re-asserted. :svcset logs whether the
-::X|EN|net.svc.dnscache.auto.070|                    value was already correct or had to be fixed.
+::X|EN|net.svc.dnscache.auto.007|                    On a healthy machine the service refuses the write and
+::X|EN|net.svc.dnscache.auto.008|                    the step reports already correct (see known
+::X|EN|net.svc.dnscache.auto.009|                    problems).
+::X|EN|net.svc.dnscache.auto.010|
+::X|EN|net.svc.dnscache.auto.011|  Gain            : Fewer repeated DNS round trips, and split-DNS or VPN
+::X|EN|net.svc.dnscache.auto.012|                    name resolution behaves properly. This is a
+::X|EN|net.svc.dnscache.auto.013|                    correctness feature more than a speed one - you will
+::X|EN|net.svc.dnscache.auto.014|                    not feel it on a normal page load, you will feel it
+::X|EN|net.svc.dnscache.auto.015|                    when an internal hostname stops resolving over the
+::X|EN|net.svc.dnscache.auto.016|                    VPN.
+::X|EN|net.svc.dnscache.auto.017|
+::X|EN|net.svc.dnscache.auto.018|  Cost            : None; it is the shipped value. If you turned it off as
+::X|EN|net.svc.dnscache.auto.019|                    a privacy measure, note that it hides nothing from
+::X|EN|net.svc.dnscache.auto.020|                    your resolver - without the cache, MORE queries leave
+::X|EN|net.svc.dnscache.auto.021|                    the machine, not fewer.
+::X|EN|net.svc.dnscache.auto.022|
+::X|EN|net.svc.dnscache.auto.023|  Windows default : 2 (Automatic).
+::X|EN|net.svc.dnscache.auto.024|
+::X|EN|net.svc.dnscache.auto.025|  Possible values:
+::X|EN|net.svc.dnscache.auto.026|    auto (Start=2)       : Shipped value. The DNS Client starts at boot,
+::X|EN|net.svc.dnscache.auto.027|                           caches answers for the whole machine, and
+::X|EN|net.svc.dnscache.auto.028|                           applies the name resolution policy table -
+::X|EN|net.svc.dnscache.auto.029|                           which is where per-interface rules and VPN
+::X|EN|net.svc.dnscache.auto.030|                           split-DNS live.
+::X|EN|net.svc.dnscache.auto.031|    delayed-auto (Start=2 plus DelayedAutostart=1) :
+::X|EN|net.svc.dnscache.auto.032|        Starts a couple of minutes after boot, at low I/O priority. Until
+::X|EN|net.svc.dnscache.auto.033|        it comes up, lookups bypass the shared cache and the policy table
+::X|EN|net.svc.dnscache.auto.034|        - the wrong trade for a service everything on the machine resolves
+::X|EN|net.svc.dnscache.auto.035|        through.
+::X|EN|net.svc.dnscache.auto.036|    demand (Start=3)     : Nothing in a normal session starts it. Name
+::X|EN|net.svc.dnscache.auto.037|                           resolution still works, because dnsapi.dll
+::X|EN|net.svc.dnscache.auto.038|                           falls back to resolving inside each process,
+::X|EN|net.svc.dnscache.auto.039|                           but you lose the shared cache and the policy
+::X|EN|net.svc.dnscache.auto.040|                           rules that make split-DNS and VPN name
+::X|EN|net.svc.dnscache.auto.041|                           resolution correct. This is the case that
+::X|EN|net.svc.dnscache.auto.042|                           actually matters: demand here behaves like
+::X|EN|net.svc.dnscache.auto.043|                           disabled.
+::X|EN|net.svc.dnscache.auto.044|    disabled (Start=4)   : Same practical effect as demand, and in
+::X|EN|net.svc.dnscache.auto.045|                           addition any component that does try to start
+::X|EN|net.svc.dnscache.auto.046|                           it fails outright.
+::X|EN|net.svc.dnscache.auto.047|
+::X|EN|net.svc.dnscache.auto.048|  Why these profiles : Five identical columns at auto. Every profile
+::X|EN|net.svc.dnscache.auto.049|                       resolves names and none of them gains anything from
+::X|EN|net.svc.dnscache.auto.050|                       resolving without a cache or without the policy
+::X|EN|net.svc.dnscache.auto.051|                       table. If one column had more to lose it would be
+::X|EN|net.svc.dnscache.auto.052|                       the laptop, because that is the machine most likely
+::X|EN|net.svc.dnscache.auto.053|                       to use a VPN with split-DNS - but the answer is the
+::X|EN|net.svc.dnscache.auto.054|                       same for all five, so there is no distinction to
+::X|EN|net.svc.dnscache.auto.055|                       invent.
+::X|EN|net.svc.dnscache.auto.056|
+::X|EN|net.svc.dnscache.auto.057|  Known problems  : Dnscache locks its own security descriptor and has
+::X|EN|net.svc.dnscache.auto.058|                    refused sc config even to administrators since
+::X|EN|net.svc.dnscache.auto.059|                    Windows 10 1809 (Source: Microsoft Q&A threads). On a
+::X|EN|net.svc.dnscache.auto.060|                    healthy machine the write is therefore refused, and
+::X|EN|net.svc.dnscache.auto.061|                    :svcset reports "left ... (already correct; the
+::X|EN|net.svc.dnscache.auto.062|                    service refuses sc config)" instead of FAILED. FAILED
+::X|EN|net.svc.dnscache.auto.063|                    appears only when the write is refused and Start is
+::X|EN|net.svc.dnscache.auto.064|                    not 2 - then the value cannot be repaired this way.
+::X|EN|net.svc.dnscache.auto.065|                    Be aware of where it runs:
+::X|EN|net.svc.dnscache.auto.066|                    only in the Ethernet setup, as one of the values all
+::X|EN|net.svc.dnscache.auto.067|                    five profiles agree on, so it is re-asserted without
+::X|EN|net.svc.dnscache.auto.068|                    being asked. A machine that only goes through the
+::X|EN|net.svc.dnscache.auto.069|                    Wi-Fi or services steps never has Dnscache repaired.
+::X|EN|net.svc.dnscache.auto.070|
+::X|EN|net.svc.dnscache.auto.071|  Unverified      : Whether any service trigger in Windows 11 25H2 demand-
+::X|EN|net.svc.dnscache.auto.072|                    starts Dnscache was not verified on the live machine.
+::X|EN|net.svc.dnscache.auto.073|                    The description of what demand means assumes nothing
+::X|EN|net.svc.dnscache.auto.074|                    does, which is the case that matters.
+::X|EN|net.svc.dnscache.auto.075|
+::X|EN|net.svc.dnscache.auto.076|  Target          : sc config Dnscache start= auto, i.e.
+::X|EN|net.svc.dnscache.auto.077|                    HKLM\SYSTEM\CurrentControlSet\Services\Dnscache
+::X|EN|net.svc.dnscache.auto.078|                    Start=2, written by call :svcset "Dnscache" auto 2 in
+::X|EN|net.svc.dnscache.auto.079|                    :se_picked (part of :setup_ethernet), right after the
+::X|EN|net.svc.dnscache.auto.080|                    TCP globals are re-asserted. :svcset logs whether the
+::X|EN|net.svc.dnscache.auto.081|                    value was already correct, had to be fixed, or was
+::X|EN|net.svc.dnscache.auto.082|                    left because the service refused sc config.
 ::X|FR|net.svc.dnscache.auto.001|  Ce que c est    : Dnscache met en cache les resolutions de noms pour
 ::X|FR|net.svc.dnscache.auto.002|                    toute la machine et applique l ordre de resolution, y
 ::X|FR|net.svc.dnscache.auto.003|                    compris les regles par interface et le split-DNS des
@@ -19291,74 +19680,85 @@ goto :eof
 ::X|FR|net.svc.dnscache.auto.005|
 ::X|FR|net.svc.dnscache.auto.006|  Effet reel      : sc config Dnscache start= auto. Les resolutions sont
 ::X|FR|net.svc.dnscache.auto.007|                    de nouveau mises en cache, et ipconfig /flushdns a
-::X|FR|net.svc.dnscache.auto.008|                    enfin quelque chose a vider.
-::X|FR|net.svc.dnscache.auto.009|
-::X|FR|net.svc.dnscache.auto.010|  Gain            : Moins d allers-retours DNS repetes, et la resolution
-::X|FR|net.svc.dnscache.auto.011|                    de noms en VPN ou split-DNS se comporte correctement.
-::X|FR|net.svc.dnscache.auto.012|                    C est une question d exactitude plus que de vitesse :
-::X|FR|net.svc.dnscache.auto.013|                    vous ne le sentirez pas au chargement d une page, vous
-::X|FR|net.svc.dnscache.auto.014|                    le sentirez quand un nom interne cessera de resoudre a
-::X|FR|net.svc.dnscache.auto.015|                    travers le VPN.
-::X|FR|net.svc.dnscache.auto.016|
-::X|FR|net.svc.dnscache.auto.017|  Cout            : Aucun, c est la valeur d usine. Si vous l aviez coupe
-::X|FR|net.svc.dnscache.auto.018|                    pour la vie privee, sachez que cela ne cache rien a
-::X|FR|net.svc.dnscache.auto.019|                    votre resolveur : sans cache, PLUS de requetes sortent
-::X|FR|net.svc.dnscache.auto.020|                    de la machine, pas moins.
-::X|FR|net.svc.dnscache.auto.021|
-::X|FR|net.svc.dnscache.auto.022|  Defaut Windows  : 2 (Automatique).
+::X|FR|net.svc.dnscache.auto.008|                    enfin quelque chose a vider. Sur une machine saine,
+::X|FR|net.svc.dnscache.auto.009|                    le service refuse l ecriture et l etape annonce deja
+::X|FR|net.svc.dnscache.auto.010|                    correct (voir problemes connus).
+::X|FR|net.svc.dnscache.auto.011|
+::X|FR|net.svc.dnscache.auto.012|  Gain            : Moins d allers-retours DNS repetes, et la resolution
+::X|FR|net.svc.dnscache.auto.013|                    de noms en VPN ou split-DNS se comporte correctement.
+::X|FR|net.svc.dnscache.auto.014|                    C est une question d exactitude plus que de vitesse :
+::X|FR|net.svc.dnscache.auto.015|                    vous ne le sentirez pas au chargement d une page, vous
+::X|FR|net.svc.dnscache.auto.016|                    le sentirez quand un nom interne cessera de resoudre a
+::X|FR|net.svc.dnscache.auto.017|                    travers le VPN.
+::X|FR|net.svc.dnscache.auto.018|
+::X|FR|net.svc.dnscache.auto.019|  Cout            : Aucun, c est la valeur d usine. Si vous l aviez coupe
+::X|FR|net.svc.dnscache.auto.020|                    pour la vie privee, sachez que cela ne cache rien a
+::X|FR|net.svc.dnscache.auto.021|                    votre resolveur : sans cache, PLUS de requetes sortent
+::X|FR|net.svc.dnscache.auto.022|                    de la machine, pas moins.
 ::X|FR|net.svc.dnscache.auto.023|
-::X|FR|net.svc.dnscache.auto.024|  Valeurs possibles :
-::X|FR|net.svc.dnscache.auto.025|    auto (Start=2)       : Valeur d origine. Le client DNS demarre au
-::X|FR|net.svc.dnscache.auto.026|                           boot, met en cache les reponses pour toute la
-::X|FR|net.svc.dnscache.auto.027|                           machine et applique la table de politique de
-::X|FR|net.svc.dnscache.auto.028|                           resolution de noms, ou vivent les regles par
-::X|FR|net.svc.dnscache.auto.029|                           interface et le split-DNS des VPN.
-::X|FR|net.svc.dnscache.auto.030|    delayed-auto (Start=2 plus DelayedAutostart=1) :
-::X|FR|net.svc.dnscache.auto.031|        Demarre quelques minutes apres le boot, en priorite d E/S basse.
-::X|FR|net.svc.dnscache.auto.032|        Tant qu il n est pas la, les resolutions contournent le cache
-::X|FR|net.svc.dnscache.auto.033|        partage et la table de politique : mauvais compromis pour un
-::X|FR|net.svc.dnscache.auto.034|        service par lequel toute la machine resout.
-::X|FR|net.svc.dnscache.auto.035|    demand (Start=3)     : Rien, en session normale, ne le lance. La
-::X|FR|net.svc.dnscache.auto.036|                           resolution de noms fonctionne encore, car
-::X|FR|net.svc.dnscache.auto.037|                           dnsapi.dll bascule sur une resolution interne a
-::X|FR|net.svc.dnscache.auto.038|                           chaque processus, mais vous perdez le cache
-::X|FR|net.svc.dnscache.auto.039|                           partage et les regles de politique qui rendent
-::X|FR|net.svc.dnscache.auto.040|                           correctes la resolution en split-DNS et en VPN.
-::X|FR|net.svc.dnscache.auto.041|                           C est le cas qui compte vraiment : ici, demand
-::X|FR|net.svc.dnscache.auto.042|                           se comporte comme disabled.
-::X|FR|net.svc.dnscache.auto.043|    disabled (Start=4)   : Meme effet pratique que demand, et en plus tout
-::X|FR|net.svc.dnscache.auto.044|                           composant qui tenterait de le lancer echoue
-::X|FR|net.svc.dnscache.auto.045|                           franchement.
-::X|FR|net.svc.dnscache.auto.046|
-::X|FR|net.svc.dnscache.auto.047|  Pourquoi ces profils : Cinq colonnes identiques a auto. Tous les profils
-::X|FR|net.svc.dnscache.auto.048|                         resolvent des noms et aucun ne gagne quoi que ce
-::X|FR|net.svc.dnscache.auto.049|                         soit a resoudre sans cache ni table de politique.
-::X|FR|net.svc.dnscache.auto.050|                         Si une colonne avait plus a perdre, ce serait le
-::X|FR|net.svc.dnscache.auto.051|                         portable, la machine la plus susceptible
-::X|FR|net.svc.dnscache.auto.052|                         d utiliser un VPN en split-DNS - mais la reponse
-::X|FR|net.svc.dnscache.auto.053|                         est la meme pour les cinq, il n y a donc pas de
-::X|FR|net.svc.dnscache.auto.054|                         distinction a inventer.
-::X|FR|net.svc.dnscache.auto.055|
-::X|FR|net.svc.dnscache.auto.056|  Problemes connus : Aucun dans l ecriture elle-meme. Attention a l endroit
-::X|FR|net.svc.dnscache.auto.057|                     ou elle a lieu : uniquement dans la configuration
-::X|FR|net.svc.dnscache.auto.058|                     Ethernet, parmi les valeurs sur lesquelles les cinq
-::X|FR|net.svc.dnscache.auto.059|                     profils sont d accord, donc elle est reaffirmee sans
-::X|FR|net.svc.dnscache.auto.060|                     question. Une machine qui ne passe que par les etapes
-::X|FR|net.svc.dnscache.auto.061|                     Wi-Fi ou services ne voit jamais Dnscache repare.
-::X|FR|net.svc.dnscache.auto.062|
-::X|FR|net.svc.dnscache.auto.063|  Non verifie (en)  : Whether any service trigger in Windows 11 25H2
-::X|FR|net.svc.dnscache.auto.064|                      demand-starts Dnscache was not verified on the live
-::X|FR|net.svc.dnscache.auto.065|                      machine. The description of what demand means
-::X|FR|net.svc.dnscache.auto.066|                      assumes nothing does, which is the case that
-::X|FR|net.svc.dnscache.auto.067|                      matters.
-::X|FR|net.svc.dnscache.auto.068|
-::X|FR|net.svc.dnscache.auto.069|  Cible           : sc config Dnscache start= auto, soit
-::X|FR|net.svc.dnscache.auto.070|                    HKLM\SYSTEM\CurrentControlSet\Services\Dnscache
-::X|FR|net.svc.dnscache.auto.071|                    Start=2, ecrit par call :svcset "Dnscache" auto 2 dans
-::X|FR|net.svc.dnscache.auto.072|                    :se_picked (partie de :setup_ethernet), juste apres la
-::X|FR|net.svc.dnscache.auto.073|                    reaffirmation des reglages TCP globaux. :svcset
-::X|FR|net.svc.dnscache.auto.074|                    journalise si la valeur etait deja correcte ou a du
-::X|FR|net.svc.dnscache.auto.075|                    etre reparee.
+::X|FR|net.svc.dnscache.auto.024|  Defaut Windows  : 2 (Automatique).
+::X|FR|net.svc.dnscache.auto.025|
+::X|FR|net.svc.dnscache.auto.026|  Valeurs possibles :
+::X|FR|net.svc.dnscache.auto.027|    auto (Start=2)       : Valeur d origine. Le client DNS demarre au
+::X|FR|net.svc.dnscache.auto.028|                           boot, met en cache les reponses pour toute la
+::X|FR|net.svc.dnscache.auto.029|                           machine et applique la table de politique de
+::X|FR|net.svc.dnscache.auto.030|                           resolution de noms, ou vivent les regles par
+::X|FR|net.svc.dnscache.auto.031|                           interface et le split-DNS des VPN.
+::X|FR|net.svc.dnscache.auto.032|    delayed-auto (Start=2 plus DelayedAutostart=1) :
+::X|FR|net.svc.dnscache.auto.033|        Demarre quelques minutes apres le boot, en priorite d E/S basse.
+::X|FR|net.svc.dnscache.auto.034|        Tant qu il n est pas la, les resolutions contournent le cache
+::X|FR|net.svc.dnscache.auto.035|        partage et la table de politique : mauvais compromis pour un
+::X|FR|net.svc.dnscache.auto.036|        service par lequel toute la machine resout.
+::X|FR|net.svc.dnscache.auto.037|    demand (Start=3)     : Rien, en session normale, ne le lance. La
+::X|FR|net.svc.dnscache.auto.038|                           resolution de noms fonctionne encore, car
+::X|FR|net.svc.dnscache.auto.039|                           dnsapi.dll bascule sur une resolution interne a
+::X|FR|net.svc.dnscache.auto.040|                           chaque processus, mais vous perdez le cache
+::X|FR|net.svc.dnscache.auto.041|                           partage et les regles de politique qui rendent
+::X|FR|net.svc.dnscache.auto.042|                           correctes la resolution en split-DNS et en VPN.
+::X|FR|net.svc.dnscache.auto.043|                           C est le cas qui compte vraiment : ici, demand
+::X|FR|net.svc.dnscache.auto.044|                           se comporte comme disabled.
+::X|FR|net.svc.dnscache.auto.045|    disabled (Start=4)   : Meme effet pratique que demand, et en plus tout
+::X|FR|net.svc.dnscache.auto.046|                           composant qui tenterait de le lancer echoue
+::X|FR|net.svc.dnscache.auto.047|                           franchement.
+::X|FR|net.svc.dnscache.auto.048|
+::X|FR|net.svc.dnscache.auto.049|  Pourquoi ces profils : Cinq colonnes identiques a auto. Tous les profils
+::X|FR|net.svc.dnscache.auto.050|                         resolvent des noms et aucun ne gagne quoi que ce
+::X|FR|net.svc.dnscache.auto.051|                         soit a resoudre sans cache ni table de politique.
+::X|FR|net.svc.dnscache.auto.052|                         Si une colonne avait plus a perdre, ce serait le
+::X|FR|net.svc.dnscache.auto.053|                         portable, la machine la plus susceptible
+::X|FR|net.svc.dnscache.auto.054|                         d utiliser un VPN en split-DNS - mais la reponse
+::X|FR|net.svc.dnscache.auto.055|                         est la meme pour les cinq, il n y a donc pas de
+::X|FR|net.svc.dnscache.auto.056|                         distinction a inventer.
+::X|FR|net.svc.dnscache.auto.057|
+::X|FR|net.svc.dnscache.auto.058|  Problemes connus : Dnscache verrouille son propre descripteur de securite
+::X|FR|net.svc.dnscache.auto.059|                     et refuse sc config meme aux administrateurs depuis
+::X|FR|net.svc.dnscache.auto.060|                     Windows 10 1809 (Source : fils Microsoft Q&A). Sur
+::X|FR|net.svc.dnscache.auto.061|                     une machine saine, l ecriture est donc refusee, et
+::X|FR|net.svc.dnscache.auto.062|                     :svcset affiche "left ... (already correct; the
+::X|FR|net.svc.dnscache.auto.063|                     service refuses sc config)" au lieu de FAILED. FAILED
+::X|FR|net.svc.dnscache.auto.064|                     n apparait que si l ecriture est refusee et que Start
+::X|FR|net.svc.dnscache.auto.065|                     ne vaut pas 2 - la valeur ne peut alors pas etre
+::X|FR|net.svc.dnscache.auto.066|                     reparee ainsi. Attention a l endroit
+::X|FR|net.svc.dnscache.auto.067|                     ou elle a lieu : uniquement dans la configuration
+::X|FR|net.svc.dnscache.auto.068|                     Ethernet, parmi les valeurs sur lesquelles les cinq
+::X|FR|net.svc.dnscache.auto.069|                     profils sont d accord, donc elle est reaffirmee sans
+::X|FR|net.svc.dnscache.auto.070|                     question. Une machine qui ne passe que par les etapes
+::X|FR|net.svc.dnscache.auto.071|                     Wi-Fi ou services ne voit jamais Dnscache repare.
+::X|FR|net.svc.dnscache.auto.072|
+::X|FR|net.svc.dnscache.auto.073|  Non verifie (en)  : Whether any service trigger in Windows 11 25H2
+::X|FR|net.svc.dnscache.auto.074|                      demand-starts Dnscache was not verified on the live
+::X|FR|net.svc.dnscache.auto.075|                      machine. The description of what demand means
+::X|FR|net.svc.dnscache.auto.076|                      assumes nothing does, which is the case that
+::X|FR|net.svc.dnscache.auto.077|                      matters.
+::X|FR|net.svc.dnscache.auto.078|
+::X|FR|net.svc.dnscache.auto.079|  Cible           : sc config Dnscache start= auto, soit
+::X|FR|net.svc.dnscache.auto.080|                    HKLM\SYSTEM\CurrentControlSet\Services\Dnscache
+::X|FR|net.svc.dnscache.auto.081|                    Start=2, ecrit par call :svcset "Dnscache" auto 2 dans
+::X|FR|net.svc.dnscache.auto.082|                    :se_picked (partie de :setup_ethernet), juste apres la
+::X|FR|net.svc.dnscache.auto.083|                    reaffirmation des reglages TCP globaux. :svcset
+::X|FR|net.svc.dnscache.auto.084|                    journalise si la valeur etait deja correcte, a du etre
+::X|FR|net.svc.dnscache.auto.085|                    reparee, ou a ete laissee car le service refuse sc
+::X|FR|net.svc.dnscache.auto.086|                    config.
 ::
 :: ---- net.nic.itr.adaptive (preference) ------------------------------
 ::P|net.nic.itr.adaptive|1/65535|1/65535|1/65535|1/65535|SKIP|
@@ -28057,9 +28457,9 @@ goto :eof
 :: ---- helper.svcset (preference) -------------------------------------
 ::P|helper.svcset|APPLY|APPLY|APPLY|APPLY|APPLY|
 ::T|EN|helper.svcset.001|Internal tool: how OPTY changes a service's start type
-::T|EN|helper.svcset.002|This is the shared code that writes any service's startup mode, used today only by the gaming-profile restore step; it has no setting of its own, so there is nothing to gain or lose here directly.
+::T|EN|helper.svcset.002|This is the shared code that writes any service's startup mode, used by the gaming-profile restore, the services step and the Ethernet step; it has no setting of its own, and when a service refuses the write but is already right it says so instead of reporting a failure.
 ::T|FR|helper.svcset.001|Outil interne : comment OPTY change le démarrage d un service
-::T|FR|helper.svcset.002|C est le code partagé qui écrit le mode de démarrage de n importe quel service, utilisé aujourd hui seulement par l étape de restauration du profil jeu ; il n a pas de réglage propre, donc rien à gagner ou perdre ici directement.
+::T|FR|helper.svcset.002|C est le code partagé qui écrit le mode de démarrage de n importe quel service, utilisé par la restauration du profil jeu, l étape services et l étape Ethernet ; il n a pas de réglage propre, et quand un service refuse l écriture alors qu il est déjà juste, il le dit au lieu d annoncer un échec.
 ::X|EN|helper.svcset.001|  What it is      : The generic writer behind every service change: sc
 ::X|EN|helper.svcset.002|                    config <service> start= auto, delayed-auto, demand or
 ::X|EN|helper.svcset.003|                    disabled. It has three kinds of caller. The gaming
@@ -28077,83 +28477,95 @@ goto :eof
 ::X|EN|helper.svcset.015|                    translated and breaks on a non-English Windows. It
 ::X|EN|helper.svcset.016|                    reports absent when the service does not exist on your
 ::X|EN|helper.svcset.017|                    edition, and it issues the sc config every time, even
-::X|EN|helper.svcset.018|                    when the value already matches.
-::X|EN|helper.svcset.019|
-::X|EN|helper.svcset.020|  Gain            : Puts services back to their shipped start types in one
-::X|EN|helper.svcset.021|                    step, with a log line per service saying whether
-::X|EN|helper.svcset.022|                    anything actually changed. Note what it does not
-::X|EN|helper.svcset.023|                    claim: setting a service to Manual is usually a
-::X|EN|helper.svcset.024|                    preference, not damage. Tested live, WSearch left at
-::X|EN|helper.svcset.025|                    Manual was still demand-started, SearchIndexer.exe was
-::X|EN|helper.svcset.026|                    running, and Start-menu search worked - so 'Manual
-::X|EN|helper.svcset.027|                    breaks search' is folklore. Turning off web results is
-::X|EN|helper.svcset.028|                    a separate knob entirely, BingSearchEnabled. Likewise
-::X|EN|helper.svcset.029|                    Spooler at Manual with no printer installed breaks
-::X|EN|helper.svcset.030|                    nothing.
-::X|EN|helper.svcset.031|
-::X|EN|helper.svcset.032|  Cost            : Putting services back to Automatic costs you the RAM
-::X|EN|helper.svcset.033|                    and boot-time work you set out to avoid - SysMain in
-::X|EN|helper.svcset.034|                    particular starts reading your disk again after boot.
-::X|EN|helper.svcset.035|                    Nothing breaks.
-::X|EN|helper.svcset.036|
-::X|EN|helper.svcset.037|  Windows default : On Windows 11 25H2: SysMain=Automatic,
-::X|EN|helper.svcset.038|                    WSearch=Automatic (Delayed Start), Spooler=Automatic,
-::X|EN|helper.svcset.039|                    DPS=Automatic, WerSvc=Manual,
-::X|EN|helper.svcset.040|                    TabletInputService=Manual.
-::X|EN|helper.svcset.041|
-::X|EN|helper.svcset.042|  Possible values:
-::X|EN|helper.svcset.043|    auto                 : Writes Start=2. The Service Control Manager
-::X|EN|helper.svcset.044|                           starts the service during boot, before the
-::X|EN|helper.svcset.045|                           logon screen, in the load-order group the
-::X|EN|helper.svcset.046|                           service declares. Use this for services that
-::X|EN|helper.svcset.047|                           must be there before anything asks for them.
-::X|EN|helper.svcset.048|    delayed-auto         : Writes Start=2 and also sets
-::X|EN|helper.svcset.049|                           DelayedAutostart=1. The service starts about
-::X|EN|helper.svcset.050|                           two minutes after the auto-start services are
-::X|EN|helper.svcset.051|                           done, at lowered I/O and CPU priority, so it
-::X|EN|helper.svcset.052|                           does not compete with logon. Because the Start
-::X|EN|helper.svcset.053|                           value is still 2, :svcset compares it against
-::X|EN|helper.svcset.054|                           an expected value of 2 - the delayed flag is
-::X|EN|helper.svcset.055|                           invisible to that comparison, and sc config
-::X|EN|helper.svcset.056|                           sets it separately.
-::X|EN|helper.svcset.057|    demand               : Writes Start=3. The service is not started by
-::X|EN|helper.svcset.058|                           the Service Control Manager at boot. Whether it
-::X|EN|helper.svcset.059|                           ever runs depends entirely on whether something
-::X|EN|helper.svcset.060|                           starts it - a trigger, a service dependency, a
-::X|EN|helper.svcset.061|                           COM activation or a scheduled task. For some
-::X|EN|helper.svcset.062|                           services that is constant (WSearch), for others
-::X|EN|helper.svcset.063|                           nothing ever does it (SysMain), and that
-::X|EN|helper.svcset.064|                           difference is the single most important thing
-::X|EN|helper.svcset.065|                           to know before choosing Manual.
-::X|EN|helper.svcset.066|    disabled             : Writes Start=4. The Service Control Manager
-::X|EN|helper.svcset.067|                           refuses every start request, including from
-::X|EN|helper.svcset.068|                           triggers, dependencies and Windows itself. This
-::X|EN|helper.svcset.069|                           is the only state that nothing can get out of
-::X|EN|helper.svcset.070|                           on its own, which is why it is the one state a
-::X|EN|helper.svcset.071|                           repair tool is entitled to treat as broken.
-::X|EN|helper.svcset.072|    APPLY                : Run the helper as the caller asked. It reads
-::X|EN|helper.svcset.073|                           the current value first purely so the log can
-::X|EN|helper.svcset.074|                           distinguish FIXED from written (was already
-::X|EN|helper.svcset.075|                           correct), then issues sc config unconditionally
-::X|EN|helper.svcset.076|                           - on a fresh or foreign machine the write is
-::X|EN|helper.svcset.077|                           what makes the value true.
-::X|EN|helper.svcset.078|
-::X|EN|helper.svcset.079|  Why these profiles : All five are identical because this card documents
-::X|EN|helper.svcset.080|                       a mechanism, not a setting - there is no per-
-::X|EN|helper.svcset.081|                       profile value for a helper whose value is supplied
-::X|EN|helper.svcset.082|                       by whoever calls it. The decision lives in the
-::X|EN|helper.svcset.083|                       caller, gr.services.defaults, and the per-use-case
-::X|EN|helper.svcset.084|                       answers live in the individual svc.* questions in
-::X|EN|helper.svcset.085|                       setup. Four identical columns here are the honest
-::X|EN|helper.svcset.086|                       answer, not a missing one.
-::X|EN|helper.svcset.087|
-::X|EN|helper.svcset.088|  Target          : OPTY.bat :svcset - tests the service with sc query,
-::X|EN|helper.svcset.089|                    reads HKLM\SYSTEM\CurrentControlSet\Services\%~1\Start
-::X|EN|helper.svcset.090|                    via reg query, then runs sc config "%~1" start= %~2.
-::X|EN|helper.svcset.091|                    Called from :gaming_restore, :setup_services, :asksvc
-::X|EN|helper.svcset.092|                    (svc.* cards, including WSearch and Spooler via
-::X|EN|helper.svcset.093|                    :svc_wsearch_spooler) and, for Dnscache, from
-::X|EN|helper.svcset.094|                    :se_picked in :setup_ethernet.
+::X|EN|helper.svcset.018|                    when the value already matches. When sc config is
+::X|EN|helper.svcset.019|                    refused but the Start value already equals the
+::X|EN|helper.svcset.020|                    expected one, it logs "left ... (already correct; the
+::X|EN|helper.svcset.021|                    service refuses sc config)" instead of FAILED: some
+::X|EN|helper.svcset.022|                    services lock their own security descriptor, and
+::X|EN|helper.svcset.023|                    Dnscache has refused sc config to administrators since
+::X|EN|helper.svcset.024|                    Windows 10 1809 (Source: Microsoft Q&A threads on
+::X|EN|helper.svcset.025|                    Dnscache access denied). FAILED is logged only when the
+::X|EN|helper.svcset.026|                    write is refused AND the value is wrong.
+::X|EN|helper.svcset.027|
+::X|EN|helper.svcset.028|  Gain            : Puts services back to their shipped start types in one
+::X|EN|helper.svcset.029|                    step, with a log line per service saying whether
+::X|EN|helper.svcset.030|                    anything actually changed. Note what it does not
+::X|EN|helper.svcset.031|                    claim: setting a service to Manual is usually a
+::X|EN|helper.svcset.032|                    preference, not damage. Tested live, WSearch left at
+::X|EN|helper.svcset.033|                    Manual was still demand-started, SearchIndexer.exe was
+::X|EN|helper.svcset.034|                    running, and Start-menu search worked - so 'Manual
+::X|EN|helper.svcset.035|                    breaks search' is folklore. Turning off web results is
+::X|EN|helper.svcset.036|                    a separate knob entirely, BingSearchEnabled. Likewise
+::X|EN|helper.svcset.037|                    Spooler at Manual with no printer installed breaks
+::X|EN|helper.svcset.038|                    nothing.
+::X|EN|helper.svcset.039|
+::X|EN|helper.svcset.040|  Cost            : Putting services back to Automatic costs you the RAM
+::X|EN|helper.svcset.041|                    and boot-time work you set out to avoid - SysMain in
+::X|EN|helper.svcset.042|                    particular starts reading your disk again after boot.
+::X|EN|helper.svcset.043|                    Nothing breaks.
+::X|EN|helper.svcset.044|
+::X|EN|helper.svcset.045|  Windows default : On Windows 11 25H2: SysMain=Automatic,
+::X|EN|helper.svcset.046|                    WSearch=Automatic (Delayed Start), Spooler=Automatic,
+::X|EN|helper.svcset.047|                    DPS=Automatic, WerSvc=Manual,
+::X|EN|helper.svcset.048|                    TabletInputService=Manual.
+::X|EN|helper.svcset.049|
+::X|EN|helper.svcset.050|  Possible values:
+::X|EN|helper.svcset.051|    auto                 : Writes Start=2. The Service Control Manager
+::X|EN|helper.svcset.052|                           starts the service during boot, before the
+::X|EN|helper.svcset.053|                           logon screen, in the load-order group the
+::X|EN|helper.svcset.054|                           service declares. Use this for services that
+::X|EN|helper.svcset.055|                           must be there before anything asks for them.
+::X|EN|helper.svcset.056|    delayed-auto         : Writes Start=2 and also sets
+::X|EN|helper.svcset.057|                           DelayedAutostart=1. The service starts about
+::X|EN|helper.svcset.058|                           two minutes after the auto-start services are
+::X|EN|helper.svcset.059|                           done, at lowered I/O and CPU priority, so it
+::X|EN|helper.svcset.060|                           does not compete with logon. Because the Start
+::X|EN|helper.svcset.061|                           value is still 2, :svcset compares it against
+::X|EN|helper.svcset.062|                           an expected value of 2 - the delayed flag is
+::X|EN|helper.svcset.063|                           invisible to that comparison, and sc config
+::X|EN|helper.svcset.064|                           sets it separately.
+::X|EN|helper.svcset.065|    demand               : Writes Start=3. The service is not started by
+::X|EN|helper.svcset.066|                           the Service Control Manager at boot. Whether it
+::X|EN|helper.svcset.067|                           ever runs depends entirely on whether something
+::X|EN|helper.svcset.068|                           starts it - a trigger, a service dependency, a
+::X|EN|helper.svcset.069|                           COM activation or a scheduled task. For some
+::X|EN|helper.svcset.070|                           services that is constant (WSearch), for others
+::X|EN|helper.svcset.071|                           nothing ever does it (SysMain), and that
+::X|EN|helper.svcset.072|                           difference is the single most important thing
+::X|EN|helper.svcset.073|                           to know before choosing Manual.
+::X|EN|helper.svcset.074|    disabled             : Writes Start=4. The Service Control Manager
+::X|EN|helper.svcset.075|                           refuses every start request, including from
+::X|EN|helper.svcset.076|                           triggers, dependencies and Windows itself. This
+::X|EN|helper.svcset.077|                           is the only state that nothing can get out of
+::X|EN|helper.svcset.078|                           on its own, which is why it is the one state a
+::X|EN|helper.svcset.079|                           repair tool is entitled to treat as broken.
+::X|EN|helper.svcset.080|    APPLY                : Run the helper as the caller asked. It reads
+::X|EN|helper.svcset.081|                           the current value first purely so the log can
+::X|EN|helper.svcset.082|                           distinguish FIXED from written (was already
+::X|EN|helper.svcset.083|                           correct), then issues sc config unconditionally
+::X|EN|helper.svcset.084|                           - on a fresh or foreign machine the write is
+::X|EN|helper.svcset.085|                           what makes the value true. A refused write on a
+::X|EN|helper.svcset.086|                           value that is already right is logged as left,
+::X|EN|helper.svcset.087|                           not FAILED.
+::X|EN|helper.svcset.088|
+::X|EN|helper.svcset.089|  Why these profiles : All five are identical because this card documents
+::X|EN|helper.svcset.090|                       a mechanism, not a setting - there is no per-
+::X|EN|helper.svcset.091|                       profile value for a helper whose value is supplied
+::X|EN|helper.svcset.092|                       by whoever calls it. The decision lives in the
+::X|EN|helper.svcset.093|                       caller, gr.services.defaults, and the per-use-case
+::X|EN|helper.svcset.094|                       answers live in the individual svc.* questions in
+::X|EN|helper.svcset.095|                       setup. Five identical columns here are the honest
+::X|EN|helper.svcset.096|                       answer, not a missing one.
+::X|EN|helper.svcset.097|
+::X|EN|helper.svcset.098|  Target          : OPTY.bat :svcset - tests the service with sc query,
+::X|EN|helper.svcset.099|                    reads HKLM\SYSTEM\CurrentControlSet\Services\%~1\Start
+::X|EN|helper.svcset.100|                    via reg query, then runs sc config "%~1" start= %~2;
+::X|EN|helper.svcset.101|                    if that is refused it compares the old Start with %~3
+::X|EN|helper.svcset.102|                    and logs left (already correct) or FAILED.
+::X|EN|helper.svcset.103|                    Called from :gaming_restore, :setup_services, :asksvc
+::X|EN|helper.svcset.104|                    (svc.* cards, including WSearch and Spooler via
+::X|EN|helper.svcset.105|                    :svc_wsearch_spooler) and, for Dnscache, from
+::X|EN|helper.svcset.106|                    :se_picked in :setup_ethernet.
 ::X|FR|helper.svcset.001|  Ce que c est    : La fonction générique derrière toute modification de
 ::X|FR|helper.svcset.002|                    service : sc config <service> start= auto, delayed-
 ::X|FR|helper.svcset.003|                    auto, demand ou disabled. Elle a trois sortes
@@ -28172,91 +28584,104 @@ goto :eof
 ::X|FR|helper.svcset.016|                    traduite et casse sur un Windows non anglais. Elle
 ::X|FR|helper.svcset.017|                    signale « absent » quand le service n existe pas dans
 ::X|FR|helper.svcset.018|                    votre édition, et elle exécute le sc config à chaque
-::X|FR|helper.svcset.019|                    fois, même si la valeur correspond déjà.
-::X|FR|helper.svcset.020|
-::X|FR|helper.svcset.021|  Gain            : Remet les services à leur type de démarrage d origine
-::X|FR|helper.svcset.022|                    en une étape, avec une ligne de journal par service
-::X|FR|helper.svcset.023|                    disant si quelque chose a réellement changé. Notez ce
-::X|FR|helper.svcset.024|                    qu elle ne prétend pas : mettre un service sur Manuel
-::X|FR|helper.svcset.025|                    est en général une préférence, pas une dégradation.
-::X|FR|helper.svcset.026|                    Testé en direct, WSearch laissé sur Manuel était quand
-::X|FR|helper.svcset.027|                    même démarré à la demande, SearchIndexer.exe tournait,
-::X|FR|helper.svcset.028|                    et la recherche du menu Démarrer fonctionnait : «
-::X|FR|helper.svcset.029|                    Manuel casse la recherche » est donc une légende.
-::X|FR|helper.svcset.030|                    Couper les résultats web, c est un tout autre bouton,
-::X|FR|helper.svcset.031|                    BingSearchEnabled. De même, Spooler sur Manuel sans
-::X|FR|helper.svcset.032|                    aucune imprimante installée ne casse rien.
-::X|FR|helper.svcset.033|
-::X|FR|helper.svcset.034|  Cout            : Repasser les services en Automatique vous coûte la RAM
-::X|FR|helper.svcset.035|                    et le travail au démarrage que vous cherchiez
-::X|FR|helper.svcset.036|                    justement à éviter - SysMain, en particulier,
-::X|FR|helper.svcset.037|                    recommence à lire votre disque après le boot. Rien ne
-::X|FR|helper.svcset.038|                    casse.
-::X|FR|helper.svcset.039|
-::X|FR|helper.svcset.040|  Defaut Windows  : Sur Windows 11 25H2 : SysMain=Automatique,
-::X|FR|helper.svcset.041|                    WSearch=Automatique (démarrage différé),
-::X|FR|helper.svcset.042|                    Spooler=Automatique, DPS=Automatique, WerSvc=Manuel,
-::X|FR|helper.svcset.043|                    TabletInputService=Manuel.
-::X|FR|helper.svcset.044|
-::X|FR|helper.svcset.045|  Valeurs possibles :
-::X|FR|helper.svcset.046|    auto                 : Écrit Start=2. Le gestionnaire de services
-::X|FR|helper.svcset.047|                           démarre le service pendant le boot, avant
-::X|FR|helper.svcset.048|                           l écran d ouverture de session, dans le groupe
-::X|FR|helper.svcset.049|                           d ordre de chargement qu il déclare. À utiliser
-::X|FR|helper.svcset.050|                           pour les services qui doivent être là avant
-::X|FR|helper.svcset.051|                           qu on les réclame.
-::X|FR|helper.svcset.052|    delayed-auto         : Écrit Start=2 et pose aussi DelayedAutostart=1.
-::X|FR|helper.svcset.053|                           Le service démarre environ deux minutes après
-::X|FR|helper.svcset.054|                           les services automatiques, avec des priorités
-::X|FR|helper.svcset.055|                           d E/S et de CPU abaissées, pour ne pas
-::X|FR|helper.svcset.056|                           concurrencer l ouverture de session. Comme la
-::X|FR|helper.svcset.057|                           valeur Start reste 2, :svcset la compare à une
-::X|FR|helper.svcset.058|                           valeur attendue de 2 : l indicateur différé est
-::X|FR|helper.svcset.059|                           invisible à cette comparaison, et sc config le
-::X|FR|helper.svcset.060|                           pose séparément.
-::X|FR|helper.svcset.061|    demand               : Écrit Start=3. Le service n est pas démarré par
-::X|FR|helper.svcset.062|                           le gestionnaire de services au boot. Qu il
-::X|FR|helper.svcset.063|                           tourne un jour dépend entièrement de ce qui le
-::X|FR|helper.svcset.064|                           démarre : un déclencheur, une dépendance de
-::X|FR|helper.svcset.065|                           service, une activation COM ou une tâche
-::X|FR|helper.svcset.066|                           planifiée. Pour certains services cela arrive
-::X|FR|helper.svcset.067|                           en permanence (WSearch), pour d autres jamais
-::X|FR|helper.svcset.068|                           (SysMain), et cette différence est la chose la
-::X|FR|helper.svcset.069|                           plus importante à savoir avant de choisir
-::X|FR|helper.svcset.070|                           Manuel.
-::X|FR|helper.svcset.071|    disabled             : Écrit Start=4. Le gestionnaire de services
-::X|FR|helper.svcset.072|                           refuse toute demande de démarrage, y compris
-::X|FR|helper.svcset.073|                           depuis les déclencheurs, les dépendances et
-::X|FR|helper.svcset.074|                           Windows lui-même. C est le seul état dont rien
-::X|FR|helper.svcset.075|                           ne peut sortir seul, et c est pourquoi c est le
-::X|FR|helper.svcset.076|                           seul qu un outil de réparation soit fondé à
-::X|FR|helper.svcset.077|                           considérer comme cassé.
-::X|FR|helper.svcset.078|    APPLY                : Exécuter l assistant comme l appelant le
-::X|FR|helper.svcset.079|                           demande. Il lit d abord la valeur en place
-::X|FR|helper.svcset.080|                           uniquement pour que le journal puisse
-::X|FR|helper.svcset.081|                           distinguer FIXED de written (was already
-::X|FR|helper.svcset.082|                           correct), puis lance sc config sans condition :
-::X|FR|helper.svcset.083|                           sur une machine neuve ou inconnue, c est
-::X|FR|helper.svcset.084|                           l écriture qui rend la valeur vraie.
-::X|FR|helper.svcset.085|
-::X|FR|helper.svcset.086|  Pourquoi ces profils : Les cinq colonnes sont identiques parce que cette
-::X|FR|helper.svcset.087|                         carte documente un mécanisme, pas un réglage : il
-::X|FR|helper.svcset.088|                         n y a pas de valeur par profil pour un assistant
-::X|FR|helper.svcset.089|                         dont la valeur est fournie par celui qui
-::X|FR|helper.svcset.090|                         l appelle. La décision est chez l appelant,
-::X|FR|helper.svcset.091|                         gr.services.defaults, et les réponses par usage
-::X|FR|helper.svcset.092|                         sont dans les questions svc.* individuelles de la
-::X|FR|helper.svcset.093|                         configuration. Quatre colonnes identiques sont
-::X|FR|helper.svcset.094|                         ici la réponse honnête, pas une réponse
-::X|FR|helper.svcset.095|                         manquante.
+::X|FR|helper.svcset.019|                    fois, même si la valeur correspond déjà. Quand sc
+::X|FR|helper.svcset.020|                    config est refusé mais que la valeur Start vaut déjà
+::X|FR|helper.svcset.021|                    celle attendue, elle journalise « left ... (already
+::X|FR|helper.svcset.022|                    correct; the service refuses sc config) » au lieu de
+::X|FR|helper.svcset.023|                    FAILED : certains services verrouillent leur propre
+::X|FR|helper.svcset.024|                    descripteur de sécurité, et Dnscache refuse sc config
+::X|FR|helper.svcset.025|                    aux administrateurs depuis Windows 10 1809 (Source :
+::X|FR|helper.svcset.026|                    fils Microsoft Q&A sur l accès refusé à Dnscache).
+::X|FR|helper.svcset.027|                    FAILED n est journalisé que si l écriture est refusée
+::X|FR|helper.svcset.028|                    ET que la valeur est fausse.
+::X|FR|helper.svcset.029|
+::X|FR|helper.svcset.030|  Gain            : Remet les services à leur type de démarrage d origine
+::X|FR|helper.svcset.031|                    en une étape, avec une ligne de journal par service
+::X|FR|helper.svcset.032|                    disant si quelque chose a réellement changé. Notez ce
+::X|FR|helper.svcset.033|                    qu elle ne prétend pas : mettre un service sur Manuel
+::X|FR|helper.svcset.034|                    est en général une préférence, pas une dégradation.
+::X|FR|helper.svcset.035|                    Testé en direct, WSearch laissé sur Manuel était quand
+::X|FR|helper.svcset.036|                    même démarré à la demande, SearchIndexer.exe tournait,
+::X|FR|helper.svcset.037|                    et la recherche du menu Démarrer fonctionnait : «
+::X|FR|helper.svcset.038|                    Manuel casse la recherche » est donc une légende.
+::X|FR|helper.svcset.039|                    Couper les résultats web, c est un tout autre bouton,
+::X|FR|helper.svcset.040|                    BingSearchEnabled. De même, Spooler sur Manuel sans
+::X|FR|helper.svcset.041|                    aucune imprimante installée ne casse rien.
+::X|FR|helper.svcset.042|
+::X|FR|helper.svcset.043|  Cout            : Repasser les services en Automatique vous coûte la RAM
+::X|FR|helper.svcset.044|                    et le travail au démarrage que vous cherchiez
+::X|FR|helper.svcset.045|                    justement à éviter - SysMain, en particulier,
+::X|FR|helper.svcset.046|                    recommence à lire votre disque après le boot. Rien ne
+::X|FR|helper.svcset.047|                    casse.
+::X|FR|helper.svcset.048|
+::X|FR|helper.svcset.049|  Defaut Windows  : Sur Windows 11 25H2 : SysMain=Automatique,
+::X|FR|helper.svcset.050|                    WSearch=Automatique (démarrage différé),
+::X|FR|helper.svcset.051|                    Spooler=Automatique, DPS=Automatique, WerSvc=Manuel,
+::X|FR|helper.svcset.052|                    TabletInputService=Manuel.
+::X|FR|helper.svcset.053|
+::X|FR|helper.svcset.054|  Valeurs possibles :
+::X|FR|helper.svcset.055|    auto                 : Écrit Start=2. Le gestionnaire de services
+::X|FR|helper.svcset.056|                           démarre le service pendant le boot, avant
+::X|FR|helper.svcset.057|                           l écran d ouverture de session, dans le groupe
+::X|FR|helper.svcset.058|                           d ordre de chargement qu il déclare. À utiliser
+::X|FR|helper.svcset.059|                           pour les services qui doivent être là avant
+::X|FR|helper.svcset.060|                           qu on les réclame.
+::X|FR|helper.svcset.061|    delayed-auto         : Écrit Start=2 et pose aussi DelayedAutostart=1.
+::X|FR|helper.svcset.062|                           Le service démarre environ deux minutes après
+::X|FR|helper.svcset.063|                           les services automatiques, avec des priorités
+::X|FR|helper.svcset.064|                           d E/S et de CPU abaissées, pour ne pas
+::X|FR|helper.svcset.065|                           concurrencer l ouverture de session. Comme la
+::X|FR|helper.svcset.066|                           valeur Start reste 2, :svcset la compare à une
+::X|FR|helper.svcset.067|                           valeur attendue de 2 : l indicateur différé est
+::X|FR|helper.svcset.068|                           invisible à cette comparaison, et sc config le
+::X|FR|helper.svcset.069|                           pose séparément.
+::X|FR|helper.svcset.070|    demand               : Écrit Start=3. Le service n est pas démarré par
+::X|FR|helper.svcset.071|                           le gestionnaire de services au boot. Qu il
+::X|FR|helper.svcset.072|                           tourne un jour dépend entièrement de ce qui le
+::X|FR|helper.svcset.073|                           démarre : un déclencheur, une dépendance de
+::X|FR|helper.svcset.074|                           service, une activation COM ou une tâche
+::X|FR|helper.svcset.075|                           planifiée. Pour certains services cela arrive
+::X|FR|helper.svcset.076|                           en permanence (WSearch), pour d autres jamais
+::X|FR|helper.svcset.077|                           (SysMain), et cette différence est la chose la
+::X|FR|helper.svcset.078|                           plus importante à savoir avant de choisir
+::X|FR|helper.svcset.079|                           Manuel.
+::X|FR|helper.svcset.080|    disabled             : Écrit Start=4. Le gestionnaire de services
+::X|FR|helper.svcset.081|                           refuse toute demande de démarrage, y compris
+::X|FR|helper.svcset.082|                           depuis les déclencheurs, les dépendances et
+::X|FR|helper.svcset.083|                           Windows lui-même. C est le seul état dont rien
+::X|FR|helper.svcset.084|                           ne peut sortir seul, et c est pourquoi c est le
+::X|FR|helper.svcset.085|                           seul qu un outil de réparation soit fondé à
+::X|FR|helper.svcset.086|                           considérer comme cassé.
+::X|FR|helper.svcset.087|    APPLY                : Exécuter l assistant comme l appelant le
+::X|FR|helper.svcset.088|                           demande. Il lit d abord la valeur en place
+::X|FR|helper.svcset.089|                           uniquement pour que le journal puisse
+::X|FR|helper.svcset.090|                           distinguer FIXED de written (was already
+::X|FR|helper.svcset.091|                           correct), puis lance sc config sans condition :
+::X|FR|helper.svcset.092|                           sur une machine neuve ou inconnue, c est
+::X|FR|helper.svcset.093|                           l écriture qui rend la valeur vraie. Une
+::X|FR|helper.svcset.094|                           écriture refusée sur une valeur déjà juste est
+::X|FR|helper.svcset.095|                           journalisée left, pas FAILED.
 ::X|FR|helper.svcset.096|
-::X|FR|helper.svcset.097|  Cible           : OPTY.bat :svcset - teste le service avec sc query,
-::X|FR|helper.svcset.098|                    lit HKLM\SYSTEM\CurrentControlSet\Services\%~1\Start
-::X|FR|helper.svcset.099|                    via reg query, puis lance sc config "%~1" start= %~2.
-::X|FR|helper.svcset.100|                    Appelée depuis :gaming_restore, :setup_services,
-::X|FR|helper.svcset.101|                    :asksvc (fiches svc.*, dont WSearch et Spooler via
-::X|FR|helper.svcset.102|                    :svc_wsearch_spooler) et, pour Dnscache, depuis
-::X|FR|helper.svcset.103|                    :se_picked dans :setup_ethernet.
+::X|FR|helper.svcset.097|  Pourquoi ces profils : Les cinq colonnes sont identiques parce que cette
+::X|FR|helper.svcset.098|                         carte documente un mécanisme, pas un réglage : il
+::X|FR|helper.svcset.099|                         n y a pas de valeur par profil pour un assistant
+::X|FR|helper.svcset.100|                         dont la valeur est fournie par celui qui
+::X|FR|helper.svcset.101|                         l appelle. La décision est chez l appelant,
+::X|FR|helper.svcset.102|                         gr.services.defaults, et les réponses par usage
+::X|FR|helper.svcset.103|                         sont dans les questions svc.* individuelles de la
+::X|FR|helper.svcset.104|                         configuration. Cinq colonnes identiques sont
+::X|FR|helper.svcset.105|                         ici la réponse honnête, pas une réponse
+::X|FR|helper.svcset.106|                         manquante.
+::X|FR|helper.svcset.107|
+::X|FR|helper.svcset.108|  Cible           : OPTY.bat :svcset - teste le service avec sc query,
+::X|FR|helper.svcset.109|                    lit HKLM\SYSTEM\CurrentControlSet\Services\%~1\Start
+::X|FR|helper.svcset.110|                    via reg query, puis lance sc config "%~1" start= %~2 ;
+::X|FR|helper.svcset.111|                    si c est refusé, elle compare l ancien Start avec %~3
+::X|FR|helper.svcset.112|                    et journalise left (déjà correct) ou FAILED.
+::X|FR|helper.svcset.113|                    Appelée depuis :gaming_restore, :setup_services,
+::X|FR|helper.svcset.114|                    :asksvc (fiches svc.*, dont WSearch et Spooler via
+::X|FR|helper.svcset.115|                    :svc_wsearch_spooler) et, pour Dnscache, depuis
+::X|FR|helper.svcset.116|                    :se_picked dans :setup_ethernet.
 ::
 :: ---- helper.svcfixifdisabled (repair) ---------------------------
 ::P|helper.svcfixifdisabled|REPAIR|REPAIR|REPAIR|REPAIR|REPAIR|
@@ -28304,65 +28729,74 @@ goto :eof
 ::X|EN|helper.svcfixifdisabled.038|                    verified live: CryptSvc Start=2, DoSvc Start=2 with
 ::X|EN|helper.svcfixifdisabled.039|                    DelayedAutostart=1, UsoSvc Start=2 with
 ::X|EN|helper.svcfixifdisabled.040|                    DelayedAutostart=1, mpssvc Start=2, BITS Start=3,
-::X|EN|helper.svcfixifdisabled.041|                    wuauserv Start=3.
-::X|EN|helper.svcfixifdisabled.042|
-::X|EN|helper.svcfixifdisabled.043|  Possible values:
-::X|EN|helper.svcfixifdisabled.044|    REPAIR               : For each service in the list, read Start. If
-::X|EN|helper.svcfixifdisabled.045|                           the value is missing, the service does not
-::X|EN|helper.svcfixifdisabled.046|                           exist on this edition and the helper returns.
-::X|EN|helper.svcfixifdisabled.047|                           If the value is anything other than 4, the
-::X|EN|helper.svcfixifdisabled.048|                           helper returns without writing. Only Start=4 is
-::X|EN|helper.svcfixifdisabled.049|                           rewritten, and only to the shipped value the
-::X|EN|helper.svcfixifdisabled.050|                           caller passed for that particular service.
-::X|EN|helper.svcfixifdisabled.051|    SKIP                 : Nothing is read and nothing is written. Any
-::X|EN|helper.svcfixifdisabled.052|                           service left at Disabled stays there, and the
-::X|EN|helper.svcfixifdisabled.053|                           failures it causes keep happening with no
-::X|EN|helper.svcfixifdisabled.054|                           message that names it. Not offered by the
-::X|EN|helper.svcfixifdisabled.055|                           code today: the repair runs unconditionally
-::X|EN|helper.svcfixifdisabled.056|                           in Restore > Re-assert good defaults.
-::X|EN|helper.svcfixifdisabled.057|    demand               : The value the caller passes for wuauserv, BITS,
-::X|EN|helper.svcfixifdisabled.058|                           TrustedInstaller, msiserver, InstallService,
-::X|EN|helper.svcfixifdisabled.059|                           AppIDSvc, wlidsvc, AppInfo, ClipSVC,
-::X|EN|helper.svcfixifdisabled.060|                           TokenBroker, TimeBrokerSvc, FontCache and
-::X|EN|helper.svcfixifdisabled.061|                           WpnService. All of these ship Manual or Manual
-::X|EN|helper.svcfixifdisabled.062|                           (Trigger Start), so Manual is genuinely their
-::X|EN|helper.svcfixifdisabled.063|                           default and writing it restores the shipped
-::X|EN|helper.svcfixifdisabled.064|                           state.
-::X|EN|helper.svcfixifdisabled.065|    auto                 : The value the caller passes for CryptSvc,
-::X|EN|helper.svcfixifdisabled.066|                           mpssvc, AppXSvc, StateRepository, ProfSvc, nsi,
-::X|EN|helper.svcfixifdisabled.067|                           BFE and Power. CryptSvc and mpssvc in
-::X|EN|helper.svcfixifdisabled.068|                           particular ship Automatic on every Windows
-::X|EN|helper.svcfixifdisabled.069|                           client edition - repairing them to Manual, as
-::X|EN|helper.svcfixifdisabled.070|                           an earlier version of this loop did, leaves the
-::X|EN|helper.svcfixifdisabled.071|                           machine below its shipped state while the log
-::X|EN|helper.svcfixifdisabled.072|                           reports a successful repair.
-::X|EN|helper.svcfixifdisabled.073|    delayed-auto         : The value the caller passes for DoSvc and
-::X|EN|helper.svcfixifdisabled.074|                           UsoSvc, both of which ship Automatic (Delayed /
-::X|EN|helper.svcfixifdisabled.075|                           Trigger Start). DoSvc is the primary update
-::X|EN|helper.svcfixifdisabled.076|                           downloader on Windows 11 - BITS is only the
-::X|EN|helper.svcfixifdisabled.077|                           fallback - so getting its start type wrong
-::X|EN|helper.svcfixifdisabled.078|                           matters more than the name suggests.
-::X|EN|helper.svcfixifdisabled.079|
-::X|EN|helper.svcfixifdisabled.080|  Why these profiles : All five identical, and there is no honest
-::X|EN|helper.svcfixifdisabled.081|                       alternative. A disabled ProfSvc is not a gaming
-::X|EN|helper.svcfixifdisabled.082|                       preference, it is a machine nobody can log into.
-::X|EN|helper.svcfixifdisabled.083|                       The only people who should decline are those
-::X|EN|helper.svcfixifdisabled.084|                       deliberately keeping Windows Update disabled and
-::X|EN|helper.svcfixifdisabled.085|                       accepting the security consequence, and that is an
-::X|EN|helper.svcfixifdisabled.086|                       answer of skip, not a profile.
-::X|EN|helper.svcfixifdisabled.087|
-::X|EN|helper.svcfixifdisabled.088|  Known problems  : Not scripted anywhere on purpose: DcomLaunch, RpcSs,
-::X|EN|helper.svcfixifdisabled.089|                    BrokerInfrastructure, SystemEventsBroker, LSM and
-::X|EN|helper.svcfixifdisabled.090|                    WaaSMedicSvc. sc config is refused on those even when
-::X|EN|helper.svcfixifdisabled.091|                    elevated, so a tool that claims to have set them is
-::X|EN|helper.svcfixifdisabled.092|                    reporting a write that never happened.
-::X|EN|helper.svcfixifdisabled.093|
-::X|EN|helper.svcfixifdisabled.094|  Target          : OPTY.bat :svcfixifdisabled - reads
-::X|EN|helper.svcfixifdisabled.095|                    HKLM\SYSTEM\CurrentControlSet\Services\%~1\Start,
-::X|EN|helper.svcfixifdisabled.096|                    returns immediately unless it equals 4, otherwise runs
-::X|EN|helper.svcfixifdisabled.097|                    sc config "%~1" start= %~2 and logs FIXED or FAILED.
-::X|EN|helper.svcfixifdisabled.098|                    Callers: the "Windows Update - services and policies"
-::X|EN|helper.svcfixifdisabled.099|                    block under :rad_pwrdone, part of :reassert_defaults.
+::X|EN|helper.svcfixifdisabled.041|                    wuauserv Start=3. FontCache and WpnService ship
+::X|EN|helper.svcfixifdisabled.042|                    Automatic and AppXSvc ships Manual (Trigger Start) on
+::X|EN|helper.svcfixifdisabled.043|                    24H2 and 25H2. Microsoft publishes no per-service
+::X|EN|helper.svcfixifdisabled.044|                    start-type table for Windows 11 client, so these come
+::X|EN|helper.svcfixifdisabled.045|                    from third-party per-build tables (Source: batcmd.com
+::X|EN|helper.svcfixifdisabled.046|                    service tables per Windows 11 build; smartpcutilities
+::X|EN|helper.svcfixifdisabled.047|                    service guide) plus the live reads above.
+::X|EN|helper.svcfixifdisabled.048|
+::X|EN|helper.svcfixifdisabled.049|  Possible values:
+::X|EN|helper.svcfixifdisabled.050|    REPAIR               : For each service in the list, read Start. If
+::X|EN|helper.svcfixifdisabled.051|                           the value is missing, the service does not
+::X|EN|helper.svcfixifdisabled.052|                           exist on this edition and the helper returns.
+::X|EN|helper.svcfixifdisabled.053|                           If the value is anything other than 4, the
+::X|EN|helper.svcfixifdisabled.054|                           helper returns without writing. Only Start=4 is
+::X|EN|helper.svcfixifdisabled.055|                           rewritten, and only to the shipped value the
+::X|EN|helper.svcfixifdisabled.056|                           caller passed for that particular service.
+::X|EN|helper.svcfixifdisabled.057|    SKIP                 : Nothing is read and nothing is written. Any
+::X|EN|helper.svcfixifdisabled.058|                           service left at Disabled stays there, and the
+::X|EN|helper.svcfixifdisabled.059|                           failures it causes keep happening with no
+::X|EN|helper.svcfixifdisabled.060|                           message that names it. Not offered by the
+::X|EN|helper.svcfixifdisabled.061|                           code today: the repair runs unconditionally
+::X|EN|helper.svcfixifdisabled.062|                           in Restore > Re-assert good defaults.
+::X|EN|helper.svcfixifdisabled.063|    demand               : The value the caller passes for wuauserv, BITS,
+::X|EN|helper.svcfixifdisabled.064|                           TrustedInstaller, msiserver, InstallService,
+::X|EN|helper.svcfixifdisabled.065|                           AppIDSvc, wlidsvc, AppInfo, ClipSVC,
+::X|EN|helper.svcfixifdisabled.066|                           TokenBroker, TimeBrokerSvc and AppXSvc. All of
+::X|EN|helper.svcfixifdisabled.067|                           these ship Manual or Manual
+::X|EN|helper.svcfixifdisabled.068|                           (Trigger Start), so Manual is genuinely their
+::X|EN|helper.svcfixifdisabled.069|                           default and writing it restores the shipped
+::X|EN|helper.svcfixifdisabled.070|                           state.
+::X|EN|helper.svcfixifdisabled.071|    auto                 : The value the caller passes for CryptSvc,
+::X|EN|helper.svcfixifdisabled.072|                           mpssvc, FontCache, WpnService, StateRepository,
+::X|EN|helper.svcfixifdisabled.073|                           ProfSvc, nsi, BFE and Power. An earlier version
+::X|EN|helper.svcfixifdisabled.074|                           had FontCache and WpnService at demand and
+::X|EN|helper.svcfixifdisabled.075|                           AppXSvc at auto - the one start type each does
+::X|EN|helper.svcfixifdisabled.076|                           not ship with. CryptSvc and mpssvc in
+::X|EN|helper.svcfixifdisabled.077|                           particular ship Automatic on every Windows
+::X|EN|helper.svcfixifdisabled.078|                           client edition - repairing them to Manual, as
+::X|EN|helper.svcfixifdisabled.079|                           an earlier version of this loop did, leaves the
+::X|EN|helper.svcfixifdisabled.080|                           machine below its shipped state while the log
+::X|EN|helper.svcfixifdisabled.081|                           reports a successful repair.
+::X|EN|helper.svcfixifdisabled.082|    delayed-auto         : The value the caller passes for DoSvc and
+::X|EN|helper.svcfixifdisabled.083|                           UsoSvc, both of which ship Automatic (Delayed /
+::X|EN|helper.svcfixifdisabled.084|                           Trigger Start). DoSvc is the primary update
+::X|EN|helper.svcfixifdisabled.085|                           downloader on Windows 11 - BITS is only the
+::X|EN|helper.svcfixifdisabled.086|                           fallback - so getting its start type wrong
+::X|EN|helper.svcfixifdisabled.087|                           matters more than the name suggests.
+::X|EN|helper.svcfixifdisabled.088|
+::X|EN|helper.svcfixifdisabled.089|  Why these profiles : All five identical, and there is no honest
+::X|EN|helper.svcfixifdisabled.090|                       alternative. A disabled ProfSvc is not a gaming
+::X|EN|helper.svcfixifdisabled.091|                       preference, it is a machine nobody can log into.
+::X|EN|helper.svcfixifdisabled.092|                       The only people who should decline are those
+::X|EN|helper.svcfixifdisabled.093|                       deliberately keeping Windows Update disabled and
+::X|EN|helper.svcfixifdisabled.094|                       accepting the security consequence, and that is an
+::X|EN|helper.svcfixifdisabled.095|                       answer of skip, not a profile.
+::X|EN|helper.svcfixifdisabled.096|
+::X|EN|helper.svcfixifdisabled.097|  Known problems  : Not scripted anywhere on purpose: DcomLaunch, RpcSs,
+::X|EN|helper.svcfixifdisabled.098|                    BrokerInfrastructure, SystemEventsBroker, LSM and
+::X|EN|helper.svcfixifdisabled.099|                    WaaSMedicSvc. sc config is refused on those even when
+::X|EN|helper.svcfixifdisabled.100|                    elevated, so a tool that claims to have set them is
+::X|EN|helper.svcfixifdisabled.101|                    reporting a write that never happened.
+::X|EN|helper.svcfixifdisabled.102|
+::X|EN|helper.svcfixifdisabled.103|  Target          : OPTY.bat :svcfixifdisabled - reads
+::X|EN|helper.svcfixifdisabled.104|                    HKLM\SYSTEM\CurrentControlSet\Services\%~1\Start,
+::X|EN|helper.svcfixifdisabled.105|                    returns immediately unless it equals 4, otherwise runs
+::X|EN|helper.svcfixifdisabled.106|                    sc config "%~1" start= %~2 and logs FIXED or FAILED.
+::X|EN|helper.svcfixifdisabled.107|                    Callers: the "Windows Update - services and policies"
+::X|EN|helper.svcfixifdisabled.108|                    block under :rad_pwrdone, part of :reassert_defaults.
 ::X|FR|helper.svcfixifdisabled.001|  Ce que c est    : Une réparation très ciblée qui ne touche un service
 ::X|FR|helper.svcfixifdisabled.002|                    que si sa valeur Start vaut 4 (Désactivé). Elle couvre
 ::X|FR|helper.svcfixifdisabled.003|                    la chaîne Windows Update - wuauserv, UsoSvc, DoSvc,
@@ -28406,71 +28840,82 @@ goto :eof
 ::X|FR|helper.svcfixifdisabled.041|                    vérifié en direct : CryptSvc Start=2, DoSvc Start=2
 ::X|FR|helper.svcfixifdisabled.042|                    avec DelayedAutostart=1, UsoSvc Start=2 avec
 ::X|FR|helper.svcfixifdisabled.043|                    DelayedAutostart=1, mpssvc Start=2, BITS Start=3,
-::X|FR|helper.svcfixifdisabled.044|                    wuauserv Start=3.
-::X|FR|helper.svcfixifdisabled.045|
-::X|FR|helper.svcfixifdisabled.046|  Valeurs possibles :
-::X|FR|helper.svcfixifdisabled.047|    REPAIR               : Pour chaque service de la liste, lire Start. Si
-::X|FR|helper.svcfixifdisabled.048|                           la valeur est absente, le service n existe pas
-::X|FR|helper.svcfixifdisabled.049|                           dans cette édition et l assistant s arrête. Si
-::X|FR|helper.svcfixifdisabled.050|                           la valeur n est pas 4, l assistant s arrête
-::X|FR|helper.svcfixifdisabled.051|                           sans rien écrire. Seul Start=4 est réécrit, et
-::X|FR|helper.svcfixifdisabled.052|                           uniquement vers la valeur d usine que
-::X|FR|helper.svcfixifdisabled.053|                           l appelant a passée pour ce service précis.
-::X|FR|helper.svcfixifdisabled.054|    SKIP                 : Rien n est lu et rien n est écrit. Tout service
-::X|FR|helper.svcfixifdisabled.055|                           laissé sur Désactivé y reste, et les pannes
-::X|FR|helper.svcfixifdisabled.056|                           qu il provoque continuent, sans le moindre
-::X|FR|helper.svcfixifdisabled.057|                           message qui le nomme. Non propose par le
-::X|FR|helper.svcfixifdisabled.058|                           code aujourd hui : la réparation tourne sans
-::X|FR|helper.svcfixifdisabled.059|                           condition dans Restore > Re-assert good
-::X|FR|helper.svcfixifdisabled.060|                           defaults.
-::X|FR|helper.svcfixifdisabled.061|    demand               : La valeur passée par l appelant pour wuauserv,
-::X|FR|helper.svcfixifdisabled.062|                           BITS, TrustedInstaller, msiserver,
-::X|FR|helper.svcfixifdisabled.063|                           InstallService, AppIDSvc, wlidsvc, AppInfo,
-::X|FR|helper.svcfixifdisabled.064|                           ClipSVC, TokenBroker, TimeBrokerSvc, FontCache
-::X|FR|helper.svcfixifdisabled.065|                           et WpnService. Tous sont livrés en Manuel ou
-::X|FR|helper.svcfixifdisabled.066|                           Manuel (déclenché) : Manuel est donc bien leur
-::X|FR|helper.svcfixifdisabled.067|                           valeur d usine, et l écrire rétablit l état
-::X|FR|helper.svcfixifdisabled.068|                           d origine.
-::X|FR|helper.svcfixifdisabled.069|    auto                 : La valeur passée par l appelant pour CryptSvc,
-::X|FR|helper.svcfixifdisabled.070|                           mpssvc, AppXSvc, StateRepository, ProfSvc, nsi,
-::X|FR|helper.svcfixifdisabled.071|                           BFE et Power. CryptSvc et mpssvc en particulier
-::X|FR|helper.svcfixifdisabled.072|                           sont livrés en Automatique sur toutes les
-::X|FR|helper.svcfixifdisabled.073|                           éditions de Windows client : les réparer vers
-::X|FR|helper.svcfixifdisabled.074|                           Manuel, comme le faisait une version antérieure
-::X|FR|helper.svcfixifdisabled.075|                           de cette boucle, laisse la machine en deçà de
-::X|FR|helper.svcfixifdisabled.076|                           son état d origine pendant que le journal
-::X|FR|helper.svcfixifdisabled.077|                           annonce une réparation réussie.
-::X|FR|helper.svcfixifdisabled.078|    delayed-auto         : La valeur passée par l appelant pour DoSvc et
-::X|FR|helper.svcfixifdisabled.079|                           UsoSvc, tous deux livrés en Automatique
-::X|FR|helper.svcfixifdisabled.080|                           (différé / déclenché). DoSvc est le
-::X|FR|helper.svcfixifdisabled.081|                           téléchargeur principal des mises à jour sous
-::X|FR|helper.svcfixifdisabled.082|                           Windows 11 - BITS n est que le repli - donc se
-::X|FR|helper.svcfixifdisabled.083|                           tromper sur son type de démarrage compte plus
-::X|FR|helper.svcfixifdisabled.084|                           que le nom ne le laisse croire.
-::X|FR|helper.svcfixifdisabled.085|
-::X|FR|helper.svcfixifdisabled.086|  Pourquoi ces profils : Les cinq colonnes identiques, et il n y a pas
-::X|FR|helper.svcfixifdisabled.087|                         d autre réponse honnête. Un ProfSvc désactivé
-::X|FR|helper.svcfixifdisabled.088|                         n est pas une préférence de joueur, c est une
-::X|FR|helper.svcfixifdisabled.089|                         machine sur laquelle personne ne peut ouvrir de
-::X|FR|helper.svcfixifdisabled.090|                         session. Les seuls à refuser sont ceux qui
-::X|FR|helper.svcfixifdisabled.091|                         gardent délibérément Windows Update désactivé en
-::X|FR|helper.svcfixifdisabled.092|                         assumant le risque de sécurité, et cela se répond
-::X|FR|helper.svcfixifdisabled.093|                         par passer, pas par un profil.
-::X|FR|helper.svcfixifdisabled.094|
-::X|FR|helper.svcfixifdisabled.095|  Problemes connus : Volontairement absents du script : DcomLaunch, RpcSs,
-::X|FR|helper.svcfixifdisabled.096|                     BrokerInfrastructure, SystemEventsBroker, LSM et
-::X|FR|helper.svcfixifdisabled.097|                     WaaSMedicSvc. sc config est refusé sur ces services
-::X|FR|helper.svcfixifdisabled.098|                     même en élévation, donc un outil qui prétend les
-::X|FR|helper.svcfixifdisabled.099|                     avoir réglés rapporte une écriture qui n a jamais eu
-::X|FR|helper.svcfixifdisabled.100|                     lieu.
-::X|FR|helper.svcfixifdisabled.101|
-::X|FR|helper.svcfixifdisabled.102|  Cible           : OPTY.bat :svcfixifdisabled - lit
-::X|FR|helper.svcfixifdisabled.103|                    HKLM\SYSTEM\CurrentControlSet\Services\%~1\Start,
-::X|FR|helper.svcfixifdisabled.104|                    rend la main aussitôt sauf si elle vaut 4, sinon lance
-::X|FR|helper.svcfixifdisabled.105|                    sc config "%~1" start= %~2 et journalise FIXED ou
-::X|FR|helper.svcfixifdisabled.106|                    FAILED. Appelants : le bloc "Windows Update - services
-::X|FR|helper.svcfixifdisabled.107|                    and policies" sous :rad_pwrdone, dans
-::X|FR|helper.svcfixifdisabled.108|                    :reassert_defaults.
+::X|FR|helper.svcfixifdisabled.044|                    wuauserv Start=3. FontCache et WpnService sont livrés
+::X|FR|helper.svcfixifdisabled.045|                    en Automatique et AppXSvc en Manuel (déclenché) sur
+::X|FR|helper.svcfixifdisabled.046|                    24H2 et 25H2. Microsoft ne publie aucun tableau des
+::X|FR|helper.svcfixifdisabled.047|                    types de démarrage par service pour Windows 11 client :
+::X|FR|helper.svcfixifdisabled.048|                    ces valeurs viennent de tableaux tiers par version
+::X|FR|helper.svcfixifdisabled.049|                    (Source : batcmd.com, tableaux des services par version
+::X|FR|helper.svcfixifdisabled.050|                    de Windows 11 ; guide des services smartpcutilities) et
+::X|FR|helper.svcfixifdisabled.051|                    des lectures en direct ci-dessus.
+::X|FR|helper.svcfixifdisabled.052|
+::X|FR|helper.svcfixifdisabled.053|  Valeurs possibles :
+::X|FR|helper.svcfixifdisabled.054|    REPAIR               : Pour chaque service de la liste, lire Start. Si
+::X|FR|helper.svcfixifdisabled.055|                           la valeur est absente, le service n existe pas
+::X|FR|helper.svcfixifdisabled.056|                           dans cette édition et l assistant s arrête. Si
+::X|FR|helper.svcfixifdisabled.057|                           la valeur n est pas 4, l assistant s arrête
+::X|FR|helper.svcfixifdisabled.058|                           sans rien écrire. Seul Start=4 est réécrit, et
+::X|FR|helper.svcfixifdisabled.059|                           uniquement vers la valeur d usine que
+::X|FR|helper.svcfixifdisabled.060|                           l appelant a passée pour ce service précis.
+::X|FR|helper.svcfixifdisabled.061|    SKIP                 : Rien n est lu et rien n est écrit. Tout service
+::X|FR|helper.svcfixifdisabled.062|                           laissé sur Désactivé y reste, et les pannes
+::X|FR|helper.svcfixifdisabled.063|                           qu il provoque continuent, sans le moindre
+::X|FR|helper.svcfixifdisabled.064|                           message qui le nomme. Non propose par le
+::X|FR|helper.svcfixifdisabled.065|                           code aujourd hui : la réparation tourne sans
+::X|FR|helper.svcfixifdisabled.066|                           condition dans Restore > Re-assert good
+::X|FR|helper.svcfixifdisabled.067|                           defaults.
+::X|FR|helper.svcfixifdisabled.068|    demand               : La valeur passée par l appelant pour wuauserv,
+::X|FR|helper.svcfixifdisabled.069|                           BITS, TrustedInstaller, msiserver,
+::X|FR|helper.svcfixifdisabled.070|                           InstallService, AppIDSvc, wlidsvc, AppInfo,
+::X|FR|helper.svcfixifdisabled.071|                           ClipSVC, TokenBroker, TimeBrokerSvc et
+::X|FR|helper.svcfixifdisabled.072|                           AppXSvc. Tous sont livrés en Manuel ou
+::X|FR|helper.svcfixifdisabled.073|                           Manuel (déclenché) : Manuel est donc bien leur
+::X|FR|helper.svcfixifdisabled.074|                           valeur d usine, et l écrire rétablit l état
+::X|FR|helper.svcfixifdisabled.075|                           d origine.
+::X|FR|helper.svcfixifdisabled.076|    auto                 : La valeur passée par l appelant pour CryptSvc,
+::X|FR|helper.svcfixifdisabled.077|                           mpssvc, FontCache, WpnService, StateRepository,
+::X|FR|helper.svcfixifdisabled.078|                           ProfSvc, nsi, BFE et Power. Une version
+::X|FR|helper.svcfixifdisabled.079|                           antérieure mettait FontCache et WpnService en
+::X|FR|helper.svcfixifdisabled.080|                           demand et AppXSvc en auto - le seul type de
+::X|FR|helper.svcfixifdisabled.081|                           démarrage que chacun n a pas d usine. CryptSvc
+::X|FR|helper.svcfixifdisabled.082|                           et mpssvc en particulier
+::X|FR|helper.svcfixifdisabled.083|                           sont livrés en Automatique sur toutes les
+::X|FR|helper.svcfixifdisabled.084|                           éditions de Windows client : les réparer vers
+::X|FR|helper.svcfixifdisabled.085|                           Manuel, comme le faisait une version antérieure
+::X|FR|helper.svcfixifdisabled.086|                           de cette boucle, laisse la machine en deçà de
+::X|FR|helper.svcfixifdisabled.087|                           son état d origine pendant que le journal
+::X|FR|helper.svcfixifdisabled.088|                           annonce une réparation réussie.
+::X|FR|helper.svcfixifdisabled.089|    delayed-auto         : La valeur passée par l appelant pour DoSvc et
+::X|FR|helper.svcfixifdisabled.090|                           UsoSvc, tous deux livrés en Automatique
+::X|FR|helper.svcfixifdisabled.091|                           (différé / déclenché). DoSvc est le
+::X|FR|helper.svcfixifdisabled.092|                           téléchargeur principal des mises à jour sous
+::X|FR|helper.svcfixifdisabled.093|                           Windows 11 - BITS n est que le repli - donc se
+::X|FR|helper.svcfixifdisabled.094|                           tromper sur son type de démarrage compte plus
+::X|FR|helper.svcfixifdisabled.095|                           que le nom ne le laisse croire.
+::X|FR|helper.svcfixifdisabled.096|
+::X|FR|helper.svcfixifdisabled.097|  Pourquoi ces profils : Les cinq colonnes identiques, et il n y a pas
+::X|FR|helper.svcfixifdisabled.098|                         d autre réponse honnête. Un ProfSvc désactivé
+::X|FR|helper.svcfixifdisabled.099|                         n est pas une préférence de joueur, c est une
+::X|FR|helper.svcfixifdisabled.100|                         machine sur laquelle personne ne peut ouvrir de
+::X|FR|helper.svcfixifdisabled.101|                         session. Les seuls à refuser sont ceux qui
+::X|FR|helper.svcfixifdisabled.102|                         gardent délibérément Windows Update désactivé en
+::X|FR|helper.svcfixifdisabled.103|                         assumant le risque de sécurité, et cela se répond
+::X|FR|helper.svcfixifdisabled.104|                         par passer, pas par un profil.
+::X|FR|helper.svcfixifdisabled.105|
+::X|FR|helper.svcfixifdisabled.106|  Problemes connus : Volontairement absents du script : DcomLaunch, RpcSs,
+::X|FR|helper.svcfixifdisabled.107|                     BrokerInfrastructure, SystemEventsBroker, LSM et
+::X|FR|helper.svcfixifdisabled.108|                     WaaSMedicSvc. sc config est refusé sur ces services
+::X|FR|helper.svcfixifdisabled.109|                     même en élévation, donc un outil qui prétend les
+::X|FR|helper.svcfixifdisabled.110|                     avoir réglés rapporte une écriture qui n a jamais eu
+::X|FR|helper.svcfixifdisabled.111|                     lieu.
+::X|FR|helper.svcfixifdisabled.112|
+::X|FR|helper.svcfixifdisabled.113|  Cible           : OPTY.bat :svcfixifdisabled - lit
+::X|FR|helper.svcfixifdisabled.114|                    HKLM\SYSTEM\CurrentControlSet\Services\%~1\Start,
+::X|FR|helper.svcfixifdisabled.115|                    rend la main aussitôt sauf si elle vaut 4, sinon lance
+::X|FR|helper.svcfixifdisabled.116|                    sc config "%~1" start= %~2 et journalise FIXED ou
+::X|FR|helper.svcfixifdisabled.117|                    FAILED. Appelants : le bloc "Windows Update - services
+::X|FR|helper.svcfixifdisabled.118|                    and policies" sous :rad_pwrdone, dans
+::X|FR|helper.svcfixifdisabled.119|                    :reassert_defaults.
 ::
 :: ---- rp.point.create (preference) -----------------------------------
 ::P|rp.point.create|APPLY|APPLY|APPLY|APPLY|SKIP|
@@ -29430,45 +29875,60 @@ goto :eof
 ::X|EN|gr.hvci.vbs.killkey.014|  Cost            : An old unsigned driver may refuse to load once HVCI is
 ::X|EN|gr.hvci.vbs.killkey.015|                    active again - Windows Security will name it. Some
 ::X|EN|gr.hvci.vbs.killkey.016|                    CPU-bound games lose a small and variable amount of
-::X|EN|gr.hvci.vbs.killkey.017|                    performance.
-::X|EN|gr.hvci.vbs.killkey.018|
-::X|EN|gr.hvci.vbs.killkey.019|  Windows default : Depends on the image, but forcing 0 is never it, and
-::X|EN|gr.hvci.vbs.killkey.020|                    forcing 1 is never correct either.
-::X|EN|gr.hvci.vbs.killkey.021|
-::X|EN|gr.hvci.vbs.killkey.022|  Possible values:
-::X|EN|gr.hvci.vbs.killkey.023|    DELETE               : Both values are removed, so nothing in the
-::X|EN|gr.hvci.vbs.killkey.024|                           registry forces an answer. Windows decides from
-::X|EN|gr.hvci.vbs.killkey.025|                           firmware capability, driver compatibility and
-::X|EN|gr.hvci.vbs.killkey.026|                           policy - which on a compatible Windows 11
-::X|EN|gr.hvci.vbs.killkey.027|                           machine means Memory Integrity comes back on at
-::X|EN|gr.hvci.vbs.killkey.028|                           the next reboot.
-::X|EN|gr.hvci.vbs.killkey.029|    0                    : Keeps the override that forces HVCI and VBS
-::X|EN|gr.hvci.vbs.killkey.030|                           off. This is the state a tweak script or the
-::X|EN|gr.hvci.vbs.killkey.031|                           gaming profile left behind.
-::X|EN|gr.hvci.vbs.killkey.032|    1                    : Forces both on. This is NOT the default and is
-::X|EN|gr.hvci.vbs.killkey.033|                           a third state: on hardware or drivers that
-::X|EN|gr.hvci.vbs.killkey.034|                           cannot support HVCI it produces driver-load
-::X|EN|gr.hvci.vbs.killkey.035|                           failures, which is precisely why the repair
-::X|EN|gr.hvci.vbs.killkey.036|                           deletes instead of writing 1.
-::X|EN|gr.hvci.vbs.killkey.037|
-::X|EN|gr.hvci.vbs.killkey.038|  Why these profiles : Five identical DELETE columns because the correct
-::X|EN|gr.hvci.vbs.killkey.039|                       state is 'let Windows decide' on every machine,
-::X|EN|gr.hvci.vbs.killkey.040|                       including the WINDOWS profile where absence IS the
-::X|EN|gr.hvci.vbs.killkey.041|                       shipped state. If a driver you need genuinely
-::X|EN|gr.hvci.vbs.killkey.042|                       blocks HVCI, Windows will refuse to enable it by
-::X|EN|gr.hvci.vbs.killkey.043|                       itself and no override is required.
-::X|EN|gr.hvci.vbs.killkey.044|
-::X|EN|gr.hvci.vbs.killkey.045|  Unverified      : Whether these values ship absent or present as 1
-::X|EN|gr.hvci.vbs.killkey.046|                    depends on the image: machines that ship with Memory
-::X|EN|gr.hvci.vbs.killkey.047|                    Integrity enabled can carry Enabled=1 placed there by
-::X|EN|gr.hvci.vbs.killkey.048|                    the OEM or by policy.
+::X|EN|gr.hvci.vbs.killkey.017|                    performance: ComputerBase measured about 8 percent in
+::X|EN|gr.hvci.vbs.killkey.018|                    games on a Ryzen 7 5800X3D under 24H2 (Source:
+::X|EN|gr.hvci.vbs.killkey.019|                    ComputerBase, as reported by Neowin), XDA 1.6 to 2.5
+::X|EN|gr.hvci.vbs.killkey.020|                    percent on a Ryzen 5 7600X (Source: XDA Developers).
+::X|EN|gr.hvci.vbs.killkey.021|                    Automatic enablement: Microsoft announced that quality
+::X|EN|gr.hvci.vbs.killkey.022|                    updates will gradually turn Memory Integrity on for
+::X|EN|gr.hvci.vbs.killkey.023|                    eligible devices, leaving alone devices where it was
+::X|EN|gr.hvci.vbs.killkey.024|                    explicitly disabled (Source: Windows IT Pro Blog,
+::X|EN|gr.hvci.vbs.killkey.025|                    2026-09-01; message center MC1465669; release start
+::X|EN|gr.hvci.vbs.killkey.026|                    2026-10-01). Deleting the Enabled value returns the
+::X|EN|gr.hvci.vbs.killkey.027|                    machine to the default, so it becomes eligible for
+::X|EN|gr.hvci.vbs.killkey.028|                    that automatic enablement. To keep it off, switch it
+::X|EN|gr.hvci.vbs.killkey.029|                    off yourself in Windows Security after the restore.
+::X|EN|gr.hvci.vbs.killkey.030|
+::X|EN|gr.hvci.vbs.killkey.031|  Windows default : Depends on the image, but forcing 0 is never it, and
+::X|EN|gr.hvci.vbs.killkey.032|                    forcing 1 is never correct either.
+::X|EN|gr.hvci.vbs.killkey.033|
+::X|EN|gr.hvci.vbs.killkey.034|  Possible values:
+::X|EN|gr.hvci.vbs.killkey.035|    DELETE               : Both values are removed, so nothing in the
+::X|EN|gr.hvci.vbs.killkey.036|                           registry forces an answer. Windows decides from
+::X|EN|gr.hvci.vbs.killkey.037|                           firmware capability, driver compatibility and
+::X|EN|gr.hvci.vbs.killkey.038|                           policy - which on a compatible Windows 11
+::X|EN|gr.hvci.vbs.killkey.039|                           machine means Memory Integrity comes back on at
+::X|EN|gr.hvci.vbs.killkey.040|                           the next reboot.
+::X|EN|gr.hvci.vbs.killkey.041|    0                    : Keeps the override that forces HVCI and VBS
+::X|EN|gr.hvci.vbs.killkey.042|                           off. This is the state a tweak script or the
+::X|EN|gr.hvci.vbs.killkey.043|                           gaming profile left behind.
+::X|EN|gr.hvci.vbs.killkey.044|    1                    : Forces both on. This is NOT the default and is
+::X|EN|gr.hvci.vbs.killkey.045|                           a third state: on hardware or drivers that
+::X|EN|gr.hvci.vbs.killkey.046|                           cannot support HVCI it produces driver-load
+::X|EN|gr.hvci.vbs.killkey.047|                           failures, which is precisely why the repair
+::X|EN|gr.hvci.vbs.killkey.048|                           deletes instead of writing 1.
 ::X|EN|gr.hvci.vbs.killkey.049|
-::X|EN|gr.hvci.vbs.killkey.050|  Target          : call :killkey "HKLM\SYSTEM\CurrentControlSet\Control\D
-::X|EN|gr.hvci.vbs.killkey.051|                    eviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity"
-::X|EN|gr.hvci.vbs.killkey.052|                    "Enabled" and call :killkey
-::X|EN|gr.hvci.vbs.killkey.053|                    "HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard"
-::X|EN|gr.hvci.vbs.killkey.054|                    "EnableVirtualizationBasedSecurity" (in :gaming_restore,
-::X|EN|gr.hvci.vbs.killkey.055|                    and the same pair again in :reassert_defaults)
+::X|EN|gr.hvci.vbs.killkey.050|  Why these profiles : Five identical DELETE columns because the correct
+::X|EN|gr.hvci.vbs.killkey.051|                       state is 'let Windows decide' on every machine,
+::X|EN|gr.hvci.vbs.killkey.052|                       including the WINDOWS profile where absence IS the
+::X|EN|gr.hvci.vbs.killkey.053|                       shipped state. If a driver you need genuinely
+::X|EN|gr.hvci.vbs.killkey.054|                       blocks HVCI, Windows will refuse to enable it by
+::X|EN|gr.hvci.vbs.killkey.055|                       itself and no override is required.
+::X|EN|gr.hvci.vbs.killkey.056|
+::X|EN|gr.hvci.vbs.killkey.057|  Unverified      : Whether these values ship absent or present as 1
+::X|EN|gr.hvci.vbs.killkey.058|                    depends on the image: machines that ship with Memory
+::X|EN|gr.hvci.vbs.killkey.059|                    Integrity enabled can carry Enabled=1 placed there by
+::X|EN|gr.hvci.vbs.killkey.060|                    the OEM or by policy. How Windows detects "explicitly
+::X|EN|gr.hvci.vbs.killkey.061|                    disabled" for the automatic rollout is not documented,
+::X|EN|gr.hvci.vbs.killkey.062|                    so whether the Windows Security toggle alone counts is
+::X|EN|gr.hvci.vbs.killkey.063|                    UNVERIFIED.
+::X|EN|gr.hvci.vbs.killkey.064|
+::X|EN|gr.hvci.vbs.killkey.065|  Target          : call :killkey "HKLM\SYSTEM\CurrentControlSet\Control\D
+::X|EN|gr.hvci.vbs.killkey.066|                    eviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity"
+::X|EN|gr.hvci.vbs.killkey.067|                    "Enabled" and call :killkey
+::X|EN|gr.hvci.vbs.killkey.068|                    "HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard"
+::X|EN|gr.hvci.vbs.killkey.069|                    "EnableVirtualizationBasedSecurity" (in :gaming_restore,
+::X|EN|gr.hvci.vbs.killkey.070|                    and the same pair again in :reassert_defaults)
 ::X|FR|gr.hvci.vbs.killkey.001|  Ce que c est    : Deux valeurs de registre qui desactivent HVCI et la
 ::X|FR|gr.hvci.vbs.killkey.002|                    VBS de force, quel que soit le materiel. Les supprimer
 ::X|FR|gr.hvci.vbs.killkey.003|                    rend la decision a Windows.
@@ -29485,49 +29945,66 @@ goto :eof
 ::X|FR|gr.hvci.vbs.killkey.014|  Cout            : Un vieux pilote non signe peut refuser de se charger
 ::X|FR|gr.hvci.vbs.killkey.015|                    une fois HVCI actif - Securite Windows vous le
 ::X|FR|gr.hvci.vbs.killkey.016|                    nommera. Quelques jeux limites par le CPU perdent un
-::X|FR|gr.hvci.vbs.killkey.017|                    peu de performance, de facon variable.
-::X|FR|gr.hvci.vbs.killkey.018|
-::X|FR|gr.hvci.vbs.killkey.019|  Defaut Windows  : Depend de l image, mais ce n est jamais un forcage a
-::X|FR|gr.hvci.vbs.killkey.020|                    0, et forcer 1 n est pas correct non plus.
-::X|FR|gr.hvci.vbs.killkey.021|
-::X|FR|gr.hvci.vbs.killkey.022|  Valeurs possibles :
-::X|FR|gr.hvci.vbs.killkey.023|    DELETE               : Les deux valeurs sont supprimees : plus rien
-::X|FR|gr.hvci.vbs.killkey.024|                           dans le registre n impose de reponse. Windows
-::X|FR|gr.hvci.vbs.killkey.025|                           decide selon les capacites du firmware, la
-::X|FR|gr.hvci.vbs.killkey.026|                           compatibilite des pilotes et les strategies -
-::X|FR|gr.hvci.vbs.killkey.027|                           donc, sur une machine Windows 11 compatible,
-::X|FR|gr.hvci.vbs.killkey.028|                           l integrite de la memoire revient au prochain
-::X|FR|gr.hvci.vbs.killkey.029|                           redemarrage.
-::X|FR|gr.hvci.vbs.killkey.030|    0                    : Conserve le forcage qui desactive HVCI et la
-::X|FR|gr.hvci.vbs.killkey.031|                           VBS. C est l etat laisse par un script de
-::X|FR|gr.hvci.vbs.killkey.032|                           bidouille ou par le profil jeu.
-::X|FR|gr.hvci.vbs.killkey.033|    1                    : Force les deux. Ce n est PAS le defaut mais un
-::X|FR|gr.hvci.vbs.killkey.034|                           troisieme etat : sur du materiel ou des pilotes
-::X|FR|gr.hvci.vbs.killkey.035|                           incapables de supporter HVCI, cela provoque des
-::X|FR|gr.hvci.vbs.killkey.036|                           echecs de chargement de pilotes, raison pour
-::X|FR|gr.hvci.vbs.killkey.037|                           laquelle la reparation supprime au lieu
-::X|FR|gr.hvci.vbs.killkey.038|                           d ecrire 1.
-::X|FR|gr.hvci.vbs.killkey.039|
-::X|FR|gr.hvci.vbs.killkey.040|  Pourquoi ces profils : Cinq colonnes identiques a DELETE parce que le
-::X|FR|gr.hvci.vbs.killkey.041|                         bon etat est « laisser Windows decider » sur
-::X|FR|gr.hvci.vbs.killkey.042|                         toutes les machines, profil WINDOWS compris, ou
-::X|FR|gr.hvci.vbs.killkey.043|                         l absence EST l etat d origine. Si un pilote dont
-::X|FR|gr.hvci.vbs.killkey.044|                         vous avez besoin bloque reellement HVCI, Windows
-::X|FR|gr.hvci.vbs.killkey.045|                         refusera de l activer tout seul et aucun forcage
-::X|FR|gr.hvci.vbs.killkey.046|                         n est necessaire.
-::X|FR|gr.hvci.vbs.killkey.047|
-::X|FR|gr.hvci.vbs.killkey.048|  Non verifie (en)  : Whether these values ship absent or present as 1
-::X|FR|gr.hvci.vbs.killkey.049|                      depends on the image: machines that ship with Memory
-::X|FR|gr.hvci.vbs.killkey.050|                      Integrity enabled can carry Enabled=1 placed there
-::X|FR|gr.hvci.vbs.killkey.051|                      by the OEM or by policy.
-::X|FR|gr.hvci.vbs.killkey.052|
-::X|FR|gr.hvci.vbs.killkey.053|  Cible           : call :killkey "HKLM\SYSTEM\CurrentControlSet\Control\D
-::X|FR|gr.hvci.vbs.killkey.054|                    eviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity"
-::X|FR|gr.hvci.vbs.killkey.055|                    "Enabled" et call :killkey
-::X|FR|gr.hvci.vbs.killkey.056|                    "HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard"
-::X|FR|gr.hvci.vbs.killkey.057|                    "EnableVirtualizationBasedSecurity" (dans
-::X|FR|gr.hvci.vbs.killkey.058|                    :gaming_restore, et la meme paire dans
-::X|FR|gr.hvci.vbs.killkey.059|                    :reassert_defaults)
+::X|FR|gr.hvci.vbs.killkey.017|                    peu de performance, de facon variable : ComputerBase a
+::X|FR|gr.hvci.vbs.killkey.018|                    mesure environ 8 pour cent en jeu sur un Ryzen 7
+::X|FR|gr.hvci.vbs.killkey.019|                    5800X3D sous 24H2 (Source : ComputerBase, repris par
+::X|FR|gr.hvci.vbs.killkey.020|                    Neowin), XDA 1,6 a 2,5 pour cent sur un Ryzen 5 7600X
+::X|FR|gr.hvci.vbs.killkey.021|                    (Source : XDA Developers). Activation automatique :
+::X|FR|gr.hvci.vbs.killkey.022|                    Microsoft a annonce que les mises a jour qualite
+::X|FR|gr.hvci.vbs.killkey.023|                    activeront progressivement l integrite de la memoire
+::X|FR|gr.hvci.vbs.killkey.024|                    sur les appareils eligibles, sans toucher ceux ou elle
+::X|FR|gr.hvci.vbs.killkey.025|                    a ete explicitement desactivee (Source : Windows IT Pro
+::X|FR|gr.hvci.vbs.killkey.026|                    Blog, 2026-09-01 ; centre de messages MC1465669 ;
+::X|FR|gr.hvci.vbs.killkey.027|                    debut du deploiement 2026-10-01). Supprimer la valeur
+::X|FR|gr.hvci.vbs.killkey.028|                    Enabled ramene la machine au defaut : elle devient
+::X|FR|gr.hvci.vbs.killkey.029|                    donc eligible a cette activation automatique. Pour la
+::X|FR|gr.hvci.vbs.killkey.030|                    garder coupee, coupez-la vous-meme dans Securite
+::X|FR|gr.hvci.vbs.killkey.031|                    Windows apres la restauration.
+::X|FR|gr.hvci.vbs.killkey.032|
+::X|FR|gr.hvci.vbs.killkey.033|  Defaut Windows  : Depend de l image, mais ce n est jamais un forcage a
+::X|FR|gr.hvci.vbs.killkey.034|                    0, et forcer 1 n est pas correct non plus.
+::X|FR|gr.hvci.vbs.killkey.035|
+::X|FR|gr.hvci.vbs.killkey.036|  Valeurs possibles :
+::X|FR|gr.hvci.vbs.killkey.037|    DELETE               : Les deux valeurs sont supprimees : plus rien
+::X|FR|gr.hvci.vbs.killkey.038|                           dans le registre n impose de reponse. Windows
+::X|FR|gr.hvci.vbs.killkey.039|                           decide selon les capacites du firmware, la
+::X|FR|gr.hvci.vbs.killkey.040|                           compatibilite des pilotes et les strategies -
+::X|FR|gr.hvci.vbs.killkey.041|                           donc, sur une machine Windows 11 compatible,
+::X|FR|gr.hvci.vbs.killkey.042|                           l integrite de la memoire revient au prochain
+::X|FR|gr.hvci.vbs.killkey.043|                           redemarrage.
+::X|FR|gr.hvci.vbs.killkey.044|    0                    : Conserve le forcage qui desactive HVCI et la
+::X|FR|gr.hvci.vbs.killkey.045|                           VBS. C est l etat laisse par un script de
+::X|FR|gr.hvci.vbs.killkey.046|                           bidouille ou par le profil jeu.
+::X|FR|gr.hvci.vbs.killkey.047|    1                    : Force les deux. Ce n est PAS le defaut mais un
+::X|FR|gr.hvci.vbs.killkey.048|                           troisieme etat : sur du materiel ou des pilotes
+::X|FR|gr.hvci.vbs.killkey.049|                           incapables de supporter HVCI, cela provoque des
+::X|FR|gr.hvci.vbs.killkey.050|                           echecs de chargement de pilotes, raison pour
+::X|FR|gr.hvci.vbs.killkey.051|                           laquelle la reparation supprime au lieu
+::X|FR|gr.hvci.vbs.killkey.052|                           d ecrire 1.
+::X|FR|gr.hvci.vbs.killkey.053|
+::X|FR|gr.hvci.vbs.killkey.054|  Pourquoi ces profils : Cinq colonnes identiques a DELETE parce que le
+::X|FR|gr.hvci.vbs.killkey.055|                         bon etat est « laisser Windows decider » sur
+::X|FR|gr.hvci.vbs.killkey.056|                         toutes les machines, profil WINDOWS compris, ou
+::X|FR|gr.hvci.vbs.killkey.057|                         l absence EST l etat d origine. Si un pilote dont
+::X|FR|gr.hvci.vbs.killkey.058|                         vous avez besoin bloque reellement HVCI, Windows
+::X|FR|gr.hvci.vbs.killkey.059|                         refusera de l activer tout seul et aucun forcage
+::X|FR|gr.hvci.vbs.killkey.060|                         n est necessaire.
+::X|FR|gr.hvci.vbs.killkey.061|
+::X|FR|gr.hvci.vbs.killkey.062|  Non verifie (en)  : Whether these values ship absent or present as 1
+::X|FR|gr.hvci.vbs.killkey.063|                      depends on the image: machines that ship with Memory
+::X|FR|gr.hvci.vbs.killkey.064|                      Integrity enabled can carry Enabled=1 placed there
+::X|FR|gr.hvci.vbs.killkey.065|                      by the OEM or by policy. How Windows detects
+::X|FR|gr.hvci.vbs.killkey.066|                      "explicitly disabled" for the automatic rollout is
+::X|FR|gr.hvci.vbs.killkey.067|                      not documented, so whether the Windows Security
+::X|FR|gr.hvci.vbs.killkey.068|                      toggle alone counts is UNVERIFIED.
+::X|FR|gr.hvci.vbs.killkey.069|
+::X|FR|gr.hvci.vbs.killkey.070|  Cible           : call :killkey "HKLM\SYSTEM\CurrentControlSet\Control\D
+::X|FR|gr.hvci.vbs.killkey.071|                    eviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity"
+::X|FR|gr.hvci.vbs.killkey.072|                    "Enabled" et call :killkey
+::X|FR|gr.hvci.vbs.killkey.073|                    "HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard"
+::X|FR|gr.hvci.vbs.killkey.074|                    "EnableVirtualizationBasedSecurity" (dans
+::X|FR|gr.hvci.vbs.killkey.075|                    :gaming_restore, et la meme paire dans
+::X|FR|gr.hvci.vbs.killkey.076|                    :reassert_defaults)
 ::
 :: ---- rad.mmcss.scheduler (repair) -------------------------------
 ::P|rad.mmcss.scheduler|20/10/2|20/10/2|20/10/2|20/10/2|20/10/2|
@@ -32485,166 +32962,192 @@ goto :eof
 :: ---- cl.wupdate.download (cleanup) -------------------------------
 ::P|cl.wupdate.download|DELETE|DELETE|DELETE|DELETE|KEEP|
 ::T|EN|cl.wupdate.download.001|WINDOWS UPDATE DOWNLOAD CACHE
-::T|EN|cl.wupdate.download.002|Empties the folder where Windows Update stores packages it has already downloaded, typically freeing a few hundred MB to several GB, at the cost of re-downloading anything that was not yet installed.
+::T|EN|cl.wupdate.download.002|Empties the folder where Windows Update stores packages it has already downloaded, typically freeing a few hundred MB to several GB, at the cost of re-downloading anything that was not yet installed; it is left alone while an update waits for its restart.
 ::T|FR|cl.wupdate.download.001|CACHE DE TÉLÉCHARGEMENT DE WINDOWS UPDATE
-::T|FR|cl.wupdate.download.002|Vide le dossier où Windows Update stocke les paquets déjà téléchargés, libérant en général de quelques centaines de Mo à plusieurs Go, au prix d un retéléchargement de ce qui n était pas encore installé.
+::T|FR|cl.wupdate.download.002|Vide le dossier où Windows Update stocke les paquets déjà téléchargés, libérant en général de quelques centaines de Mo à plusieurs Go, au prix d un retéléchargement de ce qui n était pas encore installé ; il n est pas touché tant qu une mise à jour attend son redémarrage.
 ::X|EN|cl.wupdate.download.001|  What it is      : C:\Windows\SoftwareDistribution\Download is where
 ::X|EN|cl.wupdate.download.002|                    Windows Update parks the update packages it has
 ::X|EN|cl.wupdate.download.003|                    downloaded, before and after installing them. OPTY
 ::X|EN|cl.wupdate.download.004|                    stops the wuauserv service, empties that folder and
-::X|EN|cl.wupdate.download.005|                    starts the service again.
-::X|EN|cl.wupdate.download.006|
-::X|EN|cl.wupdate.download.007|  Actual effect   : Three lines: net stop wuauserv, del /S /F /Q on the
-::X|EN|cl.wupdate.download.008|                    folder contents, net start wuauserv. Only the
-::X|EN|cl.wupdate.download.009|                    downloaded payloads go. The service start type is not
-::X|EN|cl.wupdate.download.010|                    changed, no update is uninstalled and nothing in your
-::X|EN|cl.wupdate.download.011|                    update history is touched. Two honest caveats about
-::X|EN|cl.wupdate.download.012|                    what actually happens. First, del removes files but
-::X|EN|cl.wupdate.download.013|                    not folders, so the directory tree is still there
-::X|EN|cl.wupdate.download.014|                    afterwards, just empty. Second, anything still held
-::X|EN|cl.wupdate.download.015|                    open - by a BITS transfer in flight, or by the service
-::X|EN|cl.wupdate.download.016|                    if net stop did not fully take - simply fails to
-::X|EN|cl.wupdate.download.017|                    delete and stays, and because the del line in
-::X|EN|cl.wupdate.download.018|                    :dl_wu_go has no output redirection you will see the
-::X|EN|cl.wupdate.download.019|                    access-denied lines scroll past on the console.
-::X|EN|cl.wupdate.download.020|                    Nothing is force-unlocked.
-::X|EN|cl.wupdate.download.021|
-::X|EN|cl.wupdate.download.022|  Gain            : Reclaims disk space, commonly 500 MB to several GB on
-::X|EN|cl.wupdate.download.023|                    a machine that has taken a feature update, and a
-::X|EN|cl.wupdate.download.024|                    couple of hundred MB on one that has only seen monthly
-::X|EN|cl.wupdate.download.025|                    cumulative updates. It is also the standard first fix
-::X|EN|cl.wupdate.download.026|                    for an update stuck at a percentage or failing with
-::X|EN|cl.wupdate.download.027|                    the same error every time. No speed benefit
-::X|EN|cl.wupdate.download.028|                    whatsoever.
-::X|EN|cl.wupdate.download.029|
-::X|EN|cl.wupdate.download.030|  Cost            : An update that was downloaded but not yet installed is
-::X|EN|cl.wupdate.download.031|                    downloaded again on the next scan. That is bandwidth,
-::X|EN|cl.wupdate.download.032|                    not breakage - typically a few hundred MB, up to
-::X|EN|cl.wupdate.download.033|                    several GB if a feature update was staged. Windows
-::X|EN|cl.wupdate.download.034|                    also prunes this folder on its own after roughly ten
-::X|EN|cl.wupdate.download.035|                    days, so on a well-behaved machine this is a shortcut
-::X|EN|cl.wupdate.download.036|                    rather than a necessity. Nothing user-owned is in that
-::X|EN|cl.wupdate.download.037|                    folder.
-::X|EN|cl.wupdate.download.038|
-::X|EN|cl.wupdate.download.039|  Windows default : Not applicable. It is a regenerable cache that Windows
-::X|EN|cl.wupdate.download.040|                    manages and prunes on its own schedule.
-::X|EN|cl.wupdate.download.041|
-::X|EN|cl.wupdate.download.042|  Possible values:
-::X|EN|cl.wupdate.download.043|    DELETE               : Stop wuauserv, empty the Download folder, start
-::X|EN|cl.wupdate.download.044|                           wuauserv again. Nothing is uninstalled and no
-::X|EN|cl.wupdate.download.045|                           update history is lost; only the downloaded
-::X|EN|cl.wupdate.download.046|                           packages go, and they are fetched again if
-::X|EN|cl.wupdate.download.047|                           still needed.
-::X|EN|cl.wupdate.download.048|    KEEP                 : Leave the folder alone. Windows prunes it by
-::X|EN|cl.wupdate.download.049|                           itself after roughly ten days, so on a healthy
-::X|EN|cl.wupdate.download.050|                           machine the only thing you lose is the space in
-::X|EN|cl.wupdate.download.051|                           the meantime.
-::X|EN|cl.wupdate.download.052|    ASK                  : Not used. The only bad moment is a large update
-::X|EN|cl.wupdate.download.053|                           mid-download on a slow or metered link, and
-::X|EN|cl.wupdate.download.054|                           that is a matter of timing rather than a
-::X|EN|cl.wupdate.download.055|                           decision a profile has to arbitrate.
-::X|EN|cl.wupdate.download.056|
-::X|EN|cl.wupdate.download.057|  Why these profiles : Four DELETE and one KEEP. The four are identical
-::X|EN|cl.wupdate.download.058|                       because a re-download costs the same everywhere and
-::X|EN|cl.wupdate.download.059|                       no machine role changes it - the one real variable,
-::X|EN|cl.wupdate.download.060|                       a metered or slow connection, belongs to the
-::X|EN|cl.wupdate.download.061|                       network rather than to the profile, and it is
-::X|EN|cl.wupdate.download.062|                       called out in the cost instead of being faked into
-::X|EN|cl.wupdate.download.063|                       a column. WINDOWS is KEEP because letting the
-::X|EN|cl.wupdate.download.064|                       folder age out by itself really is the shipped
-::X|EN|cl.wupdate.download.065|                       behaviour.
-::X|EN|cl.wupdate.download.066|
-::X|EN|cl.wupdate.download.067|  Known problems  : The path is hardcoded as C:\Windows rather than
-::X|EN|cl.wupdate.download.068|                    %WINDIR%. Harmless on virtually every machine, wrong
-::X|EN|cl.wupdate.download.069|                    on one where Windows is not on C:. The same line has
-::X|EN|cl.wupdate.download.070|                    no >nul redirection, unlike almost every other delete
-::X|EN|cl.wupdate.download.071|                    in the file, so its errors are printed rather than
-::X|EN|cl.wupdate.download.072|                    logged.
-::X|EN|cl.wupdate.download.073|
-::X|EN|cl.wupdate.download.074|  Target          : C:\Windows\SoftwareDistribution\Download\* - net stop
-::X|EN|cl.wupdate.download.075|                    wuauserv, del /S /F /Q, then net start wuauserv, all
-::X|EN|cl.wupdate.download.076|                    in :dl_wu_go (part of the :delete cascade).
+::X|EN|cl.wupdate.download.005|                    starts the service again - unless an update is
+::X|EN|cl.wupdate.download.006|                    waiting for its restart, in which case the folder is
+::X|EN|cl.wupdate.download.007|                    kept.
+::X|EN|cl.wupdate.download.008|
+::X|EN|cl.wupdate.download.009|  Actual effect   : First call :rebootpending: when WindowsUpdate\Auto
+::X|EN|cl.wupdate.download.010|                    Update\RebootRequired or Component Based
+::X|EN|cl.wupdate.download.011|                    Servicing\RebootPending is present, the step prints
+::X|EN|cl.wupdate.download.012|                    "Windows Update cache kept - an update is waiting for a
+::X|EN|cl.wupdate.download.013|                    restart" and deletes nothing. Both auto modes run
+::X|EN|cl.wupdate.download.014|                    usoclient scaninstallwait just before this step, so
+::X|EN|cl.wupdate.download.015|                    without that check the files it had just staged were
+::X|EN|cl.wupdate.download.016|                    deleted and fetched again, or the pending install
+::X|EN|cl.wupdate.download.017|                    broke. Otherwise three lines: net stop wuauserv,
+::X|EN|cl.wupdate.download.018|                    del /S /F /Q on the folder contents, net start
+::X|EN|cl.wupdate.download.019|                    wuauserv. Only the
+::X|EN|cl.wupdate.download.020|                    downloaded payloads go. The service start type is not
+::X|EN|cl.wupdate.download.021|                    changed, no update is uninstalled and nothing in your
+::X|EN|cl.wupdate.download.022|                    update history is touched. Two honest caveats about
+::X|EN|cl.wupdate.download.023|                    what actually happens. First, del removes files but
+::X|EN|cl.wupdate.download.024|                    not folders, so the directory tree is still there
+::X|EN|cl.wupdate.download.025|                    afterwards, just empty. Second, anything still held
+::X|EN|cl.wupdate.download.026|                    open - by a BITS transfer in flight, or by the service
+::X|EN|cl.wupdate.download.027|                    if net stop did not fully take - simply fails to
+::X|EN|cl.wupdate.download.028|                    delete and stays, and because the del line in
+::X|EN|cl.wupdate.download.029|                    :dl_wu_go has no output redirection you will see the
+::X|EN|cl.wupdate.download.030|                    access-denied lines scroll past on the console.
+::X|EN|cl.wupdate.download.031|                    Nothing is force-unlocked.
+::X|EN|cl.wupdate.download.032|
+::X|EN|cl.wupdate.download.033|  Gain            : Reclaims disk space, commonly 500 MB to several GB on
+::X|EN|cl.wupdate.download.034|                    a machine that has taken a feature update, and a
+::X|EN|cl.wupdate.download.035|                    couple of hundred MB on one that has only seen monthly
+::X|EN|cl.wupdate.download.036|                    cumulative updates. It is also the standard first fix
+::X|EN|cl.wupdate.download.037|                    for an update stuck at a percentage or failing with
+::X|EN|cl.wupdate.download.038|                    the same error every time. No speed benefit
+::X|EN|cl.wupdate.download.039|                    whatsoever.
+::X|EN|cl.wupdate.download.040|
+::X|EN|cl.wupdate.download.041|  Cost            : An update that was downloaded but not yet installed is
+::X|EN|cl.wupdate.download.042|                    downloaded again on the next scan. That is bandwidth,
+::X|EN|cl.wupdate.download.043|                    not breakage - typically a few hundred MB, up to
+::X|EN|cl.wupdate.download.044|                    several GB if a feature update was staged. Windows
+::X|EN|cl.wupdate.download.045|                    also prunes this folder on its own after roughly ten
+::X|EN|cl.wupdate.download.046|                    days, so on a well-behaved machine this is a shortcut
+::X|EN|cl.wupdate.download.047|                    rather than a necessity. Nothing user-owned is in that
+::X|EN|cl.wupdate.download.048|                    folder.
+::X|EN|cl.wupdate.download.049|
+::X|EN|cl.wupdate.download.050|  Windows default : Not applicable. It is a regenerable cache that Windows
+::X|EN|cl.wupdate.download.051|                    manages and prunes on its own schedule.
+::X|EN|cl.wupdate.download.052|
+::X|EN|cl.wupdate.download.053|  Possible values:
+::X|EN|cl.wupdate.download.054|    DELETE               : Stop wuauserv, empty the Download folder, start
+::X|EN|cl.wupdate.download.055|                           wuauserv again - skipped while a restart is
+::X|EN|cl.wupdate.download.056|                           pending. Nothing is uninstalled and no
+::X|EN|cl.wupdate.download.057|                           update history is lost; only the downloaded
+::X|EN|cl.wupdate.download.058|                           packages go, and they are fetched again if
+::X|EN|cl.wupdate.download.059|                           still needed.
+::X|EN|cl.wupdate.download.060|    KEEP                 : Leave the folder alone. Windows prunes it by
+::X|EN|cl.wupdate.download.061|                           itself after roughly ten days, so on a healthy
+::X|EN|cl.wupdate.download.062|                           machine the only thing you lose is the space in
+::X|EN|cl.wupdate.download.063|                           the meantime.
+::X|EN|cl.wupdate.download.064|    ASK                  : Not used. The only bad moment is a large update
+::X|EN|cl.wupdate.download.065|                           mid-download on a slow or metered link, and
+::X|EN|cl.wupdate.download.066|                           that is a matter of timing rather than a
+::X|EN|cl.wupdate.download.067|                           decision a profile has to arbitrate.
+::X|EN|cl.wupdate.download.068|
+::X|EN|cl.wupdate.download.069|  Why these profiles : Four DELETE and one KEEP. The four are identical
+::X|EN|cl.wupdate.download.070|                       because a re-download costs the same everywhere and
+::X|EN|cl.wupdate.download.071|                       no machine role changes it - the one real variable,
+::X|EN|cl.wupdate.download.072|                       a metered or slow connection, belongs to the
+::X|EN|cl.wupdate.download.073|                       network rather than to the profile, and it is
+::X|EN|cl.wupdate.download.074|                       called out in the cost instead of being faked into
+::X|EN|cl.wupdate.download.075|                       a column. WINDOWS is KEEP because letting the
+::X|EN|cl.wupdate.download.076|                       folder age out by itself really is the shipped
+::X|EN|cl.wupdate.download.077|                       behaviour.
+::X|EN|cl.wupdate.download.078|
+::X|EN|cl.wupdate.download.079|  Known problems  : The path is hardcoded as C:\Windows rather than
+::X|EN|cl.wupdate.download.080|                    %WINDIR%. Harmless on virtually every machine, wrong
+::X|EN|cl.wupdate.download.081|                    on one where Windows is not on C:. The same line has
+::X|EN|cl.wupdate.download.082|                    no >nul redirection, unlike almost every other delete
+::X|EN|cl.wupdate.download.083|                    in the file, so its errors are printed rather than
+::X|EN|cl.wupdate.download.084|                    logged.
+::X|EN|cl.wupdate.download.085|
+::X|EN|cl.wupdate.download.086|  Target          : C:\Windows\SoftwareDistribution\Download\* - call
+::X|EN|cl.wupdate.download.087|                    :rebootpending (skip to :dl_drives if REBOOTPEND), net
+::X|EN|cl.wupdate.download.088|                    stop wuauserv, del /S /F /Q, then net start wuauserv,
+::X|EN|cl.wupdate.download.089|                    all in :dl_wu_go (part of the :delete cascade).
 ::X|FR|cl.wupdate.download.001|  Ce que c est    : C:\Windows\SoftwareDistribution\Download est l endroit
 ::X|FR|cl.wupdate.download.002|                    où Windows Update dépose les paquets de mise à jour
 ::X|FR|cl.wupdate.download.003|                    téléchargés, avant et après leur installation. OPTY
 ::X|FR|cl.wupdate.download.004|                    arrête le service wuauserv, vide ce dossier, puis
-::X|FR|cl.wupdate.download.005|                    relance le service.
-::X|FR|cl.wupdate.download.006|
-::X|FR|cl.wupdate.download.007|  Effet reel      : Trois lignes : net stop wuauserv, del /S /F /Q sur le
-::X|FR|cl.wupdate.download.008|                    contenu du dossier, net start wuauserv. Seuls les
-::X|FR|cl.wupdate.download.009|                    paquets téléchargés partent. Le type de démarrage du
-::X|FR|cl.wupdate.download.010|                    service n est pas modifié, aucune mise à jour n est
-::X|FR|cl.wupdate.download.011|                    désinstallée et l historique des mises à jour n est
-::X|FR|cl.wupdate.download.012|                    pas touché. Deux réserves honnêtes sur ce qui se passe
-::X|FR|cl.wupdate.download.013|                    réellement. D abord, del supprime les fichiers mais
-::X|FR|cl.wupdate.download.014|                    pas les dossiers : l arborescence reste en place,
-::X|FR|cl.wupdate.download.015|                    vide. Ensuite, tout ce qui est encore ouvert - un
-::X|FR|cl.wupdate.download.016|                    transfert BITS en cours, ou le service si le net stop
-::X|FR|cl.wupdate.download.017|                    n a pas complètement abouti - échoue simplement à être
-::X|FR|cl.wupdate.download.018|                    supprimé et reste, et comme la ligne del de :dl_wu_go
-::X|FR|cl.wupdate.download.019|                    n a aucune redirection de sortie, vous verrez défiler les
-::X|FR|cl.wupdate.download.020|                    messages d accès refusé dans la console. Rien n est
-::X|FR|cl.wupdate.download.021|                    déverrouillé de force.
-::X|FR|cl.wupdate.download.022|
-::X|FR|cl.wupdate.download.023|  Gain            : Récupère de la place, souvent 500 Mo à plusieurs Go
-::X|FR|cl.wupdate.download.024|                    sur une machine ayant reçu une mise à jour de
-::X|FR|cl.wupdate.download.025|                    fonctionnalité, et quelques centaines de Mo sur une
-::X|FR|cl.wupdate.download.026|                    machine qui n a connu que les cumulatives mensuelles.
-::X|FR|cl.wupdate.download.027|                    C est aussi le premier remède classique quand une mise
-::X|FR|cl.wupdate.download.028|                    à jour reste bloquée à un pourcentage ou échoue
-::X|FR|cl.wupdate.download.029|                    toujours de la même façon. Aucun gain de vitesse,
-::X|FR|cl.wupdate.download.030|                    d aucune sorte.
-::X|FR|cl.wupdate.download.031|
-::X|FR|cl.wupdate.download.032|  Cout            : Une mise à jour téléchargée mais pas encore installée
-::X|FR|cl.wupdate.download.033|                    sera retéléchargée à la prochaine analyse. C est de la
-::X|FR|cl.wupdate.download.034|                    bande passante, pas une casse : quelques centaines de
-::X|FR|cl.wupdate.download.035|                    Mo en général, jusqu à plusieurs Go si une mise à jour
-::X|FR|cl.wupdate.download.036|                    de fonctionnalité était préparée. Windows purge par
-::X|FR|cl.wupdate.download.037|                    ailleurs ce dossier tout seul au bout d une dizaine de
-::X|FR|cl.wupdate.download.038|                    jours, donc sur une machine bien portante on ne fait
-::X|FR|cl.wupdate.download.039|                    qu accélérer les choses. Rien de ce qui vous
-::X|FR|cl.wupdate.download.040|                    appartient ne se trouve dans ce dossier.
+::X|FR|cl.wupdate.download.005|                    relance le service - sauf si une mise à jour attend
+::X|FR|cl.wupdate.download.006|                    son redémarrage : le dossier est alors conservé.
+::X|FR|cl.wupdate.download.007|
+::X|FR|cl.wupdate.download.008|  Effet reel      : D abord call :rebootpending : si WindowsUpdate\Auto
+::X|FR|cl.wupdate.download.009|                    Update\RebootRequired ou Component Based
+::X|FR|cl.wupdate.download.010|                    Servicing\RebootPending existe, l étape affiche
+::X|FR|cl.wupdate.download.011|                    « Windows Update cache kept - an update is waiting for
+::X|FR|cl.wupdate.download.012|                    a restart » et ne supprime rien. Les deux modes auto
+::X|FR|cl.wupdate.download.013|                    lancent usoclient scaninstallwait juste avant cette
+::X|FR|cl.wupdate.download.014|                    étape : sans ce test, les fichiers qu il venait de
+::X|FR|cl.wupdate.download.015|                    préparer étaient supprimés puis retéléchargés, ou
+::X|FR|cl.wupdate.download.016|                    l installation en attente cassait. Sinon, trois
+::X|FR|cl.wupdate.download.017|                    lignes : net stop wuauserv, del /S /F /Q sur le
+::X|FR|cl.wupdate.download.018|                    contenu du dossier, net start wuauserv. Seuls les
+::X|FR|cl.wupdate.download.019|                    paquets téléchargés partent. Le type de démarrage du
+::X|FR|cl.wupdate.download.020|                    service n est pas modifié, aucune mise à jour n est
+::X|FR|cl.wupdate.download.021|                    désinstallée et l historique des mises à jour n est
+::X|FR|cl.wupdate.download.022|                    pas touché. Deux réserves honnêtes sur ce qui se passe
+::X|FR|cl.wupdate.download.023|                    réellement. D abord, del supprime les fichiers mais
+::X|FR|cl.wupdate.download.024|                    pas les dossiers : l arborescence reste en place,
+::X|FR|cl.wupdate.download.025|                    vide. Ensuite, tout ce qui est encore ouvert - un
+::X|FR|cl.wupdate.download.026|                    transfert BITS en cours, ou le service si le net stop
+::X|FR|cl.wupdate.download.027|                    n a pas complètement abouti - échoue simplement à être
+::X|FR|cl.wupdate.download.028|                    supprimé et reste, et comme la ligne del de :dl_wu_go
+::X|FR|cl.wupdate.download.029|                    n a aucune redirection de sortie, vous verrez défiler les
+::X|FR|cl.wupdate.download.030|                    messages d accès refusé dans la console. Rien n est
+::X|FR|cl.wupdate.download.031|                    déverrouillé de force.
+::X|FR|cl.wupdate.download.032|
+::X|FR|cl.wupdate.download.033|  Gain            : Récupère de la place, souvent 500 Mo à plusieurs Go
+::X|FR|cl.wupdate.download.034|                    sur une machine ayant reçu une mise à jour de
+::X|FR|cl.wupdate.download.035|                    fonctionnalité, et quelques centaines de Mo sur une
+::X|FR|cl.wupdate.download.036|                    machine qui n a connu que les cumulatives mensuelles.
+::X|FR|cl.wupdate.download.037|                    C est aussi le premier remède classique quand une mise
+::X|FR|cl.wupdate.download.038|                    à jour reste bloquée à un pourcentage ou échoue
+::X|FR|cl.wupdate.download.039|                    toujours de la même façon. Aucun gain de vitesse,
+::X|FR|cl.wupdate.download.040|                    d aucune sorte.
 ::X|FR|cl.wupdate.download.041|
-::X|FR|cl.wupdate.download.042|  Defaut Windows  : Sans objet. C est un cache régénérable, géré et purgé
-::X|FR|cl.wupdate.download.043|                    par Windows selon sa propre planification.
-::X|FR|cl.wupdate.download.044|
-::X|FR|cl.wupdate.download.045|  Valeurs possibles :
-::X|FR|cl.wupdate.download.046|    DELETE               : Arrêter wuauserv, vider le dossier Download,
-::X|FR|cl.wupdate.download.047|                           relancer wuauserv. Rien n est désinstallé et
-::X|FR|cl.wupdate.download.048|                           aucun historique de mise à jour n est perdu ;
-::X|FR|cl.wupdate.download.049|                           seuls les paquets téléchargés partent, et ils
-::X|FR|cl.wupdate.download.050|                           sont récupérés à nouveau s ils sont encore
-::X|FR|cl.wupdate.download.051|                           nécessaires.
-::X|FR|cl.wupdate.download.052|    KEEP                 : Laisser le dossier tranquille. Windows le purge
-::X|FR|cl.wupdate.download.053|                           tout seul au bout d une dizaine de jours : sur
-::X|FR|cl.wupdate.download.054|                           une machine saine, vous n y perdez que la place
-::X|FR|cl.wupdate.download.055|                           pendant ce laps de temps.
-::X|FR|cl.wupdate.download.056|    ASK                  : Non utilisé. Le seul mauvais moment, c est une
-::X|FR|cl.wupdate.download.057|                           grosse mise à jour en cours de téléchargement
-::X|FR|cl.wupdate.download.058|                           sur une liaison lente ou limitée, ce qui relève
-::X|FR|cl.wupdate.download.059|                           du calendrier et non d un arbitrage de profil.
-::X|FR|cl.wupdate.download.060|
-::X|FR|cl.wupdate.download.061|  Pourquoi ces profils : Quatre DELETE et un KEEP. Les quatre sont
-::X|FR|cl.wupdate.download.062|                         identiques parce qu un retéléchargement coûte la
-::X|FR|cl.wupdate.download.063|                         même chose partout et qu aucun usage de la
-::X|FR|cl.wupdate.download.064|                         machine ne change cela : la seule vraie variable,
-::X|FR|cl.wupdate.download.065|                         une connexion lente ou limitée, relève du réseau
-::X|FR|cl.wupdate.download.066|                         et non du profil, et elle est signalée dans le
-::X|FR|cl.wupdate.download.067|                         coût plutôt que déguisée en colonne. WINDOWS est
-::X|FR|cl.wupdate.download.068|                         à KEEP parce que laisser le dossier vieillir tout
-::X|FR|cl.wupdate.download.069|                         seul est réellement le comportement d origine.
-::X|FR|cl.wupdate.download.070|
-::X|FR|cl.wupdate.download.071|  Problemes connus : Le chemin est écrit en dur C:\Windows au lieu de
-::X|FR|cl.wupdate.download.072|                     %WINDIR%. Sans conséquence sur la quasi-totalité des
-::X|FR|cl.wupdate.download.073|                     machines, faux sur une machine où Windows n est pas
-::X|FR|cl.wupdate.download.074|                     sur C:. La même ligne n a aucune redirection >nul,
-::X|FR|cl.wupdate.download.075|                     contrairement à presque toutes les autres
-::X|FR|cl.wupdate.download.076|                     suppressions du fichier : ses erreurs sont donc
-::X|FR|cl.wupdate.download.077|                     affichées au lieu d être journalisées.
-::X|FR|cl.wupdate.download.078|
-::X|FR|cl.wupdate.download.079|  Cible           : C:\Windows\SoftwareDistribution\Download\* - net stop
-::X|FR|cl.wupdate.download.080|                    wuauserv, del /S /F /Q, puis net start wuauserv, le
-::X|FR|cl.wupdate.download.081|                    tout dans :dl_wu_go (partie de la cascade :delete).
+::X|FR|cl.wupdate.download.042|  Cout            : Une mise à jour téléchargée mais pas encore installée
+::X|FR|cl.wupdate.download.043|                    sera retéléchargée à la prochaine analyse. C est de la
+::X|FR|cl.wupdate.download.044|                    bande passante, pas une casse : quelques centaines de
+::X|FR|cl.wupdate.download.045|                    Mo en général, jusqu à plusieurs Go si une mise à jour
+::X|FR|cl.wupdate.download.046|                    de fonctionnalité était préparée. Windows purge par
+::X|FR|cl.wupdate.download.047|                    ailleurs ce dossier tout seul au bout d une dizaine de
+::X|FR|cl.wupdate.download.048|                    jours, donc sur une machine bien portante on ne fait
+::X|FR|cl.wupdate.download.049|                    qu accélérer les choses. Rien de ce qui vous
+::X|FR|cl.wupdate.download.050|                    appartient ne se trouve dans ce dossier.
+::X|FR|cl.wupdate.download.051|
+::X|FR|cl.wupdate.download.052|  Defaut Windows  : Sans objet. C est un cache régénérable, géré et purgé
+::X|FR|cl.wupdate.download.053|                    par Windows selon sa propre planification.
+::X|FR|cl.wupdate.download.054|
+::X|FR|cl.wupdate.download.055|  Valeurs possibles :
+::X|FR|cl.wupdate.download.056|    DELETE               : Arrêter wuauserv, vider le dossier Download,
+::X|FR|cl.wupdate.download.057|                           relancer wuauserv - sauté si un redémarrage est
+::X|FR|cl.wupdate.download.058|                           en attente. Rien n est désinstallé et
+::X|FR|cl.wupdate.download.059|                           aucun historique de mise à jour n est perdu ;
+::X|FR|cl.wupdate.download.060|                           seuls les paquets téléchargés partent, et ils
+::X|FR|cl.wupdate.download.061|                           sont récupérés à nouveau s ils sont encore
+::X|FR|cl.wupdate.download.062|                           nécessaires.
+::X|FR|cl.wupdate.download.063|    KEEP                 : Laisser le dossier tranquille. Windows le purge
+::X|FR|cl.wupdate.download.064|                           tout seul au bout d une dizaine de jours : sur
+::X|FR|cl.wupdate.download.065|                           une machine saine, vous n y perdez que la place
+::X|FR|cl.wupdate.download.066|                           pendant ce laps de temps.
+::X|FR|cl.wupdate.download.067|    ASK                  : Non utilisé. Le seul mauvais moment, c est une
+::X|FR|cl.wupdate.download.068|                           grosse mise à jour en cours de téléchargement
+::X|FR|cl.wupdate.download.069|                           sur une liaison lente ou limitée, ce qui relève
+::X|FR|cl.wupdate.download.070|                           du calendrier et non d un arbitrage de profil.
+::X|FR|cl.wupdate.download.071|
+::X|FR|cl.wupdate.download.072|  Pourquoi ces profils : Quatre DELETE et un KEEP. Les quatre sont
+::X|FR|cl.wupdate.download.073|                         identiques parce qu un retéléchargement coûte la
+::X|FR|cl.wupdate.download.074|                         même chose partout et qu aucun usage de la
+::X|FR|cl.wupdate.download.075|                         machine ne change cela : la seule vraie variable,
+::X|FR|cl.wupdate.download.076|                         une connexion lente ou limitée, relève du réseau
+::X|FR|cl.wupdate.download.077|                         et non du profil, et elle est signalée dans le
+::X|FR|cl.wupdate.download.078|                         coût plutôt que déguisée en colonne. WINDOWS est
+::X|FR|cl.wupdate.download.079|                         à KEEP parce que laisser le dossier vieillir tout
+::X|FR|cl.wupdate.download.080|                         seul est réellement le comportement d origine.
+::X|FR|cl.wupdate.download.081|
+::X|FR|cl.wupdate.download.082|  Problemes connus : Le chemin est écrit en dur C:\Windows au lieu de
+::X|FR|cl.wupdate.download.083|                     %WINDIR%. Sans conséquence sur la quasi-totalité des
+::X|FR|cl.wupdate.download.084|                     machines, faux sur une machine où Windows n est pas
+::X|FR|cl.wupdate.download.085|                     sur C:. La même ligne n a aucune redirection >nul,
+::X|FR|cl.wupdate.download.086|                     contrairement à presque toutes les autres
+::X|FR|cl.wupdate.download.087|                     suppressions du fichier : ses erreurs sont donc
+::X|FR|cl.wupdate.download.088|                     affichées au lieu d être journalisées.
+::X|FR|cl.wupdate.download.089|
+::X|FR|cl.wupdate.download.090|  Cible           : C:\Windows\SoftwareDistribution\Download\* - call
+::X|FR|cl.wupdate.download.091|                    :rebootpending (saut vers :dl_drives si REBOOTPEND),
+::X|FR|cl.wupdate.download.092|                    net stop wuauserv, del /S /F /Q, puis net start
+::X|FR|cl.wupdate.download.093|                    wuauserv, le tout dans :dl_wu_go (partie de la
+::X|FR|cl.wupdate.download.094|                    cascade :delete).
 ::
 :: ---- cl.drivesweep.fixed (risky) -------------------------------
 ::P|cl.drivesweep.fixed|ASK|ASK|ASK|ASK|KEEP|
@@ -32658,135 +33161,154 @@ goto :eof
 ::X|EN|cl.drivesweep.fixed.004|                    clears DeliveryOptimization, WUDownloadCache and
 ::X|EN|cl.drivesweep.fixed.005|                    .cache at the drive root, and removes the leftover
 ::X|EN|cl.drivesweep.fixed.006|                    staging folders $WINDOWS.~BT, $Windows.~WS and
-::X|EN|cl.drivesweep.fixed.007|                    $WinREAgent. On the system drive only, it also empties
-::X|EN|cl.drivesweep.fixed.008|                    the live Delivery Optimization store.
-::X|EN|cl.drivesweep.fixed.009|
-::X|EN|cl.drivesweep.fixed.010|  Actual effect   : Drive letters are collected by comparing each letter's
-::X|EN|cl.drivesweep.fixed.011|                    fsutil drive type against the type of %SystemDrive%,
-::X|EN|cl.drivesweep.fixed.012|                    so the comparison survives a localised Windows.
-::X|EN|cl.drivesweep.fixed.013|                    Network drives are skipped on purpose, because a dead
-::X|EN|cl.drivesweep.fixed.014|                    SMB mapping costs a 30-second timeout per access and
-::X|EN|cl.drivesweep.fixed.015|                    would stall the run. Then per drive: del /F /S /Q on
-::X|EN|cl.drivesweep.fixed.016|                    <drive>:\DeliveryOptimization and
-::X|EN|cl.drivesweep.fixed.017|                    <drive>:\WUDownloadCache. On the system drive only,
-::X|EN|cl.drivesweep.fixed.018|                    DoSvc is stopped, %ProgramData%\Microsoft\Network\
-::X|EN|cl.drivesweep.fixed.019|                    Downloader is emptied, and DoSvc is started again
-::X|EN|cl.drivesweep.fixed.020|                    straight after (it is the primary Windows Update
-::X|EN|cl.drivesweep.fixed.021|                    downloader, so it is never left stopped). Then
-::X|EN|cl.drivesweep.fixed.022|                    <drive>:\.cache, and finally rd /S /Q on the three
-::X|EN|cl.drivesweep.fixed.023|                    staging folders, unconditionally, as soon as each
-::X|EN|cl.drivesweep.fixed.024|                    exists. The .cache path gets a size report first, via
-::X|EN|cl.drivesweep.fixed.025|                    :bigcache, which prints a warning when the folder
-::X|EN|cl.drivesweep.fixed.026|                    exceeds about 2000 MB - read that line carefully,
-::X|EN|cl.drivesweep.fixed.027|                    because it is a warning only. The delete on the next
-::X|EN|cl.drivesweep.fixed.028|                    line happens regardless of the size.
-::X|EN|cl.drivesweep.fixed.029|
-::X|EN|cl.drivesweep.fixed.030|  Gain            : Potentially the biggest space win of a cleanup run:
-::X|EN|cl.drivesweep.fixed.031|                    $WINDOWS.~BT alone is often several GB, and Delivery
-::X|EN|cl.drivesweep.fixed.032|                    Optimization can hold gigabytes of peer-shared update
-::X|EN|cl.drivesweep.fixed.033|                    data. On a 256 GB laptop that has recently taken a
-::X|EN|cl.drivesweep.fixed.034|                    feature update, 5 to 15 GB back is realistic. On a
-::X|EN|cl.drivesweep.fixed.035|                    machine that has not upgraded recently, these paths
-::X|EN|cl.drivesweep.fixed.036|                    are frequently empty and the step frees nothing at all
-::X|EN|cl.drivesweep.fixed.037|                    - do not expect a number just because the step ran.
-::X|EN|cl.drivesweep.fixed.038|
-::X|EN|cl.drivesweep.fixed.039|  Cost            : The two root-level update folders and the Delivery
-::X|EN|cl.drivesweep.fixed.040|                    Optimization store are pure Windows Update payload and
-::X|EN|cl.drivesweep.fixed.041|                    come back on demand. The other cache path is a bare
-::X|EN|cl.drivesweep.fixed.042|                    <drive>:\.cache at the root, matched by name alone. On
-::X|EN|cl.drivesweep.fixed.043|                    a developer machine that is very often a tool cache -
-::X|EN|cl.drivesweep.fixed.044|                    Bazel, Yarn, Cargo, pip, Hugging Face models - and
-::X|EN|cl.drivesweep.fixed.045|                    emptying it means a multi-gigabyte re-download, not a
-::X|EN|cl.drivesweep.fixed.046|                    free cleanup. OPTY cannot tell the two apart; it only
-::X|EN|cl.drivesweep.fixed.047|                    prints the size on the way past. Check whether any of
-::X|EN|cl.drivesweep.fixed.048|                    your drives has a .cache folder at its root before
-::X|EN|cl.drivesweep.fixed.049|                    answering yes, and if one does, decline this step and
-::X|EN|cl.drivesweep.fixed.050|                    empty DeliveryOptimization and WUDownloadCache by
-::X|EN|cl.drivesweep.fixed.051|                    hand. Separately, $WINDOWS.~BT and $Windows.~WS are
-::X|EN|cl.drivesweep.fixed.052|                    part of what Settings, Recovery, Go back needs. If you
-::X|EN|cl.drivesweep.fixed.053|                    upgraded to a new Windows build in the last ten days,
-::X|EN|cl.drivesweep.fixed.054|                    deleting them removes your ability to roll that
-::X|EN|cl.drivesweep.fixed.055|                    upgrade back, exactly like deleting Windows.old. And
-::X|EN|cl.drivesweep.fixed.056|                    there is no check for an upgrade that is already
-::X|EN|cl.drivesweep.fixed.057|                    downloaded and waiting for a reboot: delete these mid-
-::X|EN|cl.drivesweep.fixed.058|                    upgrade and Windows re-downloads the whole feature
-::X|EN|cl.drivesweep.fixed.059|                    update.
-::X|EN|cl.drivesweep.fixed.060|
-::X|EN|cl.drivesweep.fixed.061|  Windows default : Not applicable as a setting. These are caches and
-::X|EN|cl.drivesweep.fixed.062|                    post-upgrade staging folders that Windows abandons and
-::X|EN|cl.drivesweep.fixed.063|                    then removes on its own, roughly ten days after the
-::X|EN|cl.drivesweep.fixed.064|                    upgrade.
-::X|EN|cl.drivesweep.fixed.065|
-::X|EN|cl.drivesweep.fixed.066|  Possible values:
-::X|EN|cl.drivesweep.fixed.067|    DELETE               : Empty the cache paths and remove the three
-::X|EN|cl.drivesweep.fixed.068|                           staging folders on every internal drive. Only
-::X|EN|cl.drivesweep.fixed.069|                           pick this once you have checked that no drive
-::X|EN|cl.drivesweep.fixed.070|                           has a .cache folder at its root and that you
-::X|EN|cl.drivesweep.fixed.071|                           have not upgraded Windows in the last ten days.
-::X|EN|cl.drivesweep.fixed.072|    KEEP                 : Leave every one of those paths alone. Windows
-::X|EN|cl.drivesweep.fixed.073|                           removes $WINDOWS.~BT and $Windows.~WS itself
-::X|EN|cl.drivesweep.fixed.074|                           about ten days after an upgrade, once the
-::X|EN|cl.drivesweep.fixed.075|                           rollback window has closed, and $WinREAgent
-::X|EN|cl.drivesweep.fixed.076|                           once WinRE servicing finishes. Doing nothing
-::X|EN|cl.drivesweep.fixed.077|                           costs you the disk space for those ten days and
-::X|EN|cl.drivesweep.fixed.078|                           nothing else.
-::X|EN|cl.drivesweep.fixed.079|    ASK                  : The only defensible answer for all four real-
-::X|EN|cl.drivesweep.fixed.080|                           machine profiles, and for two independent
-::X|EN|cl.drivesweep.fixed.081|                           reasons. A root-level .cache is matched by name
-::X|EN|cl.drivesweep.fixed.082|                           alone, and on a developer machine that is
-::X|EN|cl.drivesweep.fixed.083|                           routinely a Bazel, Yarn, Cargo, pip or Hugging
-::X|EN|cl.drivesweep.fixed.084|                           Face store - tens of GB of re-download, not
-::X|EN|cl.drivesweep.fixed.085|                           Windows Update payload. And the staging folders
-::X|EN|cl.drivesweep.fixed.086|                           are part of what Settings, Recovery, Go back
-::X|EN|cl.drivesweep.fixed.087|                           needs. Neither depends on what the machine is
-::X|EN|cl.drivesweep.fixed.088|                           for; both depend on facts only you can check.
-::X|EN|cl.drivesweep.fixed.089|
-::X|EN|cl.drivesweep.fixed.090|  Why these profiles : Four ASK and one KEEP. Four identical columns is
-::X|EN|cl.drivesweep.fixed.091|                       the honest outcome here, because both hazards - a
-::X|EN|cl.drivesweep.fixed.092|                       tool cache at the root of a drive, and a rollback
-::X|EN|cl.drivesweep.fixed.093|                       window that may still be open - are facts about
-::X|EN|cl.drivesweep.fixed.094|                       this particular machine's last ten days, not about
-::X|EN|cl.drivesweep.fixed.095|                       whether it plays games or serves Plex. WINDOWS is
-::X|EN|cl.drivesweep.fixed.096|                       KEEP and that is a real answer: Windows genuinely
-::X|EN|cl.drivesweep.fixed.097|                       does clear these folders itself once the rollback
-::X|EN|cl.drivesweep.fixed.098|                       window closes.
-::X|EN|cl.drivesweep.fixed.099|
-::X|EN|cl.drivesweep.fixed.100|  Known problems  : The step is asked (Run / Skip) in manual mode, but it
-::X|EN|cl.drivesweep.fixed.101|                    belongs to clean.delete, which runs unattended in Auto
-::X|EN|cl.drivesweep.fixed.102|                    lite and Auto full: there the unconditional rd /S /Q
-::X|EN|cl.drivesweep.fixed.103|                    on the three staging folders and the delete of
-::X|EN|cl.drivesweep.fixed.104|                    <drive>:\.cache run with no question asked. The
-::X|EN|cl.drivesweep.fixed.105|                    sibling card that documents the staging-folder part of
-::X|EN|cl.drivesweep.fixed.106|                    the same code, helper.drivesweep.upgrade.staging, is
-::X|EN|cl.drivesweep.fixed.107|                    RUN on four profiles - two cards describing one block
-::X|EN|cl.drivesweep.fixed.108|                    with different risk levels. The .cache line also
-::X|EN|cl.drivesweep.fixed.109|                    collides head-on with this project's own standing rule
-::X|EN|cl.drivesweep.fixed.110|                    that OPTY must not clear development caches. Ideally
-::X|EN|cl.drivesweep.fixed.111|                    the code should drop the <drive>:\.cache line entirely
-::X|EN|cl.drivesweep.fixed.112|                    and split the staging-folder removal out of the cache
-::X|EN|cl.drivesweep.fixed.113|                    sweep.
-::X|EN|cl.drivesweep.fixed.114|
-::X|EN|cl.drivesweep.fixed.115|  Unverified      : Whether root-level DeliveryOptimization and
-::X|EN|cl.drivesweep.fixed.116|                    WUDownloadCache folders exist at all on a current
-::X|EN|cl.drivesweep.fixed.117|                    Windows 11 25H2 machine was not verified. The old
-::X|EN|cl.drivesweep.fixed.118|                    <drive>:\ProgramData\...\DeliveryOptimization\Cache
-::X|EN|cl.drivesweep.fixed.119|                    line was removed because that path does not exist on
-::X|EN|cl.drivesweep.fixed.120|                    25H2; the live store is ProgramData\Microsoft\Network\
-::X|EN|cl.drivesweep.fixed.121|                    Downloader, now cleared on the system drive only. The
-::X|EN|cl.drivesweep.fixed.122|                    log says "Delivery Optimization store cleared" when
-::X|EN|cl.drivesweep.fixed.123|                    that part ran; "Swept drive" is written for every
-::X|EN|cl.drivesweep.fixed.124|                    drive whether or not anything was deleted, so check
-::X|EN|cl.drivesweep.fixed.125|                    free space after a run before believing the multi-GB
-::X|EN|cl.drivesweep.fixed.126|                    figure.
-::X|EN|cl.drivesweep.fixed.127|
-::X|EN|cl.drivesweep.fixed.128|  Target          : On every FIXED drive letter:
-::X|EN|cl.drivesweep.fixed.129|                    <d>:\DeliveryOptimization\*, <d>:\WUDownloadCache\*;
-::X|EN|cl.drivesweep.fixed.130|                    on the system drive only, net stop DoSvc, del
-::X|EN|cl.drivesweep.fixed.131|                    %ProgramData%\Microsoft\Network\Downloader\*, sc start
-::X|EN|cl.drivesweep.fixed.132|                    DoSvc; then <d>:\.cache\* (after :bigcache), then
-::X|EN|cl.drivesweep.fixed.133|                    rd /S /Q on <d>:\$WINDOWS.~BT, <d>:\$Windows.~WS and
-::X|EN|cl.drivesweep.fixed.134|                    <d>:\$WinREAgent. Label :drivesweep, called once per
-::X|EN|cl.drivesweep.fixed.135|                    drive from :dl_drives_go.
+::X|EN|cl.drivesweep.fixed.007|                    $WinREAgent unless a restart is pending. On the system
+::X|EN|cl.drivesweep.fixed.008|                    drive only, it also empties the live Delivery
+::X|EN|cl.drivesweep.fixed.009|                    Optimization cache through its own cmdlet.
+::X|EN|cl.drivesweep.fixed.010|
+::X|EN|cl.drivesweep.fixed.011|  Actual effect   : Drive letters are collected by comparing each letter's
+::X|EN|cl.drivesweep.fixed.012|                    fsutil drive type against the type of %SystemDrive%,
+::X|EN|cl.drivesweep.fixed.013|                    so the comparison survives a localised Windows.
+::X|EN|cl.drivesweep.fixed.014|                    Network drives are skipped on purpose, because a dead
+::X|EN|cl.drivesweep.fixed.015|                    SMB mapping costs a 30-second timeout per access and
+::X|EN|cl.drivesweep.fixed.016|                    would stall the run. Then per drive: del /F /S /Q on
+::X|EN|cl.drivesweep.fixed.017|                    <drive>:\DeliveryOptimization and
+::X|EN|cl.drivesweep.fixed.018|                    <drive>:\WUDownloadCache. On the system drive only,
+::X|EN|cl.drivesweep.fixed.019|                    powershell Delete-DeliveryOptimizationCache -Force
+::X|EN|cl.drivesweep.fixed.020|                    empties the Delivery Optimization cache (DoSvc keeps
+::X|EN|cl.drivesweep.fixed.021|                    running; the log says whether the cmdlet succeeded).
+::X|EN|cl.drivesweep.fixed.022|                    Then <drive>:\.cache, and finally rd /S /Q on the three
+::X|EN|cl.drivesweep.fixed.023|                    staging folders as soon as each exists - skipped on
+::X|EN|cl.drivesweep.fixed.024|                    that drive while :rebootpending reports a restart
+::X|EN|cl.drivesweep.fixed.025|                    pending (WindowsUpdate\Auto Update\RebootRequired or
+::X|EN|cl.drivesweep.fixed.026|                    Component Based Servicing\RebootPending present). The
+::X|EN|cl.drivesweep.fixed.027|                    .cache path gets a size report first, via
+::X|EN|cl.drivesweep.fixed.028|                    :bigcache, which prints a warning when the folder
+::X|EN|cl.drivesweep.fixed.029|                    exceeds about 2000 MB - read that line carefully,
+::X|EN|cl.drivesweep.fixed.030|                    because it is a warning only. The delete on the next
+::X|EN|cl.drivesweep.fixed.031|                    line happens regardless of the size.
+::X|EN|cl.drivesweep.fixed.032|
+::X|EN|cl.drivesweep.fixed.033|  Gain            : Potentially the biggest space win of a cleanup run:
+::X|EN|cl.drivesweep.fixed.034|                    $WINDOWS.~BT alone is often several GB, and Delivery
+::X|EN|cl.drivesweep.fixed.035|                    Optimization can hold gigabytes of peer-shared update
+::X|EN|cl.drivesweep.fixed.036|                    data. On a 256 GB laptop that has recently taken a
+::X|EN|cl.drivesweep.fixed.037|                    feature update, 5 to 15 GB back is realistic. On a
+::X|EN|cl.drivesweep.fixed.038|                    machine that has not upgraded recently, these paths
+::X|EN|cl.drivesweep.fixed.039|                    are frequently empty and the step frees nothing at all
+::X|EN|cl.drivesweep.fixed.040|                    - do not expect a number just because the step ran.
+::X|EN|cl.drivesweep.fixed.041|
+::X|EN|cl.drivesweep.fixed.042|  Cost            : The two root-level update folders and the Delivery
+::X|EN|cl.drivesweep.fixed.043|                    Optimization store are pure Windows Update payload and
+::X|EN|cl.drivesweep.fixed.044|                    come back on demand. The other cache path is a bare
+::X|EN|cl.drivesweep.fixed.045|                    <drive>:\.cache at the root, matched by name alone. On
+::X|EN|cl.drivesweep.fixed.046|                    a developer machine that is very often a tool cache -
+::X|EN|cl.drivesweep.fixed.047|                    Bazel, Yarn, Cargo, pip, Hugging Face models - and
+::X|EN|cl.drivesweep.fixed.048|                    emptying it means a multi-gigabyte re-download, not a
+::X|EN|cl.drivesweep.fixed.049|                    free cleanup. OPTY cannot tell the two apart; it only
+::X|EN|cl.drivesweep.fixed.050|                    prints the size on the way past. Check whether any of
+::X|EN|cl.drivesweep.fixed.051|                    your drives has a .cache folder at its root before
+::X|EN|cl.drivesweep.fixed.052|                    answering yes, and if one does, decline this step and
+::X|EN|cl.drivesweep.fixed.053|                    empty DeliveryOptimization and WUDownloadCache by
+::X|EN|cl.drivesweep.fixed.054|                    hand. Separately, $WINDOWS.~BT and $Windows.~WS are
+::X|EN|cl.drivesweep.fixed.055|                    part of what Settings, Recovery, Go back needs. If you
+::X|EN|cl.drivesweep.fixed.056|                    upgraded to a new Windows build in the last ten days,
+::X|EN|cl.drivesweep.fixed.057|                    deleting them removes your ability to roll that
+::X|EN|cl.drivesweep.fixed.058|                    upgrade back, exactly like deleting Windows.old. An
+::X|EN|cl.drivesweep.fixed.059|                    update that is staged and waiting for its restart is
+::X|EN|cl.drivesweep.fixed.060|                    protected: while RebootRequired or RebootPending is
+::X|EN|cl.drivesweep.fixed.061|                    set, the three folders are kept. An upgrade that is
+::X|EN|cl.drivesweep.fixed.062|                    downloaded but has not yet reached that point is not
+::X|EN|cl.drivesweep.fixed.063|                    detected. The Delivery Optimization cache is small by
+::X|EN|cl.drivesweep.fixed.064|                    design - by default DO keeps content at most 3 days and
+::X|EN|cl.drivesweep.fixed.065|                    uses at most 20 percent of the disk (Source: Microsoft
+::X|EN|cl.drivesweep.fixed.066|                    Learn, Delivery Optimization reference, 2026-05-20) -
+::X|EN|cl.drivesweep.fixed.067|                    so emptying it gains little and costs a re-download
+::X|EN|cl.drivesweep.fixed.068|                    from peers or Microsoft.
+::X|EN|cl.drivesweep.fixed.069|
+::X|EN|cl.drivesweep.fixed.070|  Windows default : Not applicable as a setting. These are caches and
+::X|EN|cl.drivesweep.fixed.071|                    post-upgrade staging folders that Windows abandons and
+::X|EN|cl.drivesweep.fixed.072|                    then removes on its own, roughly ten days after the
+::X|EN|cl.drivesweep.fixed.073|                    upgrade.
+::X|EN|cl.drivesweep.fixed.074|
+::X|EN|cl.drivesweep.fixed.075|  Possible values:
+::X|EN|cl.drivesweep.fixed.076|    DELETE               : Empty the cache paths and remove the three
+::X|EN|cl.drivesweep.fixed.077|                           staging folders on every internal drive (the
+::X|EN|cl.drivesweep.fixed.078|                           staging folders stay while a restart is
+::X|EN|cl.drivesweep.fixed.079|                           pending). Only
+::X|EN|cl.drivesweep.fixed.080|                           pick this once you have checked that no drive
+::X|EN|cl.drivesweep.fixed.081|                           has a .cache folder at its root and that you
+::X|EN|cl.drivesweep.fixed.082|                           have not upgraded Windows in the last ten days.
+::X|EN|cl.drivesweep.fixed.083|    KEEP                 : Leave every one of those paths alone. Windows
+::X|EN|cl.drivesweep.fixed.084|                           removes $WINDOWS.~BT and $Windows.~WS itself
+::X|EN|cl.drivesweep.fixed.085|                           about ten days after an upgrade, once the
+::X|EN|cl.drivesweep.fixed.086|                           rollback window has closed, and $WinREAgent
+::X|EN|cl.drivesweep.fixed.087|                           once WinRE servicing finishes. Doing nothing
+::X|EN|cl.drivesweep.fixed.088|                           costs you the disk space for those ten days and
+::X|EN|cl.drivesweep.fixed.089|                           nothing else.
+::X|EN|cl.drivesweep.fixed.090|    ASK                  : The only defensible answer for all four real-
+::X|EN|cl.drivesweep.fixed.091|                           machine profiles, and for two independent
+::X|EN|cl.drivesweep.fixed.092|                           reasons. A root-level .cache is matched by name
+::X|EN|cl.drivesweep.fixed.093|                           alone, and on a developer machine that is
+::X|EN|cl.drivesweep.fixed.094|                           routinely a Bazel, Yarn, Cargo, pip or Hugging
+::X|EN|cl.drivesweep.fixed.095|                           Face store - tens of GB of re-download, not
+::X|EN|cl.drivesweep.fixed.096|                           Windows Update payload. And the staging folders
+::X|EN|cl.drivesweep.fixed.097|                           are part of what Settings, Recovery, Go back
+::X|EN|cl.drivesweep.fixed.098|                           needs. Neither depends on what the machine is
+::X|EN|cl.drivesweep.fixed.099|                           for; both depend on facts only you can check.
+::X|EN|cl.drivesweep.fixed.100|
+::X|EN|cl.drivesweep.fixed.101|  Why these profiles : Four ASK and one KEEP. Four identical columns is
+::X|EN|cl.drivesweep.fixed.102|                       the honest outcome here, because both hazards - a
+::X|EN|cl.drivesweep.fixed.103|                       tool cache at the root of a drive, and a rollback
+::X|EN|cl.drivesweep.fixed.104|                       window that may still be open - are facts about
+::X|EN|cl.drivesweep.fixed.105|                       this particular machine's last ten days, not about
+::X|EN|cl.drivesweep.fixed.106|                       whether it plays games or serves Plex. WINDOWS is
+::X|EN|cl.drivesweep.fixed.107|                       KEEP and that is a real answer: Windows genuinely
+::X|EN|cl.drivesweep.fixed.108|                       does clear these folders itself once the rollback
+::X|EN|cl.drivesweep.fixed.109|                       window closes.
+::X|EN|cl.drivesweep.fixed.110|
+::X|EN|cl.drivesweep.fixed.111|  Known problems  : The step is asked (Run / Skip) in manual mode, but it
+::X|EN|cl.drivesweep.fixed.112|                    belongs to clean.delete, which runs unattended in Auto
+::X|EN|cl.drivesweep.fixed.113|                    lite and Auto full: there the rd /S /Q on the three
+::X|EN|cl.drivesweep.fixed.114|                    staging folders (guarded only by the pending-restart
+::X|EN|cl.drivesweep.fixed.115|                    check) and the delete of
+::X|EN|cl.drivesweep.fixed.116|                    <drive>:\.cache run with no question asked. The
+::X|EN|cl.drivesweep.fixed.117|                    sibling card that documents the staging-folder part of
+::X|EN|cl.drivesweep.fixed.118|                    the same code, helper.drivesweep.upgrade.staging, is
+::X|EN|cl.drivesweep.fixed.119|                    RUN on four profiles - two cards describing one block
+::X|EN|cl.drivesweep.fixed.120|                    with different risk levels. The .cache line also
+::X|EN|cl.drivesweep.fixed.121|                    collides head-on with this project's own standing rule
+::X|EN|cl.drivesweep.fixed.122|                    that OPTY must not clear development caches. Ideally
+::X|EN|cl.drivesweep.fixed.123|                    the code should drop the <drive>:\.cache line entirely
+::X|EN|cl.drivesweep.fixed.124|                    and split the staging-folder removal out of the cache
+::X|EN|cl.drivesweep.fixed.125|                    sweep.
+::X|EN|cl.drivesweep.fixed.126|
+::X|EN|cl.drivesweep.fixed.127|  Unverified      : Whether root-level DeliveryOptimization and
+::X|EN|cl.drivesweep.fixed.128|                    WUDownloadCache folders exist at all on a current
+::X|EN|cl.drivesweep.fixed.129|                    Windows 11 25H2 machine was not verified. The old
+::X|EN|cl.drivesweep.fixed.130|                    <drive>:\ProgramData\...\DeliveryOptimization\Cache
+::X|EN|cl.drivesweep.fixed.131|                    line was removed because that path does not exist on
+::X|EN|cl.drivesweep.fixed.132|                    25H2. The old delete of ProgramData\Microsoft\Network\
+::X|EN|cl.drivesweep.fixed.133|                    Downloader was removed too: that folder is BITS' job
+::X|EN|cl.drivesweep.fixed.134|                    queue (qmgr*.dat), not the Delivery Optimization
+::X|EN|cl.drivesweep.fixed.135|                    cache, and Microsoft deletes it only as a last-resort
+::X|EN|cl.drivesweep.fixed.136|                    Windows Update reset with BITS, wuauserv and cryptsvc
+::X|EN|cl.drivesweep.fixed.137|                    stopped (Source: Microsoft Learn, Additional resources
+::X|EN|cl.drivesweep.fixed.138|                    for Windows Update, 2026-02-12). The log says
+::X|EN|cl.drivesweep.fixed.139|                    "Delivery Optimization cache cleared" or "NOT cleared -
+::X|EN|cl.drivesweep.fixed.140|                    Delete-DeliveryOptimizationCache refused" for the
+::X|EN|cl.drivesweep.fixed.141|                    system drive; "Swept drive" is written for every
+::X|EN|cl.drivesweep.fixed.142|                    drive whether or not anything was deleted, so check
+::X|EN|cl.drivesweep.fixed.143|                    free space after a run before believing the multi-GB
+::X|EN|cl.drivesweep.fixed.144|                    figure.
+::X|EN|cl.drivesweep.fixed.145|
+::X|EN|cl.drivesweep.fixed.146|  Target          : On every FIXED drive letter:
+::X|EN|cl.drivesweep.fixed.147|                    <d>:\DeliveryOptimization\*, <d>:\WUDownloadCache\*;
+::X|EN|cl.drivesweep.fixed.148|                    on the system drive only, powershell
+::X|EN|cl.drivesweep.fixed.149|                    Delete-DeliveryOptimizationCache -Force; then
+::X|EN|cl.drivesweep.fixed.150|                    <d>:\.cache\* (after :bigcache), then, unless
+::X|EN|cl.drivesweep.fixed.151|                    :rebootpending sets REBOOTPEND, rd /S /Q on
+::X|EN|cl.drivesweep.fixed.152|                    <d>:\$WINDOWS.~BT, <d>:\$Windows.~WS and
+::X|EN|cl.drivesweep.fixed.153|                    <d>:\$WinREAgent. Label :drivesweep, called once per
+::X|EN|cl.drivesweep.fixed.154|                    drive from :dl_drives_go.
 ::X|FR|cl.drivesweep.fixed.001|  Ce que c est    : Windows ne place pas toujours ses caches Delivery
 ::X|FR|cl.drivesweep.fixed.002|                    Optimization et ses paquets de mise à jour sur C:. Il
 ::X|FR|cl.drivesweep.fixed.003|                    choisit le volume qui avait de la place. Cette étape
@@ -32794,151 +33316,173 @@ goto :eof
 ::X|FR|cl.drivesweep.fixed.005|                    DeliveryOptimization, WUDownloadCache et .cache à la
 ::X|FR|cl.drivesweep.fixed.006|                    racine du disque, puis supprime les dossiers de
 ::X|FR|cl.drivesweep.fixed.007|                    préparation abandonnés $WINDOWS.~BT, $Windows.~WS et
-::X|FR|cl.drivesweep.fixed.008|                    $WinREAgent. Sur le disque système uniquement, elle
-::X|FR|cl.drivesweep.fixed.009|                    vide aussi le magasin actif de Delivery Optimization.
-::X|FR|cl.drivesweep.fixed.010|
-::X|FR|cl.drivesweep.fixed.011|  Effet reel      : Les lettres de lecteur sont collectées en comparant le
-::X|FR|cl.drivesweep.fixed.012|                    type de lecteur renvoyé par fsutil à celui de
-::X|FR|cl.drivesweep.fixed.013|                    %SystemDrive%, ce qui rend la comparaison insensible à
-::X|FR|cl.drivesweep.fixed.014|                    la langue de Windows. Les lecteurs réseau sont
-::X|FR|cl.drivesweep.fixed.015|                    volontairement ignorés : un partage SMB déconnecté
-::X|FR|cl.drivesweep.fixed.016|                    coûte 30 secondes de délai par accès et bloquerait
-::X|FR|cl.drivesweep.fixed.017|                    toute l exécution. Ensuite, par disque : del /F /S /Q
-::X|FR|cl.drivesweep.fixed.018|                    sur <disque>:\DeliveryOptimization et
-::X|FR|cl.drivesweep.fixed.019|                    <disque>:\WUDownloadCache. Sur le disque système
-::X|FR|cl.drivesweep.fixed.020|                    uniquement, DoSvc est arrêté, %ProgramData%\Microsoft\
-::X|FR|cl.drivesweep.fixed.021|                    Network\Downloader est vidé, puis DoSvc est relancé
-::X|FR|cl.drivesweep.fixed.022|                    aussitôt (c est le téléchargeur principal de Windows
-::X|FR|cl.drivesweep.fixed.023|                    Update, il n est donc jamais laissé arrêté). Puis
-::X|FR|cl.drivesweep.fixed.024|                    <disque>:\.cache, et enfin rd /S /Q sur les trois
-::X|FR|cl.drivesweep.fixed.025|                    dossiers de préparation, sans condition, dès que
-::X|FR|cl.drivesweep.fixed.026|                    chacun existe. Le chemin .cache reçoit d abord un
-::X|FR|cl.drivesweep.fixed.027|                    relevé de taille via :bigcache, qui affiche un
-::X|FR|cl.drivesweep.fixed.028|                    avertissement au-delà d environ 2000 Mo - lisez bien
-::X|FR|cl.drivesweep.fixed.029|                    cette ligne, car ce n est qu un avertissement. La
-::X|FR|cl.drivesweep.fixed.030|                    suppression, à la ligne suivante, a lieu quelle que
-::X|FR|cl.drivesweep.fixed.031|                    soit la taille.
-::X|FR|cl.drivesweep.fixed.032|
-::X|FR|cl.drivesweep.fixed.033|  Gain            : Potentiellement le plus gros gain de place d un
-::X|FR|cl.drivesweep.fixed.034|                    nettoyage : $WINDOWS.~BT fait souvent plusieurs Go à
-::X|FR|cl.drivesweep.fixed.035|                    lui seul, et Delivery Optimization peut stocker des
-::X|FR|cl.drivesweep.fixed.036|                    gigaoctets de données partagées entre PC. Sur un
-::X|FR|cl.drivesweep.fixed.037|                    portable de 256 Go qui vient de recevoir une mise à
-::X|FR|cl.drivesweep.fixed.038|                    jour de fonctionnalité, 5 à 15 Go récupérés sont
-::X|FR|cl.drivesweep.fixed.039|                    réalistes. Sur une machine sans mise à niveau récente,
-::X|FR|cl.drivesweep.fixed.040|                    ces chemins sont souvent vides et l étape ne libère
-::X|FR|cl.drivesweep.fixed.041|                    strictement rien : n attendez pas un chiffre du simple
-::X|FR|cl.drivesweep.fixed.042|                    fait qu elle s est exécutée.
-::X|FR|cl.drivesweep.fixed.043|
-::X|FR|cl.drivesweep.fixed.044|  Cout            : Les deux dossiers de mise à jour à la racine et le
-::X|FR|cl.drivesweep.fixed.045|                    magasin Delivery Optimization ne contiennent que des
-::X|FR|cl.drivesweep.fixed.046|                    paquets Windows Update et reviennent à la demande.
-::X|FR|cl.drivesweep.fixed.047|                    L autre chemin de cache est un simple <disque>:\.cache
-::X|FR|cl.drivesweep.fixed.048|                    à la racine, reconnu par son seul nom. Sur une machine
-::X|FR|cl.drivesweep.fixed.049|                    de développement, c est très souvent un cache d outils
-::X|FR|cl.drivesweep.fixed.050|                    - Bazel, Yarn, Cargo, pip, modèles Hugging Face - et le
-::X|FR|cl.drivesweep.fixed.051|                    vider signifie plusieurs gigaoctets à retélécharger,
-::X|FR|cl.drivesweep.fixed.052|                    pas un nettoyage gratuit. OPTY ne sait pas distinguer
-::X|FR|cl.drivesweep.fixed.053|                    les deux ; il se contente d afficher la taille au
-::X|FR|cl.drivesweep.fixed.054|                    passage. Vérifiez si l un de vos disques possède un
-::X|FR|cl.drivesweep.fixed.055|                    dossier .cache à sa racine avant de répondre oui : si
-::X|FR|cl.drivesweep.fixed.056|                    c est le cas, refusez cette étape et videz
-::X|FR|cl.drivesweep.fixed.057|                    DeliveryOptimization et WUDownloadCache à la main. Par
-::X|FR|cl.drivesweep.fixed.058|                    ailleurs, $WINDOWS.~BT et $Windows.~WS font partie de
-::X|FR|cl.drivesweep.fixed.059|                    ce dont a besoin Paramètres, Récupération, Revenir en
-::X|FR|cl.drivesweep.fixed.060|                    arrière. Si vous avez basculé sur une nouvelle version
-::X|FR|cl.drivesweep.fixed.061|                    de Windows dans les dix derniers jours, les supprimer
-::X|FR|cl.drivesweep.fixed.062|                    vous retire la possibilité d annuler cette mise à
-::X|FR|cl.drivesweep.fixed.063|                    niveau, exactement comme supprimer Windows.old. Et
-::X|FR|cl.drivesweep.fixed.064|                    rien ne vérifie qu une mise à niveau est déjà
-::X|FR|cl.drivesweep.fixed.065|                    téléchargée et attend un redémarrage : supprimez ces
-::X|FR|cl.drivesweep.fixed.066|                    dossiers en pleine mise à niveau et Windows
-::X|FR|cl.drivesweep.fixed.067|                    retéléchargera toute la mise à jour de fonctionnalité.
-::X|FR|cl.drivesweep.fixed.068|
-::X|FR|cl.drivesweep.fixed.069|  Defaut Windows  : Sans objet en tant que réglage. Ce sont des caches et
-::X|FR|cl.drivesweep.fixed.070|                    des dossiers de préparation que Windows abandonne puis
-::X|FR|cl.drivesweep.fixed.071|                    supprime de lui-même, une dizaine de jours après la
-::X|FR|cl.drivesweep.fixed.072|                    mise à niveau.
-::X|FR|cl.drivesweep.fixed.073|
-::X|FR|cl.drivesweep.fixed.074|  Valeurs possibles :
-::X|FR|cl.drivesweep.fixed.075|    DELETE               : Vider les chemins de cache et supprimer les
-::X|FR|cl.drivesweep.fixed.076|                           trois dossiers de préparation sur chaque
-::X|FR|cl.drivesweep.fixed.077|                           disque interne. À ne choisir qu après avoir
-::X|FR|cl.drivesweep.fixed.078|                           vérifié qu aucun disque n a de dossier .cache à
-::X|FR|cl.drivesweep.fixed.079|                           sa racine et que vous n avez pas mis Windows à
-::X|FR|cl.drivesweep.fixed.080|                           niveau dans les dix derniers jours.
-::X|FR|cl.drivesweep.fixed.081|    KEEP                 : Laisser tous ces chemins tranquilles. Windows
-::X|FR|cl.drivesweep.fixed.082|                           supprime $WINDOWS.~BT et $Windows.~WS lui-même
-::X|FR|cl.drivesweep.fixed.083|                           une dizaine de jours après une mise à niveau,
-::X|FR|cl.drivesweep.fixed.084|                           une fois la fenêtre de retour arrière refermée,
-::X|FR|cl.drivesweep.fixed.085|                           et $WinREAgent une fois la maintenance de WinRE
-::X|FR|cl.drivesweep.fixed.086|                           terminée. Ne rien faire vous coûte la place
-::X|FR|cl.drivesweep.fixed.087|                           disque pendant ces dix jours, rien de plus.
-::X|FR|cl.drivesweep.fixed.088|    ASK                  : La seule réponse défendable pour les quatre
-::X|FR|cl.drivesweep.fixed.089|                           profils de machine réelle, et pour deux raisons
-::X|FR|cl.drivesweep.fixed.090|                           indépendantes. Un .cache à la racine est
-::X|FR|cl.drivesweep.fixed.091|                           reconnu par son seul nom, et sur une machine de
-::X|FR|cl.drivesweep.fixed.092|                           développement c est couramment un dépôt Bazel,
-::X|FR|cl.drivesweep.fixed.093|                           Yarn, Cargo, pip ou Hugging Face : des dizaines
-::X|FR|cl.drivesweep.fixed.094|                           de Go à retélécharger, et non des paquets
-::X|FR|cl.drivesweep.fixed.095|                           Windows Update. Par ailleurs, les dossiers de
-::X|FR|cl.drivesweep.fixed.096|                           préparation font partie de ce dont a besoin
-::X|FR|cl.drivesweep.fixed.097|                           Paramètres, Récupération, Revenir en arrière.
-::X|FR|cl.drivesweep.fixed.098|                           Ni l un ni l autre ne dépend de l usage de la
-::X|FR|cl.drivesweep.fixed.099|                           machine ; les deux dépendent de faits que vous
-::X|FR|cl.drivesweep.fixed.100|                           seul pouvez vérifier.
-::X|FR|cl.drivesweep.fixed.101|
-::X|FR|cl.drivesweep.fixed.102|  Pourquoi ces profils : Quatre ASK et un KEEP. Quatre colonnes identiques
-::X|FR|cl.drivesweep.fixed.103|                         sont ici le résultat honnête, parce que les deux
-::X|FR|cl.drivesweep.fixed.104|                         dangers - un cache d outils à la racine d un
-::X|FR|cl.drivesweep.fixed.105|                         disque, et une fenêtre de retour arrière peut-
-::X|FR|cl.drivesweep.fixed.106|                         être encore ouverte - sont des faits concernant
-::X|FR|cl.drivesweep.fixed.107|                         les dix derniers jours de cette machine précise,
-::X|FR|cl.drivesweep.fixed.108|                         et non le fait qu elle serve à jouer ou à
-::X|FR|cl.drivesweep.fixed.109|                         héberger Plex. WINDOWS est à KEEP, et c est une
-::X|FR|cl.drivesweep.fixed.110|                         vraie réponse : Windows nettoie effectivement ces
-::X|FR|cl.drivesweep.fixed.111|                         dossiers lui-même une fois la fenêtre de retour
-::X|FR|cl.drivesweep.fixed.112|                         arrière refermée.
-::X|FR|cl.drivesweep.fixed.113|
-::X|FR|cl.drivesweep.fixed.114|  Problemes connus : L étape est posée en question (Exécuter / Passer) en
-::X|FR|cl.drivesweep.fixed.115|                     mode manuel, mais elle appartient à clean.delete,
-::X|FR|cl.drivesweep.fixed.116|                     qui tourne sans surveillance en Auto lite et Auto
-::X|FR|cl.drivesweep.fixed.117|                     full : là, le rd /S /Q inconditionnel sur les trois
-::X|FR|cl.drivesweep.fixed.118|                     dossiers de préparation et la suppression de
-::X|FR|cl.drivesweep.fixed.119|                     <disque>:\.cache s exécutent sans aucune question. La
-::X|FR|cl.drivesweep.fixed.120|                     carte jumelle qui documente la partie dossiers de
-::X|FR|cl.drivesweep.fixed.121|                     préparation du même code,
-::X|FR|cl.drivesweep.fixed.122|                     helper.drivesweep.upgrade.staging, est à RUN sur
-::X|FR|cl.drivesweep.fixed.123|                     quatre profils : deux cartes décrivent un même bloc
-::X|FR|cl.drivesweep.fixed.124|                     avec des niveaux de risque différents. La ligne
-::X|FR|cl.drivesweep.fixed.125|                     .cache entre en outre en collision frontale avec la
-::X|FR|cl.drivesweep.fixed.126|                     règle permanente de ce projet, qui interdit à OPTY de
-::X|FR|cl.drivesweep.fixed.127|                     vider les caches de développement. Idéalement, le code
-::X|FR|cl.drivesweep.fixed.128|                     devrait abandonner la ligne <disque>:\.cache et
-::X|FR|cl.drivesweep.fixed.129|                     séparer la suppression des dossiers de préparation du
-::X|FR|cl.drivesweep.fixed.130|                     balayage des caches.
-::X|FR|cl.drivesweep.fixed.131|
-::X|FR|cl.drivesweep.fixed.132|  Non verifie (en)  : Whether root-level DeliveryOptimization and
-::X|FR|cl.drivesweep.fixed.133|                      WUDownloadCache folders exist at all on a current
-::X|FR|cl.drivesweep.fixed.134|                      Windows 11 25H2 machine was not verified. The old
-::X|FR|cl.drivesweep.fixed.135|                      <drive>:\ProgramData\...\DeliveryOptimization\Cache
-::X|FR|cl.drivesweep.fixed.136|                      line was removed because that path does not exist
-::X|FR|cl.drivesweep.fixed.137|                      on 25H2; the live store is ProgramData\Microsoft\
-::X|FR|cl.drivesweep.fixed.138|                      Network\Downloader, now cleared on the system drive
-::X|FR|cl.drivesweep.fixed.139|                      only. The log says "Delivery Optimization store
-::X|FR|cl.drivesweep.fixed.140|                      cleared" when that part ran; "Swept drive" is
-::X|FR|cl.drivesweep.fixed.141|                      written for every drive whether or not anything was
-::X|FR|cl.drivesweep.fixed.142|                      deleted, so check free space after a run before
-::X|FR|cl.drivesweep.fixed.143|                      believing the multi-GB figure.
-::X|FR|cl.drivesweep.fixed.144|
-::X|FR|cl.drivesweep.fixed.145|  Cible           : Sur chaque lettre de disque INTERNE :
-::X|FR|cl.drivesweep.fixed.146|                    <d>:\DeliveryOptimization\*, <d>:\WUDownloadCache\* ;
-::X|FR|cl.drivesweep.fixed.147|                    sur le disque système uniquement, net stop DoSvc, del
-::X|FR|cl.drivesweep.fixed.148|                    %ProgramData%\Microsoft\Network\Downloader\*, sc start
-::X|FR|cl.drivesweep.fixed.149|                    DoSvc ; puis <d>:\.cache\* (après :bigcache), puis
-::X|FR|cl.drivesweep.fixed.150|                    rd /S /Q sur <d>:\$WINDOWS.~BT, <d>:\$Windows.~WS et
-::X|FR|cl.drivesweep.fixed.151|                    <d>:\$WinREAgent. Label :drivesweep, appelé une fois
-::X|FR|cl.drivesweep.fixed.152|                    par disque depuis :dl_drives_go.
+::X|FR|cl.drivesweep.fixed.008|                    $WinREAgent sauf si un redémarrage est en attente. Sur
+::X|FR|cl.drivesweep.fixed.009|                    le disque système uniquement, elle vide aussi le cache
+::X|FR|cl.drivesweep.fixed.010|                    actif de Delivery Optimization via sa propre cmdlet.
+::X|FR|cl.drivesweep.fixed.011|
+::X|FR|cl.drivesweep.fixed.012|  Effet reel      : Les lettres de lecteur sont collectées en comparant le
+::X|FR|cl.drivesweep.fixed.013|                    type de lecteur renvoyé par fsutil à celui de
+::X|FR|cl.drivesweep.fixed.014|                    %SystemDrive%, ce qui rend la comparaison insensible à
+::X|FR|cl.drivesweep.fixed.015|                    la langue de Windows. Les lecteurs réseau sont
+::X|FR|cl.drivesweep.fixed.016|                    volontairement ignorés : un partage SMB déconnecté
+::X|FR|cl.drivesweep.fixed.017|                    coûte 30 secondes de délai par accès et bloquerait
+::X|FR|cl.drivesweep.fixed.018|                    toute l exécution. Ensuite, par disque : del /F /S /Q
+::X|FR|cl.drivesweep.fixed.019|                    sur <disque>:\DeliveryOptimization et
+::X|FR|cl.drivesweep.fixed.020|                    <disque>:\WUDownloadCache. Sur le disque système
+::X|FR|cl.drivesweep.fixed.021|                    uniquement, powershell Delete-DeliveryOptimizationCache
+::X|FR|cl.drivesweep.fixed.022|                    -Force vide le cache Delivery Optimization (DoSvc
+::X|FR|cl.drivesweep.fixed.023|                    continue de tourner ; le journal dit si la cmdlet a
+::X|FR|cl.drivesweep.fixed.024|                    réussi). Puis <disque>:\.cache, et enfin rd /S /Q sur
+::X|FR|cl.drivesweep.fixed.025|                    les trois dossiers de préparation dès que chacun
+::X|FR|cl.drivesweep.fixed.026|                    existe - sauté sur ce disque tant que :rebootpending
+::X|FR|cl.drivesweep.fixed.027|                    signale un redémarrage en attente (WindowsUpdate\Auto
+::X|FR|cl.drivesweep.fixed.028|                    Update\RebootRequired ou Component Based
+::X|FR|cl.drivesweep.fixed.029|                    Servicing\RebootPending présent). Le chemin .cache
+::X|FR|cl.drivesweep.fixed.030|                    reçoit d abord un
+::X|FR|cl.drivesweep.fixed.031|                    relevé de taille via :bigcache, qui affiche un
+::X|FR|cl.drivesweep.fixed.032|                    avertissement au-delà d environ 2000 Mo - lisez bien
+::X|FR|cl.drivesweep.fixed.033|                    cette ligne, car ce n est qu un avertissement. La
+::X|FR|cl.drivesweep.fixed.034|                    suppression, à la ligne suivante, a lieu quelle que
+::X|FR|cl.drivesweep.fixed.035|                    soit la taille.
+::X|FR|cl.drivesweep.fixed.036|
+::X|FR|cl.drivesweep.fixed.037|  Gain            : Potentiellement le plus gros gain de place d un
+::X|FR|cl.drivesweep.fixed.038|                    nettoyage : $WINDOWS.~BT fait souvent plusieurs Go à
+::X|FR|cl.drivesweep.fixed.039|                    lui seul, et Delivery Optimization peut stocker des
+::X|FR|cl.drivesweep.fixed.040|                    gigaoctets de données partagées entre PC. Sur un
+::X|FR|cl.drivesweep.fixed.041|                    portable de 256 Go qui vient de recevoir une mise à
+::X|FR|cl.drivesweep.fixed.042|                    jour de fonctionnalité, 5 à 15 Go récupérés sont
+::X|FR|cl.drivesweep.fixed.043|                    réalistes. Sur une machine sans mise à niveau récente,
+::X|FR|cl.drivesweep.fixed.044|                    ces chemins sont souvent vides et l étape ne libère
+::X|FR|cl.drivesweep.fixed.045|                    strictement rien : n attendez pas un chiffre du simple
+::X|FR|cl.drivesweep.fixed.046|                    fait qu elle s est exécutée.
+::X|FR|cl.drivesweep.fixed.047|
+::X|FR|cl.drivesweep.fixed.048|  Cout            : Les deux dossiers de mise à jour à la racine et le
+::X|FR|cl.drivesweep.fixed.049|                    magasin Delivery Optimization ne contiennent que des
+::X|FR|cl.drivesweep.fixed.050|                    paquets Windows Update et reviennent à la demande.
+::X|FR|cl.drivesweep.fixed.051|                    L autre chemin de cache est un simple <disque>:\.cache
+::X|FR|cl.drivesweep.fixed.052|                    à la racine, reconnu par son seul nom. Sur une machine
+::X|FR|cl.drivesweep.fixed.053|                    de développement, c est très souvent un cache d outils
+::X|FR|cl.drivesweep.fixed.054|                    - Bazel, Yarn, Cargo, pip, modèles Hugging Face - et le
+::X|FR|cl.drivesweep.fixed.055|                    vider signifie plusieurs gigaoctets à retélécharger,
+::X|FR|cl.drivesweep.fixed.056|                    pas un nettoyage gratuit. OPTY ne sait pas distinguer
+::X|FR|cl.drivesweep.fixed.057|                    les deux ; il se contente d afficher la taille au
+::X|FR|cl.drivesweep.fixed.058|                    passage. Vérifiez si l un de vos disques possède un
+::X|FR|cl.drivesweep.fixed.059|                    dossier .cache à sa racine avant de répondre oui : si
+::X|FR|cl.drivesweep.fixed.060|                    c est le cas, refusez cette étape et videz
+::X|FR|cl.drivesweep.fixed.061|                    DeliveryOptimization et WUDownloadCache à la main. Par
+::X|FR|cl.drivesweep.fixed.062|                    ailleurs, $WINDOWS.~BT et $Windows.~WS font partie de
+::X|FR|cl.drivesweep.fixed.063|                    ce dont a besoin Paramètres, Récupération, Revenir en
+::X|FR|cl.drivesweep.fixed.064|                    arrière. Si vous avez basculé sur une nouvelle version
+::X|FR|cl.drivesweep.fixed.065|                    de Windows dans les dix derniers jours, les supprimer
+::X|FR|cl.drivesweep.fixed.066|                    vous retire la possibilité d annuler cette mise à
+::X|FR|cl.drivesweep.fixed.067|                    niveau, exactement comme supprimer Windows.old. Une
+::X|FR|cl.drivesweep.fixed.068|                    mise à jour préparée qui attend son redémarrage est
+::X|FR|cl.drivesweep.fixed.069|                    protégée : tant que RebootRequired ou RebootPending
+::X|FR|cl.drivesweep.fixed.070|                    existe, les trois dossiers sont conservés. Une mise à
+::X|FR|cl.drivesweep.fixed.071|                    niveau téléchargée mais pas encore arrivée à ce stade
+::X|FR|cl.drivesweep.fixed.072|                    n est pas détectée. Le cache Delivery Optimization est
+::X|FR|cl.drivesweep.fixed.073|                    petit par conception - par défaut DO garde le contenu
+::X|FR|cl.drivesweep.fixed.074|                    3 jours au plus et utilise au plus 20 pour cent du
+::X|FR|cl.drivesweep.fixed.075|                    disque (Source : Microsoft Learn, Delivery
+::X|FR|cl.drivesweep.fixed.076|                    Optimization reference, 2026-05-20) - donc le vider
+::X|FR|cl.drivesweep.fixed.077|                    rapporte peu et coûte un retéléchargement depuis les
+::X|FR|cl.drivesweep.fixed.078|                    pairs ou Microsoft.
+::X|FR|cl.drivesweep.fixed.079|
+::X|FR|cl.drivesweep.fixed.080|  Defaut Windows  : Sans objet en tant que réglage. Ce sont des caches et
+::X|FR|cl.drivesweep.fixed.081|                    des dossiers de préparation que Windows abandonne puis
+::X|FR|cl.drivesweep.fixed.082|                    supprime de lui-même, une dizaine de jours après la
+::X|FR|cl.drivesweep.fixed.083|                    mise à niveau.
+::X|FR|cl.drivesweep.fixed.084|
+::X|FR|cl.drivesweep.fixed.085|  Valeurs possibles :
+::X|FR|cl.drivesweep.fixed.086|    DELETE               : Vider les chemins de cache et supprimer les
+::X|FR|cl.drivesweep.fixed.087|                           trois dossiers de préparation sur chaque
+::X|FR|cl.drivesweep.fixed.088|                           disque interne (les dossiers de préparation
+::X|FR|cl.drivesweep.fixed.089|                           restent si un redémarrage est en attente). À ne
+::X|FR|cl.drivesweep.fixed.090|                           choisir qu après avoir
+::X|FR|cl.drivesweep.fixed.091|                           vérifié qu aucun disque n a de dossier .cache à
+::X|FR|cl.drivesweep.fixed.092|                           sa racine et que vous n avez pas mis Windows à
+::X|FR|cl.drivesweep.fixed.093|                           niveau dans les dix derniers jours.
+::X|FR|cl.drivesweep.fixed.094|    KEEP                 : Laisser tous ces chemins tranquilles. Windows
+::X|FR|cl.drivesweep.fixed.095|                           supprime $WINDOWS.~BT et $Windows.~WS lui-même
+::X|FR|cl.drivesweep.fixed.096|                           une dizaine de jours après une mise à niveau,
+::X|FR|cl.drivesweep.fixed.097|                           une fois la fenêtre de retour arrière refermée,
+::X|FR|cl.drivesweep.fixed.098|                           et $WinREAgent une fois la maintenance de WinRE
+::X|FR|cl.drivesweep.fixed.099|                           terminée. Ne rien faire vous coûte la place
+::X|FR|cl.drivesweep.fixed.100|                           disque pendant ces dix jours, rien de plus.
+::X|FR|cl.drivesweep.fixed.101|    ASK                  : La seule réponse défendable pour les quatre
+::X|FR|cl.drivesweep.fixed.102|                           profils de machine réelle, et pour deux raisons
+::X|FR|cl.drivesweep.fixed.103|                           indépendantes. Un .cache à la racine est
+::X|FR|cl.drivesweep.fixed.104|                           reconnu par son seul nom, et sur une machine de
+::X|FR|cl.drivesweep.fixed.105|                           développement c est couramment un dépôt Bazel,
+::X|FR|cl.drivesweep.fixed.106|                           Yarn, Cargo, pip ou Hugging Face : des dizaines
+::X|FR|cl.drivesweep.fixed.107|                           de Go à retélécharger, et non des paquets
+::X|FR|cl.drivesweep.fixed.108|                           Windows Update. Par ailleurs, les dossiers de
+::X|FR|cl.drivesweep.fixed.109|                           préparation font partie de ce dont a besoin
+::X|FR|cl.drivesweep.fixed.110|                           Paramètres, Récupération, Revenir en arrière.
+::X|FR|cl.drivesweep.fixed.111|                           Ni l un ni l autre ne dépend de l usage de la
+::X|FR|cl.drivesweep.fixed.112|                           machine ; les deux dépendent de faits que vous
+::X|FR|cl.drivesweep.fixed.113|                           seul pouvez vérifier.
+::X|FR|cl.drivesweep.fixed.114|
+::X|FR|cl.drivesweep.fixed.115|  Pourquoi ces profils : Quatre ASK et un KEEP. Quatre colonnes identiques
+::X|FR|cl.drivesweep.fixed.116|                         sont ici le résultat honnête, parce que les deux
+::X|FR|cl.drivesweep.fixed.117|                         dangers - un cache d outils à la racine d un
+::X|FR|cl.drivesweep.fixed.118|                         disque, et une fenêtre de retour arrière peut-
+::X|FR|cl.drivesweep.fixed.119|                         être encore ouverte - sont des faits concernant
+::X|FR|cl.drivesweep.fixed.120|                         les dix derniers jours de cette machine précise,
+::X|FR|cl.drivesweep.fixed.121|                         et non le fait qu elle serve à jouer ou à
+::X|FR|cl.drivesweep.fixed.122|                         héberger Plex. WINDOWS est à KEEP, et c est une
+::X|FR|cl.drivesweep.fixed.123|                         vraie réponse : Windows nettoie effectivement ces
+::X|FR|cl.drivesweep.fixed.124|                         dossiers lui-même une fois la fenêtre de retour
+::X|FR|cl.drivesweep.fixed.125|                         arrière refermée.
+::X|FR|cl.drivesweep.fixed.126|
+::X|FR|cl.drivesweep.fixed.127|  Problemes connus : L étape est posée en question (Exécuter / Passer) en
+::X|FR|cl.drivesweep.fixed.128|                     mode manuel, mais elle appartient à clean.delete,
+::X|FR|cl.drivesweep.fixed.129|                     qui tourne sans surveillance en Auto lite et Auto
+::X|FR|cl.drivesweep.fixed.130|                     full : là, le rd /S /Q sur les trois dossiers de
+::X|FR|cl.drivesweep.fixed.131|                     préparation (protégé seulement par le test de
+::X|FR|cl.drivesweep.fixed.132|                     redémarrage en attente) et la suppression de
+::X|FR|cl.drivesweep.fixed.133|                     <disque>:\.cache s exécutent sans aucune question. La
+::X|FR|cl.drivesweep.fixed.134|                     carte jumelle qui documente la partie dossiers de
+::X|FR|cl.drivesweep.fixed.135|                     préparation du même code,
+::X|FR|cl.drivesweep.fixed.136|                     helper.drivesweep.upgrade.staging, est à RUN sur
+::X|FR|cl.drivesweep.fixed.137|                     quatre profils : deux cartes décrivent un même bloc
+::X|FR|cl.drivesweep.fixed.138|                     avec des niveaux de risque différents. La ligne
+::X|FR|cl.drivesweep.fixed.139|                     .cache entre en outre en collision frontale avec la
+::X|FR|cl.drivesweep.fixed.140|                     règle permanente de ce projet, qui interdit à OPTY de
+::X|FR|cl.drivesweep.fixed.141|                     vider les caches de développement. Idéalement, le code
+::X|FR|cl.drivesweep.fixed.142|                     devrait abandonner la ligne <disque>:\.cache et
+::X|FR|cl.drivesweep.fixed.143|                     séparer la suppression des dossiers de préparation du
+::X|FR|cl.drivesweep.fixed.144|                     balayage des caches.
+::X|FR|cl.drivesweep.fixed.145|
+::X|FR|cl.drivesweep.fixed.146|  Non verifie (en)  : Whether root-level DeliveryOptimization and
+::X|FR|cl.drivesweep.fixed.147|                      WUDownloadCache folders exist at all on a current
+::X|FR|cl.drivesweep.fixed.148|                      Windows 11 25H2 machine was not verified. The old
+::X|FR|cl.drivesweep.fixed.149|                      <drive>:\ProgramData\...\DeliveryOptimization\Cache
+::X|FR|cl.drivesweep.fixed.150|                      line was removed because that path does not exist
+::X|FR|cl.drivesweep.fixed.151|                      on 25H2. The old delete of ProgramData\Microsoft\
+::X|FR|cl.drivesweep.fixed.152|                      Network\Downloader was removed too: that folder is
+::X|FR|cl.drivesweep.fixed.153|                      BITS' job queue (qmgr*.dat), not the Delivery
+::X|FR|cl.drivesweep.fixed.154|                      Optimization cache, and Microsoft deletes it only as
+::X|FR|cl.drivesweep.fixed.155|                      a last-resort Windows Update reset with BITS,
+::X|FR|cl.drivesweep.fixed.156|                      wuauserv and cryptsvc stopped (Source: Microsoft
+::X|FR|cl.drivesweep.fixed.157|                      Learn, Additional resources for Windows Update,
+::X|FR|cl.drivesweep.fixed.158|                      2026-02-12). The log says "Delivery Optimization
+::X|FR|cl.drivesweep.fixed.159|                      cache cleared" or "NOT cleared -
+::X|FR|cl.drivesweep.fixed.160|                      Delete-DeliveryOptimizationCache refused" for the
+::X|FR|cl.drivesweep.fixed.161|                      system drive; "Swept drive" is
+::X|FR|cl.drivesweep.fixed.162|                      written for every drive whether or not anything was
+::X|FR|cl.drivesweep.fixed.163|                      deleted, so check free space after a run before
+::X|FR|cl.drivesweep.fixed.164|                      believing the multi-GB figure.
+::X|FR|cl.drivesweep.fixed.165|
+::X|FR|cl.drivesweep.fixed.166|  Cible           : Sur chaque lettre de disque INTERNE :
+::X|FR|cl.drivesweep.fixed.167|                    <d>:\DeliveryOptimization\*, <d>:\WUDownloadCache\* ;
+::X|FR|cl.drivesweep.fixed.168|                    sur le disque système uniquement, powershell
+::X|FR|cl.drivesweep.fixed.169|                    Delete-DeliveryOptimizationCache -Force ; puis
+::X|FR|cl.drivesweep.fixed.170|                    <d>:\.cache\* (après :bigcache), puis, sauf si
+::X|FR|cl.drivesweep.fixed.171|                    :rebootpending définit REBOOTPEND, rd /S /Q sur
+::X|FR|cl.drivesweep.fixed.172|                    <d>:\$WINDOWS.~BT, <d>:\$Windows.~WS et
+::X|FR|cl.drivesweep.fixed.173|                    <d>:\$WinREAgent. Label :drivesweep, appelé une fois
+::X|FR|cl.drivesweep.fixed.174|                    par disque depuis :dl_drives_go.
 ::
 :: ---- cl.temp.windir (cleanup) ------------------------------------
 ::P|cl.temp.windir|DELETE|DELETE|DELETE|DELETE|KEEP|
@@ -33840,82 +34384,92 @@ goto :eof
 ::X|EN|cl.logs.unbounded.008|                    folders themselves are never removed, and %WINDIR%\inf
 ::X|EN|cl.logs.unbounded.009|                    keeps every real driver INF.
 ::X|EN|cl.logs.unbounded.010|
-::X|EN|cl.logs.unbounded.011|  Actual effect   : Deletes exactly those files. Most of them delete
-::X|EN|cl.logs.unbounded.012|                    cleanly on an idle machine. Two do not always: the WMI
-::X|EN|cl.logs.unbounded.013|                    glob is *.etl.* deliberately, so it takes the rotated
-::X|EN|cl.logs.unbounded.014|                    files and leaves the live trace, which the ETW session
-::X|EN|cl.logs.unbounded.015|                    holds open anyway; and in %WINDIR%\Logs\WindowsUpdate
-::X|EN|cl.logs.unbounded.016|                    an active trace session keeps its newest .etl locked,
-::X|EN|cl.logs.unbounded.017|                    so that one is skipped without a message. The step
-::X|EN|cl.logs.unbounded.018|                    needs administrator rights - without them the %WINDIR%
-::X|EN|cl.logs.unbounded.019|                    lines all fail silently. Folders always survive, and
-::X|EN|cl.logs.unbounded.020|                    each subsystem simply starts a new file.
-::X|EN|cl.logs.unbounded.021|
-::X|EN|cl.logs.unbounded.022|  Gain            : Real, measurable, and no standard cleaner touches it.
-::X|EN|cl.logs.unbounded.023|                    On the machine the rule was written for: 317 MB of AMD
-::X|EN|cl.logs.unbounded.024|                    telemetry CSVs, 228 MB of rotated WMI traces, 86 MB of
-::X|EN|cl.logs.unbounded.025|                    update-orchestrator logs - roughly 630 MB in one pass.
-::X|EN|cl.logs.unbounded.026|                    On a recently installed machine, or one without
-::X|EN|cl.logs.unbounded.027|                    Adrenalin, expect tens of MB instead. No performance
-::X|EN|cl.logs.unbounded.028|                    effect at all: these files are written and never read
-::X|EN|cl.logs.unbounded.029|                    back by anything you run.
-::X|EN|cl.logs.unbounded.030|
-::X|EN|cl.logs.unbounded.031|  Cost            : You lose driver-install history, which matters more
-::X|EN|cl.logs.unbounded.032|                    than it sounds - setupapi.dev.log is the file that
-::X|EN|cl.logs.unbounded.033|                    explains why a device stopped working after an update
-::X|EN|cl.logs.unbounded.034|                    - and you lose servicing history. None of it affects
-::X|EN|cl.logs.unbounded.035|                    how the machine runs, and nothing has to be
-::X|EN|cl.logs.unbounded.036|                    downloaded. What comes back does so within minutes of
-::X|EN|cl.logs.unbounded.037|                    the next update or device change, so this passes the
-::X|EN|cl.logs.unbounded.038|                    regeneration test easily. Not touched:
-::X|EN|cl.logs.unbounded.039|                    USOPrivate\UpdateStore, the RtBackup folder, the real
-::X|EN|cl.logs.unbounded.040|                    INF store, and the live CBS log.
-::X|EN|cl.logs.unbounded.041|
-::X|EN|cl.logs.unbounded.042|  Windows default : Not applicable. These grow without bound by design,
-::X|EN|cl.logs.unbounded.043|                    and no Windows component trims them.
-::X|EN|cl.logs.unbounded.044|
-::X|EN|cl.logs.unbounded.045|  Possible values:
-::X|EN|cl.logs.unbounded.046|    DELETE               : Remove those named log and trace files. The
-::X|EN|cl.logs.unbounded.047|                           subsystems that write them carry on and open
-::X|EN|cl.logs.unbounded.048|                           fresh files.
-::X|EN|cl.logs.unbounded.049|    KEEP                 : The right answer while you are chasing a device
-::X|EN|cl.logs.unbounded.050|                           that will not install: setupapi.dev.log is
-::X|EN|cl.logs.unbounded.051|                           precisely the file that tells you why.
-::X|EN|cl.logs.unbounded.052|    ASK                  : Only worth asking on a machine under active
-::X|EN|cl.logs.unbounded.053|                           diagnosis, since the driver-install and
-::X|EN|cl.logs.unbounded.054|                           servicing history goes for good.
-::X|EN|cl.logs.unbounded.055|
-::X|EN|cl.logs.unbounded.056|  Why these profiles : Four identical columns because the mechanism is
-::X|EN|cl.logs.unbounded.057|                       identical everywhere: a log file nobody reads.
-::X|EN|cl.logs.unbounded.058|                       SERVER benefits most in absolute terms, since an
-::X|EN|cl.logs.unbounded.059|                       always-on machine accumulates traces fastest.
-::X|EN|cl.logs.unbounded.060|                       GAMING on an AMD card is where the 317 MB of
-::X|EN|cl.logs.unbounded.061|                       Adrenalin CSVs come from. OFFICE and LAPTOP simply
-::X|EN|cl.logs.unbounded.062|                       gain the space. WINDOWS means leave it alone:
-::X|EN|cl.logs.unbounded.063|                       nothing breaks, the files just keep growing.
-::X|EN|cl.logs.unbounded.064|
-::X|EN|cl.logs.unbounded.065|  Unverified      : The sizes quoted - AMD PPC 317 MB, WMI ETL 228 MB,
-::X|EN|cl.logs.unbounded.066|                    USOShared 86 MB - were measured once, on the
-::X|EN|cl.logs.unbounded.067|                    maintainer's machine. Yours will differ, possibly by
-::X|EN|cl.logs.unbounded.068|                    an order of magnitude in either direction. The AMD PPC
-::X|EN|cl.logs.unbounded.069|                    files only exist if Adrenalin is installed. Reports of
-::X|EN|cl.logs.unbounded.070|                    those CSVs reaching tens of GB come from the field,
-::X|EN|cl.logs.unbounded.071|                    not from a measurement here.
+::X|EN|cl.logs.unbounded.011|  Actual effect   : Deletes exactly those files. The three AMD PPC CSVs
+::X|EN|cl.logs.unbounded.012|                    (sdkusage.csv, apprecord.csv, driverworkloadstats.csv)
+::X|EN|cl.logs.unbounded.013|                    go in two places: %LOCALAPPDATA%\AMD\PPC and
+::X|EN|cl.logs.unbounded.014|                    %ProgramData%\AMD\PPC. The ProgramData copy is the one
+::X|EN|cl.logs.unbounded.015|                    every public report of a 30+ GB sdkusage.csv points
+::X|EN|cl.logs.unbounded.016|                    at, fed by tools that use the AMD SDK such as Fan
+::X|EN|cl.logs.unbounded.017|                    Control (Source: FanControl issue 2829, 2024-11-13;
+::X|EN|cl.logs.unbounded.018|                    LTT and Overclock.net forum threads). config.csv is
+::X|EN|cl.logs.unbounded.019|                    kept in both. Most of them delete
+::X|EN|cl.logs.unbounded.020|                    cleanly on an idle machine. Two do not always: the WMI
+::X|EN|cl.logs.unbounded.021|                    glob is *.etl.* deliberately, so it takes the rotated
+::X|EN|cl.logs.unbounded.022|                    files and leaves the live trace, which the ETW session
+::X|EN|cl.logs.unbounded.023|                    holds open anyway; and in %WINDIR%\Logs\WindowsUpdate
+::X|EN|cl.logs.unbounded.024|                    an active trace session keeps its newest .etl locked,
+::X|EN|cl.logs.unbounded.025|                    so that one is skipped without a message. The step
+::X|EN|cl.logs.unbounded.026|                    needs administrator rights - without them the %WINDIR%
+::X|EN|cl.logs.unbounded.027|                    lines all fail silently. Folders always survive, and
+::X|EN|cl.logs.unbounded.028|                    each subsystem simply starts a new file.
+::X|EN|cl.logs.unbounded.029|
+::X|EN|cl.logs.unbounded.030|  Gain            : Real, measurable, and no standard cleaner touches it.
+::X|EN|cl.logs.unbounded.031|                    On the machine the rule was written for: 317 MB of AMD
+::X|EN|cl.logs.unbounded.032|                    telemetry CSVs, 228 MB of rotated WMI traces, 86 MB of
+::X|EN|cl.logs.unbounded.033|                    update-orchestrator logs - roughly 630 MB in one pass.
+::X|EN|cl.logs.unbounded.034|                    On a recently installed machine, or one without
+::X|EN|cl.logs.unbounded.035|                    Adrenalin, expect tens of MB instead. No performance
+::X|EN|cl.logs.unbounded.036|                    effect at all: these files are written and never read
+::X|EN|cl.logs.unbounded.037|                    back by anything you run.
+::X|EN|cl.logs.unbounded.038|
+::X|EN|cl.logs.unbounded.039|  Cost            : You lose driver-install history, which matters more
+::X|EN|cl.logs.unbounded.040|                    than it sounds - setupapi.dev.log is the file that
+::X|EN|cl.logs.unbounded.041|                    explains why a device stopped working after an update
+::X|EN|cl.logs.unbounded.042|                    - and you lose servicing history. None of it affects
+::X|EN|cl.logs.unbounded.043|                    how the machine runs, and nothing has to be
+::X|EN|cl.logs.unbounded.044|                    downloaded. What comes back does so within minutes of
+::X|EN|cl.logs.unbounded.045|                    the next update or device change, so this passes the
+::X|EN|cl.logs.unbounded.046|                    regeneration test easily. Not touched:
+::X|EN|cl.logs.unbounded.047|                    USOPrivate\UpdateStore, the RtBackup folder, the real
+::X|EN|cl.logs.unbounded.048|                    INF store, and the live CBS log.
+::X|EN|cl.logs.unbounded.049|
+::X|EN|cl.logs.unbounded.050|  Windows default : Not applicable. These grow without bound by design,
+::X|EN|cl.logs.unbounded.051|                    and no Windows component trims them.
+::X|EN|cl.logs.unbounded.052|
+::X|EN|cl.logs.unbounded.053|  Possible values:
+::X|EN|cl.logs.unbounded.054|    DELETE               : Remove those named log and trace files. The
+::X|EN|cl.logs.unbounded.055|                           subsystems that write them carry on and open
+::X|EN|cl.logs.unbounded.056|                           fresh files.
+::X|EN|cl.logs.unbounded.057|    KEEP                 : The right answer while you are chasing a device
+::X|EN|cl.logs.unbounded.058|                           that will not install: setupapi.dev.log is
+::X|EN|cl.logs.unbounded.059|                           precisely the file that tells you why.
+::X|EN|cl.logs.unbounded.060|    ASK                  : Only worth asking on a machine under active
+::X|EN|cl.logs.unbounded.061|                           diagnosis, since the driver-install and
+::X|EN|cl.logs.unbounded.062|                           servicing history goes for good.
+::X|EN|cl.logs.unbounded.063|
+::X|EN|cl.logs.unbounded.064|  Why these profiles : Four identical columns because the mechanism is
+::X|EN|cl.logs.unbounded.065|                       identical everywhere: a log file nobody reads.
+::X|EN|cl.logs.unbounded.066|                       SERVER benefits most in absolute terms, since an
+::X|EN|cl.logs.unbounded.067|                       always-on machine accumulates traces fastest.
+::X|EN|cl.logs.unbounded.068|                       GAMING on an AMD card is where the 317 MB of
+::X|EN|cl.logs.unbounded.069|                       Adrenalin CSVs come from. OFFICE and LAPTOP simply
+::X|EN|cl.logs.unbounded.070|                       gain the space. WINDOWS means leave it alone:
+::X|EN|cl.logs.unbounded.071|                       nothing breaks, the files just keep growing.
 ::X|EN|cl.logs.unbounded.072|
-::X|EN|cl.logs.unbounded.073|  Target          : The :dl_logs_go label (asked from :dl_logs). Named
-::X|EN|cl.logs.unbounded.074|                    files and globs only:
-::X|EN|cl.logs.unbounded.075|                    %LOCALAPPDATA%\AMD\PPC\sdkusage.csv, apprecord.csv,
-::X|EN|cl.logs.unbounded.076|                    driverworkloadstats.csv;
-::X|EN|cl.logs.unbounded.077|                    %LOCALAPPDATA%\AMD\CN\RSX_*.log*;
-::X|EN|cl.logs.unbounded.078|                    %WINDIR%\System32\LogFiles\WMI\*.etl.* (no /S, so
-::X|EN|cl.logs.unbounded.079|                    RtBackup is never entered); %ProgramData%\Microsoft\Di
-::X|EN|cl.logs.unbounded.080|                    agnosis\ETLLogs\AutoLogger\*.etl;
-::X|EN|cl.logs.unbounded.081|                    %ProgramData%\USOShared\Logs\*.etl;
-::X|EN|cl.logs.unbounded.082|                    %WINDIR%\Logs\DISM\dism.log; %WINDIR%\Logs\waasmedic,
-::X|EN|cl.logs.unbounded.083|                    SIH and NetSetup; %WINDIR%\Logs\WindowsUpdate\*.etl;
-::X|EN|cl.logs.unbounded.084|                    %WINDIR%\inf\setupapi.dev.log and setupapi.app.log;
-::X|EN|cl.logs.unbounded.085|                    %WINDIR%\debug\wiatrace.log. No folder is ever
-::X|EN|cl.logs.unbounded.086|                    removed.
+::X|EN|cl.logs.unbounded.073|  Unverified      : The sizes quoted - AMD PPC 317 MB, WMI ETL 228 MB,
+::X|EN|cl.logs.unbounded.074|                    USOShared 86 MB - were measured once, on the
+::X|EN|cl.logs.unbounded.075|                    maintainer's machine. Yours will differ, possibly by
+::X|EN|cl.logs.unbounded.076|                    an order of magnitude in either direction. The AMD PPC
+::X|EN|cl.logs.unbounded.077|                    files only exist if Adrenalin or a tool built on the
+::X|EN|cl.logs.unbounded.078|                    AMD SDK is installed. Reports of those CSVs reaching
+::X|EN|cl.logs.unbounded.079|                    tens of GB come from the field, not from a measurement
+::X|EN|cl.logs.unbounded.080|                    here.
+::X|EN|cl.logs.unbounded.081|
+::X|EN|cl.logs.unbounded.082|  Target          : The :dl_logs_go label (asked from :dl_logs). Named
+::X|EN|cl.logs.unbounded.083|                    files and globs only:
+::X|EN|cl.logs.unbounded.084|                    %LOCALAPPDATA%\AMD\PPC\ and %ProgramData%\AMD\PPC\
+::X|EN|cl.logs.unbounded.085|                    sdkusage.csv, apprecord.csv, driverworkloadstats.csv
+::X|EN|cl.logs.unbounded.086|                    (config.csv kept);
+::X|EN|cl.logs.unbounded.087|                    %LOCALAPPDATA%\AMD\CN\RSX_*.log*;
+::X|EN|cl.logs.unbounded.088|                    %WINDIR%\System32\LogFiles\WMI\*.etl.* (no /S, so
+::X|EN|cl.logs.unbounded.089|                    RtBackup is never entered); %ProgramData%\Microsoft\Di
+::X|EN|cl.logs.unbounded.090|                    agnosis\ETLLogs\AutoLogger\*.etl;
+::X|EN|cl.logs.unbounded.091|                    %ProgramData%\USOShared\Logs\*.etl;
+::X|EN|cl.logs.unbounded.092|                    %WINDIR%\Logs\DISM\dism.log; %WINDIR%\Logs\waasmedic,
+::X|EN|cl.logs.unbounded.093|                    SIH and NetSetup; %WINDIR%\Logs\WindowsUpdate\*.etl;
+::X|EN|cl.logs.unbounded.094|                    %WINDIR%\inf\setupapi.dev.log and setupapi.app.log;
+::X|EN|cl.logs.unbounded.095|                    %WINDIR%\debug\wiatrace.log. No folder is ever
+::X|EN|cl.logs.unbounded.096|                    removed.
 ::X|FR|cl.logs.unbounded.001|  Ce que c est    : Une liste courte de fichiers qui grossissent sans fin
 ::X|FR|cl.logs.unbounded.002|                    parce que ni Windows ni le pilote AMD ne les rognent
 ::X|FR|cl.logs.unbounded.003|                    jamais : les CSV de télémétrie d usage d AMD
@@ -33928,92 +34482,103 @@ goto :eof
 ::X|FR|cl.logs.unbounded.010|                    RtBackup ne sont jamais supprimés, et %WINDIR%\inf
 ::X|FR|cl.logs.unbounded.011|                    conserve tous les vrais INF de pilotes.
 ::X|FR|cl.logs.unbounded.012|
-::X|FR|cl.logs.unbounded.013|  Effet reel      : Supprime exactement ces fichiers. La plupart partent
-::X|FR|cl.logs.unbounded.014|                    proprement sur une machine au repos. Deux résistent
-::X|FR|cl.logs.unbounded.015|                    parfois : le motif WMI est volontairement *.etl.*, il
-::X|FR|cl.logs.unbounded.016|                    prend donc les fichiers en rotation et laisse la trace
-::X|FR|cl.logs.unbounded.017|                    active, que la session ETW tient de toute façon
-::X|FR|cl.logs.unbounded.018|                    ouverte ; et dans %WINDIR%\Logs\WindowsUpdate, une
-::X|FR|cl.logs.unbounded.019|                    session de trace en cours verrouille son .etl le plus
-::X|FR|cl.logs.unbounded.020|                    récent, qui est ignoré sans message. L étape exige les
-::X|FR|cl.logs.unbounded.021|                    droits administrateur : sans eux, toutes les lignes
-::X|FR|cl.logs.unbounded.022|                    %WINDIR% échouent en silence. Les dossiers survivent
-::X|FR|cl.logs.unbounded.023|                    toujours, et chaque sous-système repart simplement sur
-::X|FR|cl.logs.unbounded.024|                    un fichier neuf.
-::X|FR|cl.logs.unbounded.025|
-::X|FR|cl.logs.unbounded.026|  Gain            : Réel, mesurable, et aucun nettoyeur standard n y
-::X|FR|cl.logs.unbounded.027|                    touche. Sur la machine pour laquelle la règle a été
-::X|FR|cl.logs.unbounded.028|                    écrite : 317 Mo de CSV de télémétrie AMD, 228 Mo de
-::X|FR|cl.logs.unbounded.029|                    traces WMI en rotation, 86 Mo de journaux
-::X|FR|cl.logs.unbounded.030|                    d orchestrateur - environ 630 Mo en un passage. Sur
-::X|FR|cl.logs.unbounded.031|                    une machine récemment installée, ou sans Adrenalin,
-::X|FR|cl.logs.unbounded.032|                    comptez plutôt quelques dizaines de Mo. Aucun effet
-::X|FR|cl.logs.unbounded.033|                    sur les performances : ces fichiers sont écrits,
-::X|FR|cl.logs.unbounded.034|                    jamais relus par quoi que ce soit que vous utilisez.
-::X|FR|cl.logs.unbounded.035|
-::X|FR|cl.logs.unbounded.036|  Cout            : Vous perdez l historique d installation des pilotes,
-::X|FR|cl.logs.unbounded.037|                    ce qui compte plus qu il n y paraît - setupapi.dev.log
-::X|FR|cl.logs.unbounded.038|                    est le fichier qui explique pourquoi un périphérique a
-::X|FR|cl.logs.unbounded.039|                    cessé de fonctionner après une mise à jour - et
-::X|FR|cl.logs.unbounded.040|                    l historique de maintenance. Rien de tout cela
-::X|FR|cl.logs.unbounded.041|                    n affecte le fonctionnement de la machine, et rien
-::X|FR|cl.logs.unbounded.042|                    n est à retélécharger. Ce qui revient revient dans les
-::X|FR|cl.logs.unbounded.043|                    minutes suivant la prochaine mise à jour ou le
-::X|FR|cl.logs.unbounded.044|                    prochain changement de matériel : la règle des trente
-::X|FR|cl.logs.unbounded.045|                    minutes est largement respectée. Non touchés :
-::X|FR|cl.logs.unbounded.046|                    USOPrivate\UpdateStore, le dossier RtBackup, le
-::X|FR|cl.logs.unbounded.047|                    magasin d INF, et le journal CBS actif.
-::X|FR|cl.logs.unbounded.048|
-::X|FR|cl.logs.unbounded.049|  Defaut Windows  : Sans objet. Ces fichiers grossissent sans limite par
-::X|FR|cl.logs.unbounded.050|                    conception, et aucun composant de Windows ne les
-::X|FR|cl.logs.unbounded.051|                    rogne.
-::X|FR|cl.logs.unbounded.052|
-::X|FR|cl.logs.unbounded.053|  Valeurs possibles :
-::X|FR|cl.logs.unbounded.054|    DELETE               : Supprimer ces fichiers de journal et de trace
-::X|FR|cl.logs.unbounded.055|                           nommés. Les sous-systèmes qui les écrivent
-::X|FR|cl.logs.unbounded.056|                           continuent et ouvrent des fichiers neufs.
-::X|FR|cl.logs.unbounded.057|    KEEP                 : La bonne réponse tant que vous cherchez
-::X|FR|cl.logs.unbounded.058|                           pourquoi un périphérique refuse de s installer
-::X|FR|cl.logs.unbounded.059|                           : setupapi.dev.log est justement le fichier qui
-::X|FR|cl.logs.unbounded.060|                           le dit.
-::X|FR|cl.logs.unbounded.061|    ASK                  : Une question qui ne vaut que sur une machine en
-::X|FR|cl.logs.unbounded.062|                           cours de diagnostic : l historique
-::X|FR|cl.logs.unbounded.063|                           d installation des pilotes et de maintenance
-::X|FR|cl.logs.unbounded.064|                           part définitivement.
-::X|FR|cl.logs.unbounded.065|
-::X|FR|cl.logs.unbounded.066|  Pourquoi ces profils : Quatre colonnes identiques, parce que le
-::X|FR|cl.logs.unbounded.067|                         mécanisme est le même partout : un journal que
-::X|FR|cl.logs.unbounded.068|                         personne ne lit. SERVEUR en profite le plus en
-::X|FR|cl.logs.unbounded.069|                         valeur absolue, une machine allumée en permanence
-::X|FR|cl.logs.unbounded.070|                         accumulant les traces le plus vite. GAMING sur
-::X|FR|cl.logs.unbounded.071|                         carte AMD est l origine des 317 Mo de CSV
-::X|FR|cl.logs.unbounded.072|                         Adrenalin. BUREAU et PORTABLE y gagnent
-::X|FR|cl.logs.unbounded.073|                         simplement de la place. WINDOWS veut dire ne
-::X|FR|cl.logs.unbounded.074|                         touchez à rien : rien ne casse, les fichiers
-::X|FR|cl.logs.unbounded.075|                         continuent juste de grossir.
-::X|FR|cl.logs.unbounded.076|
-::X|FR|cl.logs.unbounded.077|  Non verifie (en)  : The sizes quoted - AMD PPC 317 MB, WMI ETL 228 MB,
-::X|FR|cl.logs.unbounded.078|                      USOShared 86 MB - were measured once, on the
-::X|FR|cl.logs.unbounded.079|                      maintainer s machine. Yours will differ, possibly by
-::X|FR|cl.logs.unbounded.080|                      an order of magnitude in either direction. The AMD
-::X|FR|cl.logs.unbounded.081|                      PPC files only exist if Adrenalin is installed.
-::X|FR|cl.logs.unbounded.082|                      Reports of those CSVs reaching tens of GB come from
-::X|FR|cl.logs.unbounded.083|                      the field, not from a measurement here.
-::X|FR|cl.logs.unbounded.084|
-::X|FR|cl.logs.unbounded.085|  Cible           : Le label :dl_logs_go (posé depuis :dl_logs). Fichiers
-::X|FR|cl.logs.unbounded.086|                    nommés et motifs uniquement :
-::X|FR|cl.logs.unbounded.087|                    %LOCALAPPDATA%\AMD\PPC\sdkusage.csv, apprecord.csv,
-::X|FR|cl.logs.unbounded.088|                    driverworkloadstats.csv ;
-::X|FR|cl.logs.unbounded.089|                    %LOCALAPPDATA%\AMD\CN\RSX_*.log* ;
-::X|FR|cl.logs.unbounded.090|                    %WINDIR%\System32\LogFiles\WMI\*.etl.* (sans /S, donc
-::X|FR|cl.logs.unbounded.091|                    RtBackup n est jamais parcouru) ; %ProgramData%\Micros
-::X|FR|cl.logs.unbounded.092|                    oft\Diagnosis\ETLLogs\AutoLogger\*.etl ;
-::X|FR|cl.logs.unbounded.093|                    %ProgramData%\USOShared\Logs\*.etl ;
-::X|FR|cl.logs.unbounded.094|                    %WINDIR%\Logs\DISM\dism.log ; %WINDIR%\Logs\waasmedic,
-::X|FR|cl.logs.unbounded.095|                    SIH et NetSetup ; %WINDIR%\Logs\WindowsUpdate\*.etl ;
-::X|FR|cl.logs.unbounded.096|                    %WINDIR%\inf\setupapi.dev.log et setupapi.app.log ;
-::X|FR|cl.logs.unbounded.097|                    %WINDIR%\debug\wiatrace.log. Aucun dossier n est
-::X|FR|cl.logs.unbounded.098|                    jamais supprimé.
+::X|FR|cl.logs.unbounded.013|  Effet reel      : Supprime exactement ces fichiers. Les trois CSV AMD PPC
+::X|FR|cl.logs.unbounded.014|                    (sdkusage.csv, apprecord.csv, driverworkloadstats.csv)
+::X|FR|cl.logs.unbounded.015|                    partent à deux endroits : %LOCALAPPDATA%\AMD\PPC et
+::X|FR|cl.logs.unbounded.016|                    %ProgramData%\AMD\PPC. La copie ProgramData est celle
+::X|FR|cl.logs.unbounded.017|                    que citent tous les signalements publics d un
+::X|FR|cl.logs.unbounded.018|                    sdkusage.csv de plus de 30 Go, alimentée par des outils
+::X|FR|cl.logs.unbounded.019|                    qui utilisent le SDK AMD comme Fan Control (Source :
+::X|FR|cl.logs.unbounded.020|                    FanControl issue 2829, 2024-11-13 ; fils LTT et
+::X|FR|cl.logs.unbounded.021|                    Overclock.net). config.csv est conservé aux deux
+::X|FR|cl.logs.unbounded.022|                    endroits. La plupart partent
+::X|FR|cl.logs.unbounded.023|                    proprement sur une machine au repos. Deux résistent
+::X|FR|cl.logs.unbounded.024|                    parfois : le motif WMI est volontairement *.etl.*, il
+::X|FR|cl.logs.unbounded.025|                    prend donc les fichiers en rotation et laisse la trace
+::X|FR|cl.logs.unbounded.026|                    active, que la session ETW tient de toute façon
+::X|FR|cl.logs.unbounded.027|                    ouverte ; et dans %WINDIR%\Logs\WindowsUpdate, une
+::X|FR|cl.logs.unbounded.028|                    session de trace en cours verrouille son .etl le plus
+::X|FR|cl.logs.unbounded.029|                    récent, qui est ignoré sans message. L étape exige les
+::X|FR|cl.logs.unbounded.030|                    droits administrateur : sans eux, toutes les lignes
+::X|FR|cl.logs.unbounded.031|                    %WINDIR% échouent en silence. Les dossiers survivent
+::X|FR|cl.logs.unbounded.032|                    toujours, et chaque sous-système repart simplement sur
+::X|FR|cl.logs.unbounded.033|                    un fichier neuf.
+::X|FR|cl.logs.unbounded.034|
+::X|FR|cl.logs.unbounded.035|  Gain            : Réel, mesurable, et aucun nettoyeur standard n y
+::X|FR|cl.logs.unbounded.036|                    touche. Sur la machine pour laquelle la règle a été
+::X|FR|cl.logs.unbounded.037|                    écrite : 317 Mo de CSV de télémétrie AMD, 228 Mo de
+::X|FR|cl.logs.unbounded.038|                    traces WMI en rotation, 86 Mo de journaux
+::X|FR|cl.logs.unbounded.039|                    d orchestrateur - environ 630 Mo en un passage. Sur
+::X|FR|cl.logs.unbounded.040|                    une machine récemment installée, ou sans Adrenalin,
+::X|FR|cl.logs.unbounded.041|                    comptez plutôt quelques dizaines de Mo. Aucun effet
+::X|FR|cl.logs.unbounded.042|                    sur les performances : ces fichiers sont écrits,
+::X|FR|cl.logs.unbounded.043|                    jamais relus par quoi que ce soit que vous utilisez.
+::X|FR|cl.logs.unbounded.044|
+::X|FR|cl.logs.unbounded.045|  Cout            : Vous perdez l historique d installation des pilotes,
+::X|FR|cl.logs.unbounded.046|                    ce qui compte plus qu il n y paraît - setupapi.dev.log
+::X|FR|cl.logs.unbounded.047|                    est le fichier qui explique pourquoi un périphérique a
+::X|FR|cl.logs.unbounded.048|                    cessé de fonctionner après une mise à jour - et
+::X|FR|cl.logs.unbounded.049|                    l historique de maintenance. Rien de tout cela
+::X|FR|cl.logs.unbounded.050|                    n affecte le fonctionnement de la machine, et rien
+::X|FR|cl.logs.unbounded.051|                    n est à retélécharger. Ce qui revient revient dans les
+::X|FR|cl.logs.unbounded.052|                    minutes suivant la prochaine mise à jour ou le
+::X|FR|cl.logs.unbounded.053|                    prochain changement de matériel : la règle des trente
+::X|FR|cl.logs.unbounded.054|                    minutes est largement respectée. Non touchés :
+::X|FR|cl.logs.unbounded.055|                    USOPrivate\UpdateStore, le dossier RtBackup, le
+::X|FR|cl.logs.unbounded.056|                    magasin d INF, et le journal CBS actif.
+::X|FR|cl.logs.unbounded.057|
+::X|FR|cl.logs.unbounded.058|  Defaut Windows  : Sans objet. Ces fichiers grossissent sans limite par
+::X|FR|cl.logs.unbounded.059|                    conception, et aucun composant de Windows ne les
+::X|FR|cl.logs.unbounded.060|                    rogne.
+::X|FR|cl.logs.unbounded.061|
+::X|FR|cl.logs.unbounded.062|  Valeurs possibles :
+::X|FR|cl.logs.unbounded.063|    DELETE               : Supprimer ces fichiers de journal et de trace
+::X|FR|cl.logs.unbounded.064|                           nommés. Les sous-systèmes qui les écrivent
+::X|FR|cl.logs.unbounded.065|                           continuent et ouvrent des fichiers neufs.
+::X|FR|cl.logs.unbounded.066|    KEEP                 : La bonne réponse tant que vous cherchez
+::X|FR|cl.logs.unbounded.067|                           pourquoi un périphérique refuse de s installer
+::X|FR|cl.logs.unbounded.068|                           : setupapi.dev.log est justement le fichier qui
+::X|FR|cl.logs.unbounded.069|                           le dit.
+::X|FR|cl.logs.unbounded.070|    ASK                  : Une question qui ne vaut que sur une machine en
+::X|FR|cl.logs.unbounded.071|                           cours de diagnostic : l historique
+::X|FR|cl.logs.unbounded.072|                           d installation des pilotes et de maintenance
+::X|FR|cl.logs.unbounded.073|                           part définitivement.
+::X|FR|cl.logs.unbounded.074|
+::X|FR|cl.logs.unbounded.075|  Pourquoi ces profils : Quatre colonnes identiques, parce que le
+::X|FR|cl.logs.unbounded.076|                         mécanisme est le même partout : un journal que
+::X|FR|cl.logs.unbounded.077|                         personne ne lit. SERVEUR en profite le plus en
+::X|FR|cl.logs.unbounded.078|                         valeur absolue, une machine allumée en permanence
+::X|FR|cl.logs.unbounded.079|                         accumulant les traces le plus vite. GAMING sur
+::X|FR|cl.logs.unbounded.080|                         carte AMD est l origine des 317 Mo de CSV
+::X|FR|cl.logs.unbounded.081|                         Adrenalin. BUREAU et PORTABLE y gagnent
+::X|FR|cl.logs.unbounded.082|                         simplement de la place. WINDOWS veut dire ne
+::X|FR|cl.logs.unbounded.083|                         touchez à rien : rien ne casse, les fichiers
+::X|FR|cl.logs.unbounded.084|                         continuent juste de grossir.
+::X|FR|cl.logs.unbounded.085|
+::X|FR|cl.logs.unbounded.086|  Non verifie (en)  : The sizes quoted - AMD PPC 317 MB, WMI ETL 228 MB,
+::X|FR|cl.logs.unbounded.087|                      USOShared 86 MB - were measured once, on the
+::X|FR|cl.logs.unbounded.088|                      maintainer s machine. Yours will differ, possibly by
+::X|FR|cl.logs.unbounded.089|                      an order of magnitude in either direction. The AMD
+::X|FR|cl.logs.unbounded.090|                      PPC files only exist if Adrenalin or a tool built on
+::X|FR|cl.logs.unbounded.091|                      the AMD SDK is installed. Reports of those CSVs
+::X|FR|cl.logs.unbounded.092|                      reaching tens of GB come from the field, not from a
+::X|FR|cl.logs.unbounded.093|                      measurement here.
+::X|FR|cl.logs.unbounded.094|
+::X|FR|cl.logs.unbounded.095|  Cible           : Le label :dl_logs_go (posé depuis :dl_logs). Fichiers
+::X|FR|cl.logs.unbounded.096|                    nommés et motifs uniquement :
+::X|FR|cl.logs.unbounded.097|                    %LOCALAPPDATA%\AMD\PPC\ et %ProgramData%\AMD\PPC\
+::X|FR|cl.logs.unbounded.098|                    sdkusage.csv, apprecord.csv, driverworkloadstats.csv
+::X|FR|cl.logs.unbounded.099|                    (config.csv conservé) ;
+::X|FR|cl.logs.unbounded.100|                    %LOCALAPPDATA%\AMD\CN\RSX_*.log* ;
+::X|FR|cl.logs.unbounded.101|                    %WINDIR%\System32\LogFiles\WMI\*.etl.* (sans /S, donc
+::X|FR|cl.logs.unbounded.102|                    RtBackup n est jamais parcouru) ; %ProgramData%\Micros
+::X|FR|cl.logs.unbounded.103|                    oft\Diagnosis\ETLLogs\AutoLogger\*.etl ;
+::X|FR|cl.logs.unbounded.104|                    %ProgramData%\USOShared\Logs\*.etl ;
+::X|FR|cl.logs.unbounded.105|                    %WINDIR%\Logs\DISM\dism.log ; %WINDIR%\Logs\waasmedic,
+::X|FR|cl.logs.unbounded.106|                    SIH et NetSetup ; %WINDIR%\Logs\WindowsUpdate\*.etl ;
+::X|FR|cl.logs.unbounded.107|                    %WINDIR%\inf\setupapi.dev.log et setupapi.app.log ;
+::X|FR|cl.logs.unbounded.108|                    %WINDIR%\debug\wiatrace.log. Aucun dossier n est
+::X|FR|cl.logs.unbounded.109|                    jamais supprimé.
 ::
 :: ---- cl.logs.cbspanther (cleanup) --------------------------------
 ::P|cl.logs.cbspanther|DELETE|DELETE|DELETE|DELETE|KEEP|
@@ -36752,200 +37317,216 @@ goto :eof
 ::X|EN|cl.drivesweep.caches.001|  What it is      : Windows drops update payload at the root of whichever
 ::X|EN|cl.drivesweep.caches.002|                    volume it picked, not only C:. This clears
 ::X|EN|cl.drivesweep.caches.003|                    DeliveryOptimization and WUDownloadCache at the root
-::X|EN|cl.drivesweep.caches.004|                    of every fixed drive, the Delivery Optimization store
-::X|EN|cl.drivesweep.caches.005|                    under ProgramData on the system drive, and a folder
-::X|EN|cl.drivesweep.caches.006|                    named .cache at the root of every fixed drive.
+::X|EN|cl.drivesweep.caches.004|                    of every fixed drive, the Delivery Optimization cache
+::X|EN|cl.drivesweep.caches.005|                    on the system drive (through its own cmdlet), and a
+::X|EN|cl.drivesweep.caches.006|                    folder named .cache at the root of every fixed drive.
 ::X|EN|cl.drivesweep.caches.007|
 ::X|EN|cl.drivesweep.caches.008|  Actual effect   : del /F /S /Q on <drive>:\DeliveryOptimization and
 ::X|EN|cl.drivesweep.caches.009|                    <drive>:\WUDownloadCache on each drive. On the system
-::X|EN|cl.drivesweep.caches.010|                    drive only, the DoSvc service is stopped, the store
-::X|EN|cl.drivesweep.caches.011|                    %ProgramData%\Microsoft\Network\Downloader is emptied,
-::X|EN|cl.drivesweep.caches.012|                    and DoSvc is started again straight after, because it
-::X|EN|cl.drivesweep.caches.013|                    is the primary downloader for Windows Update. The old
-::X|EN|cl.drivesweep.caches.014|                    <drive>:\ProgramData\Microsoft\Windows\Delivery
-::X|EN|cl.drivesweep.caches.015|                    Optimization\Cache path is gone from the code: it did
-::X|EN|cl.drivesweep.caches.016|                    not exist on 25H2 and deleted nothing. Then :bigcache
-::X|EN|cl.drivesweep.caches.017|                    measures <drive>:\.cache and logs its size (with an
-::X|EN|cl.drivesweep.caches.018|                    on-screen warning above about 2000 MB) before the
-::X|EN|cl.drivesweep.caches.019|                    folder is emptied. The drive filter works: mapped SMB
-::X|EN|cl.drivesweep.caches.020|                    shares are excluded, which matters because a
-::X|EN|cl.drivesweep.caches.021|                    disconnected share costs a 30 second timeout each, and
-::X|EN|cl.drivesweep.caches.022|                    a drive that reports fixed but has no System Volume
-::X|EN|cl.drivesweep.caches.023|                    Information (a cloud mount such as Google Drive on G:)
-::X|EN|cl.drivesweep.caches.024|                    is not swept. The same routine then removes the
-::X|EN|cl.drivesweep.caches.025|                    feature-update staging folders, which have their own
-::X|EN|cl.drivesweep.caches.026|                    card.
-::X|EN|cl.drivesweep.caches.027|
-::X|EN|cl.drivesweep.caches.028|  Gain            : Measured on this machine before the Downloader store
-::X|EN|cl.drivesweep.caches.029|                    was added: C:\DeliveryOptimization and
-::X|EN|cl.drivesweep.caches.030|                    C:\WUDownloadCache are absent; D:\DeliveryOptimization
-::X|EN|cl.drivesweep.caches.031|                    and D:\WUDownloadCache exist but hold 0 bytes. The
-::X|EN|cl.drivesweep.caches.032|                    root paths recover nothing here. What they recover
-::X|EN|cl.drivesweep.caches.033|                    now depends on what the Downloader store holds, which
-::X|EN|cl.drivesweep.caches.034|                    was not measured. The 222 MB Delivery Optimization
-::X|EN|cl.drivesweep.caches.035|                    cache under C:\Windows\ServiceProfiles\NetworkServ
-::X|EN|cl.drivesweep.caches.036|                    ice\AppData\Local\Microsoft\Windows\DeliveryOptimizati
-::X|EN|cl.drivesweep.caches.037|                    on is still a path this step never touches. The
-::X|EN|cl.drivesweep.caches.038|                    measured recovery from C:\.cache was 0.9 MB.
-::X|EN|cl.drivesweep.caches.039|
-::X|EN|cl.drivesweep.caches.040|  Cost            : For the Windows paths, nothing: Windows re-downloads
-::X|EN|cl.drivesweep.caches.041|                    any update payload it still needs, and DoSvc is
-::X|EN|cl.drivesweep.caches.042|                    restarted so Windows Update keeps working. The .cache
-::X|EN|cl.drivesweep.caches.043|                    path is the one to think about. On this machine
-::X|EN|cl.drivesweep.caches.044|                    C:\.cache contains AMD\DxCache and AMD\DxcCache - an
-::X|EN|cl.drivesweep.caches.045|                    AMD DirectX shader cache, 0.9 MB, back in seconds. On
-::X|EN|cl.drivesweep.caches.046|                    a development machine the same name is often a Bazel,
-::X|EN|cl.drivesweep.caches.047|                    Yarn, Cargo or Hugging Face store, and that is a
-::X|EN|cl.drivesweep.caches.048|                    multi-gigabyte refetch measured in hours, which fails
-::X|EN|cl.drivesweep.caches.049|                    the regeneration test outright.
-::X|EN|cl.drivesweep.caches.050|
-::X|EN|cl.drivesweep.caches.051|  Windows default : Not applicable - regenerable Windows Update and
-::X|EN|cl.drivesweep.caches.052|                    Delivery Optimization data. Windows expires its own
-::X|EN|cl.drivesweep.caches.053|                    Delivery Optimization cache without help.
-::X|EN|cl.drivesweep.caches.054|
-::X|EN|cl.drivesweep.caches.055|  Possible values:
-::X|EN|cl.drivesweep.caches.056|    ASK                  : The right answer for the four real profiles,
-::X|EN|cl.drivesweep.caches.057|                           because of the .cache path. Nothing in a
-::X|EN|cl.drivesweep.caches.058|                           profile can tell whether <drive>:\.cache is a
-::X|EN|cl.drivesweep.caches.059|                           shader cache worth 0.9 MB or a model store
-::X|EN|cl.drivesweep.caches.060|                           worth 40 GB, and the step empties it either
-::X|EN|cl.drivesweep.caches.061|                           way.
-::X|EN|cl.drivesweep.caches.062|    DELETE               : Correct once you have looked. Check the root of
-::X|EN|cl.drivesweep.caches.063|                           each fixed drive for a .cache folder; if it
-::X|EN|cl.drivesweep.caches.064|                           holds a driver or shader cache like the AMD one
-::X|EN|cl.drivesweep.caches.065|                           here, this is free. The Windows paths cost
-::X|EN|cl.drivesweep.caches.066|                           nothing in any case.
-::X|EN|cl.drivesweep.caches.067|    KEEP                 : The answer on a development machine with a
-::X|EN|cl.drivesweep.caches.068|                           root-level .cache holding packages or models.
-::X|EN|cl.drivesweep.caches.069|
-::X|EN|cl.drivesweep.caches.070|  Why these profiles : Four ASK columns, not because the Windows paths are
-::X|EN|cl.drivesweep.caches.071|                       risky - they are regenerable - but because the step
-::X|EN|cl.drivesweep.caches.072|                       is indivisible and the .cache path is unknowable
-::X|EN|cl.drivesweep.caches.073|                       from a profile. On this specific machine the answer
-::X|EN|cl.drivesweep.caches.074|                       would be DELETE for 0.9 MB of AMD shader cache; no
-::X|EN|cl.drivesweep.caches.075|                       profile could have known that in advance. Profile 5
-::X|EN|cl.drivesweep.caches.076|                       is KEEP because Windows already expires this data
-::X|EN|cl.drivesweep.caches.077|                       on its own schedule.
-::X|EN|cl.drivesweep.caches.078|
-::X|EN|cl.drivesweep.caches.079|  Unverified      : OPTY cannot tell a Windows .cache from a tool's .cache
-::X|EN|cl.drivesweep.caches.080|                    at the root of a drive: the path is matched by name,
-::X|EN|cl.drivesweep.caches.081|                    with no ownership or content check. :bigcache reports
-::X|EN|cl.drivesweep.caches.082|                    the size in the log and prints a warning when the
-::X|EN|cl.drivesweep.caches.083|                    folder exceeds about 2000 MB, but it reports and
-::X|EN|cl.drivesweep.caches.084|                    deletes in the same breath - it never stops and never
-::X|EN|cl.drivesweep.caches.085|                    asks. This also sits in direct tension with the rule
-::X|EN|cl.drivesweep.caches.086|                    that a delete is only allowed when regeneration takes
-::X|EN|cl.drivesweep.caches.087|                    well under thirty minutes.
-::X|EN|cl.drivesweep.caches.088|
-::X|EN|cl.drivesweep.caches.089|  Target          : :drivesweep, run once per letter of FIXEDLIST (built
-::X|EN|cl.drivesweep.caches.090|                    by :fixedprobe). Paths: <D>:\DeliveryOptimization\*,
-::X|EN|cl.drivesweep.caches.091|                    <D>:\WUDownloadCache\*; on the system drive only, net
-::X|EN|cl.drivesweep.caches.092|                    stop DoSvc, del /F /S /Q %ProgramData%\Microsoft\
-::X|EN|cl.drivesweep.caches.093|                    Network\Downloader\*, sc start DoSvc; then call
-::X|EN|cl.drivesweep.caches.094|                    :bigcache followed by del /F /S /Q <D>:\.cache\*.
+::X|EN|cl.drivesweep.caches.010|                    drive only, powershell Delete-DeliveryOptimizationCache
+::X|EN|cl.drivesweep.caches.011|                    -Force empties the Delivery Optimization cache; DoSvc
+::X|EN|cl.drivesweep.caches.012|                    is not stopped, and the log says whether the cmdlet
+::X|EN|cl.drivesweep.caches.013|                    succeeded. The old delete of %ProgramData%\Microsoft\
+::X|EN|cl.drivesweep.caches.014|                    Network\Downloader is gone: that folder is BITS' job
+::X|EN|cl.drivesweep.caches.015|                    queue (qmgr*.dat), which Microsoft deletes only as a
+::X|EN|cl.drivesweep.caches.016|                    last-resort Windows Update reset with BITS, wuauserv
+::X|EN|cl.drivesweep.caches.017|                    and cryptsvc stopped (Source: Microsoft Learn,
+::X|EN|cl.drivesweep.caches.018|                    Additional resources for Windows Update, 2026-02-12).
+::X|EN|cl.drivesweep.caches.019|                    The old <drive>:\ProgramData\Microsoft\Windows\Delivery
+::X|EN|cl.drivesweep.caches.020|                    Optimization\Cache path is gone from the code too: it
+::X|EN|cl.drivesweep.caches.021|                    did not exist on 25H2 and deleted nothing. Then :bigcache
+::X|EN|cl.drivesweep.caches.022|                    measures <drive>:\.cache and logs its size (with an
+::X|EN|cl.drivesweep.caches.023|                    on-screen warning above about 2000 MB) before the
+::X|EN|cl.drivesweep.caches.024|                    folder is emptied. The drive filter works: mapped SMB
+::X|EN|cl.drivesweep.caches.025|                    shares are excluded, which matters because a
+::X|EN|cl.drivesweep.caches.026|                    disconnected share costs a 30 second timeout each, and
+::X|EN|cl.drivesweep.caches.027|                    a drive that reports fixed but has no System Volume
+::X|EN|cl.drivesweep.caches.028|                    Information (a cloud mount such as Google Drive on G:)
+::X|EN|cl.drivesweep.caches.029|                    is not swept. The same routine then removes the
+::X|EN|cl.drivesweep.caches.030|                    feature-update staging folders, which have their own
+::X|EN|cl.drivesweep.caches.031|                    card.
+::X|EN|cl.drivesweep.caches.032|
+::X|EN|cl.drivesweep.caches.033|  Gain            : Measured on this machine: C:\DeliveryOptimization and
+::X|EN|cl.drivesweep.caches.034|                    C:\WUDownloadCache are absent; D:\DeliveryOptimization
+::X|EN|cl.drivesweep.caches.035|                    and D:\WUDownloadCache exist but hold 0 bytes. The
+::X|EN|cl.drivesweep.caches.036|                    root paths recover nothing here. The 222 MB Delivery
+::X|EN|cl.drivesweep.caches.037|                    Optimization cache under C:\Windows\ServiceProfiles\
+::X|EN|cl.drivesweep.caches.038|                    NetworkService\AppData\Local\Microsoft\Windows\
+::X|EN|cl.drivesweep.caches.039|                    DeliveryOptimization is DO's own working store, the
+::X|EN|cl.drivesweep.caches.040|                    one the cmdlet now empties; what a given run frees
+::X|EN|cl.drivesweep.caches.041|                    there was not measured. It stays small by design: by
+::X|EN|cl.drivesweep.caches.042|                    default DO keeps content at most 3 days and uses at
+::X|EN|cl.drivesweep.caches.043|                    most 20 percent of the disk (Source: Microsoft Learn,
+::X|EN|cl.drivesweep.caches.044|                    Delivery Optimization reference, 2026-05-20). The
+::X|EN|cl.drivesweep.caches.045|                    measured recovery from C:\.cache was 0.9 MB.
+::X|EN|cl.drivesweep.caches.046|
+::X|EN|cl.drivesweep.caches.047|  Cost            : For the Windows paths, nothing: Windows re-downloads
+::X|EN|cl.drivesweep.caches.048|                    any update payload it still needs, and DoSvc keeps
+::X|EN|cl.drivesweep.caches.049|                    running so Windows Update keeps working. The .cache
+::X|EN|cl.drivesweep.caches.050|                    path is the one to think about. On this machine
+::X|EN|cl.drivesweep.caches.051|                    C:\.cache contains AMD\DxCache and AMD\DxcCache - an
+::X|EN|cl.drivesweep.caches.052|                    AMD DirectX shader cache, 0.9 MB, back in seconds. On
+::X|EN|cl.drivesweep.caches.053|                    a development machine the same name is often a Bazel,
+::X|EN|cl.drivesweep.caches.054|                    Yarn, Cargo or Hugging Face store, and that is a
+::X|EN|cl.drivesweep.caches.055|                    multi-gigabyte refetch measured in hours, which fails
+::X|EN|cl.drivesweep.caches.056|                    the regeneration test outright.
+::X|EN|cl.drivesweep.caches.057|
+::X|EN|cl.drivesweep.caches.058|  Windows default : Not applicable - regenerable Windows Update and
+::X|EN|cl.drivesweep.caches.059|                    Delivery Optimization data. Windows expires its own
+::X|EN|cl.drivesweep.caches.060|                    Delivery Optimization cache without help.
+::X|EN|cl.drivesweep.caches.061|
+::X|EN|cl.drivesweep.caches.062|  Possible values:
+::X|EN|cl.drivesweep.caches.063|    ASK                  : The right answer for the four real profiles,
+::X|EN|cl.drivesweep.caches.064|                           because of the .cache path. Nothing in a
+::X|EN|cl.drivesweep.caches.065|                           profile can tell whether <drive>:\.cache is a
+::X|EN|cl.drivesweep.caches.066|                           shader cache worth 0.9 MB or a model store
+::X|EN|cl.drivesweep.caches.067|                           worth 40 GB, and the step empties it either
+::X|EN|cl.drivesweep.caches.068|                           way.
+::X|EN|cl.drivesweep.caches.069|    DELETE               : Correct once you have looked. Check the root of
+::X|EN|cl.drivesweep.caches.070|                           each fixed drive for a .cache folder; if it
+::X|EN|cl.drivesweep.caches.071|                           holds a driver or shader cache like the AMD one
+::X|EN|cl.drivesweep.caches.072|                           here, this is free. The Windows paths cost
+::X|EN|cl.drivesweep.caches.073|                           nothing in any case.
+::X|EN|cl.drivesweep.caches.074|    KEEP                 : The answer on a development machine with a
+::X|EN|cl.drivesweep.caches.075|                           root-level .cache holding packages or models.
+::X|EN|cl.drivesweep.caches.076|
+::X|EN|cl.drivesweep.caches.077|  Why these profiles : Four ASK columns, not because the Windows paths are
+::X|EN|cl.drivesweep.caches.078|                       risky - they are regenerable - but because the step
+::X|EN|cl.drivesweep.caches.079|                       is indivisible and the .cache path is unknowable
+::X|EN|cl.drivesweep.caches.080|                       from a profile. On this specific machine the answer
+::X|EN|cl.drivesweep.caches.081|                       would be DELETE for 0.9 MB of AMD shader cache; no
+::X|EN|cl.drivesweep.caches.082|                       profile could have known that in advance. Profile 5
+::X|EN|cl.drivesweep.caches.083|                       is KEEP because Windows already expires this data
+::X|EN|cl.drivesweep.caches.084|                       on its own schedule.
+::X|EN|cl.drivesweep.caches.085|
+::X|EN|cl.drivesweep.caches.086|  Unverified      : OPTY cannot tell a Windows .cache from a tool's .cache
+::X|EN|cl.drivesweep.caches.087|                    at the root of a drive: the path is matched by name,
+::X|EN|cl.drivesweep.caches.088|                    with no ownership or content check. :bigcache reports
+::X|EN|cl.drivesweep.caches.089|                    the size in the log and prints a warning when the
+::X|EN|cl.drivesweep.caches.090|                    folder exceeds about 2000 MB, but it reports and
+::X|EN|cl.drivesweep.caches.091|                    deletes in the same breath - it never stops and never
+::X|EN|cl.drivesweep.caches.092|                    asks. This also sits in direct tension with the rule
+::X|EN|cl.drivesweep.caches.093|                    that a delete is only allowed when regeneration takes
+::X|EN|cl.drivesweep.caches.094|                    well under thirty minutes.
+::X|EN|cl.drivesweep.caches.095|
+::X|EN|cl.drivesweep.caches.096|  Target          : :drivesweep, run once per letter of FIXEDLIST (built
+::X|EN|cl.drivesweep.caches.097|                    by :fixedprobe). Paths: <D>:\DeliveryOptimization\*,
+::X|EN|cl.drivesweep.caches.098|                    <D>:\WUDownloadCache\*; on the system drive only,
+::X|EN|cl.drivesweep.caches.099|                    powershell Delete-DeliveryOptimizationCache -Force;
+::X|EN|cl.drivesweep.caches.100|                    then call :bigcache followed by del /F /S /Q
+::X|EN|cl.drivesweep.caches.101|                    <D>:\.cache\*.
 ::X|FR|cl.drivesweep.caches.001|  Ce que c est    : Windows dépose les données de mise à jour à la racine
 ::X|FR|cl.drivesweep.caches.002|                    du volume qu il a choisi, pas seulement sur C:. Ceci
 ::X|FR|cl.drivesweep.caches.003|                    vide DeliveryOptimization et WUDownloadCache à la
-::X|FR|cl.drivesweep.caches.004|                    racine de chaque disque fixe, le magasin Delivery
-::X|FR|cl.drivesweep.caches.005|                    Optimization de ProgramData sur le disque système, et
-::X|FR|cl.drivesweep.caches.006|                    un dossier nommé .cache à la racine de chaque disque
-::X|FR|cl.drivesweep.caches.007|                    fixe.
+::X|FR|cl.drivesweep.caches.004|                    racine de chaque disque fixe, le cache Delivery
+::X|FR|cl.drivesweep.caches.005|                    Optimization sur le disque système (via sa propre
+::X|FR|cl.drivesweep.caches.006|                    cmdlet), et un dossier nommé .cache à la racine de
+::X|FR|cl.drivesweep.caches.007|                    chaque disque fixe.
 ::X|FR|cl.drivesweep.caches.008|
 ::X|FR|cl.drivesweep.caches.009|  Effet reel      : del /F /S /Q sur <disque>:\DeliveryOptimization et
 ::X|FR|cl.drivesweep.caches.010|                    <disque>:\WUDownloadCache, disque par disque. Sur le
-::X|FR|cl.drivesweep.caches.011|                    disque système seulement, le service DoSvc est arrêté,
-::X|FR|cl.drivesweep.caches.012|                    le magasin %ProgramData%\Microsoft\Network\Downloader
-::X|FR|cl.drivesweep.caches.013|                    est vidé, puis DoSvc est redémarré aussitôt, car c est
-::X|FR|cl.drivesweep.caches.014|                    le téléchargeur principal de Windows Update. L ancien
-::X|FR|cl.drivesweep.caches.015|                    chemin <disque>:\ProgramData\Microsoft\Windows\
-::X|FR|cl.drivesweep.caches.016|                    DeliveryOptimization\Cache a disparu du code : il
-::X|FR|cl.drivesweep.caches.017|                    n existait pas sur 25H2 et ne supprimait rien. Ensuite
-::X|FR|cl.drivesweep.caches.018|                    :bigcache mesure <disque>:\.cache et note sa taille
-::X|FR|cl.drivesweep.caches.019|                    dans le journal (avec un avertissement à l écran
-::X|FR|cl.drivesweep.caches.020|                    au-delà d environ 2000 Mo) avant que le dossier soit
-::X|FR|cl.drivesweep.caches.021|                    vidé. Le filtre de disques fonctionne : les partages
-::X|FR|cl.drivesweep.caches.022|                    SMB montés sont exclus, ce qui compte car un partage
-::X|FR|cl.drivesweep.caches.023|                    déconnecté coûte 30 secondes de délai chacun, et un
-::X|FR|cl.drivesweep.caches.024|                    disque qui se dit fixe mais n a pas de System Volume
-::X|FR|cl.drivesweep.caches.025|                    Information (un montage cloud comme Google Drive sur
-::X|FR|cl.drivesweep.caches.026|                    G:) n est pas balayé. La même routine supprime ensuite
-::X|FR|cl.drivesweep.caches.027|                    les dossiers de préparation de mise à niveau, qui ont
-::X|FR|cl.drivesweep.caches.028|                    leur propre fiche.
-::X|FR|cl.drivesweep.caches.029|
-::X|FR|cl.drivesweep.caches.030|  Gain            : Mesuré sur cette machine avant l ajout du magasin
-::X|FR|cl.drivesweep.caches.031|                    Downloader : C:\DeliveryOptimization et
-::X|FR|cl.drivesweep.caches.032|                    C:\WUDownloadCache sont absents ;
-::X|FR|cl.drivesweep.caches.033|                    D:\DeliveryOptimization et D:\WUDownloadCache existent
-::X|FR|cl.drivesweep.caches.034|                    mais pèsent 0 octet. Les chemins racine ne récupèrent
-::X|FR|cl.drivesweep.caches.035|                    rien ici. Ce qui est récupéré dépend maintenant du
-::X|FR|cl.drivesweep.caches.036|                    contenu du magasin Downloader, qui n a pas été mesuré.
-::X|FR|cl.drivesweep.caches.037|                    Le cache Delivery Optimization de 222 Mo sous
-::X|FR|cl.drivesweep.caches.038|                    C:\Windows\ServiceProfiles\NetworkService\AppData\
-::X|FR|cl.drivesweep.caches.039|                    Local\Microsoft\Windows\DeliveryOptimization reste un
-::X|FR|cl.drivesweep.caches.040|                    chemin auquel cette étape ne touche jamais. La
-::X|FR|cl.drivesweep.caches.041|                    récupération mesurée sur C:\.cache était de 0,9 Mo.
-::X|FR|cl.drivesweep.caches.042|
-::X|FR|cl.drivesweep.caches.043|  Cout            : Pour les chemins Windows, rien : Windows retélécharge
-::X|FR|cl.drivesweep.caches.044|                    les données de mise à jour dont il a encore besoin, et
-::X|FR|cl.drivesweep.caches.045|                    DoSvc est redémarré pour que Windows Update continue
-::X|FR|cl.drivesweep.caches.046|                    de fonctionner. Le chemin .cache mérite réflexion. Sur
-::X|FR|cl.drivesweep.caches.047|                    cette machine, C:\.cache contient AMD\DxCache et
-::X|FR|cl.drivesweep.caches.048|                    AMD\DxcCache - un cache de shaders DirectX AMD, 0,9
-::X|FR|cl.drivesweep.caches.049|                    Mo, reconstruit en quelques secondes. Sur une machine
-::X|FR|cl.drivesweep.caches.050|                    de développement, le même nom abrite souvent une
-::X|FR|cl.drivesweep.caches.051|                    réserve Bazel, Yarn, Cargo ou Hugging Face, et là
-::X|FR|cl.drivesweep.caches.052|                    c est un retéléchargement de plusieurs gigaoctets qui
-::X|FR|cl.drivesweep.caches.053|                    se compte en heures : la règle des trente minutes
-::X|FR|cl.drivesweep.caches.054|                    n est plus respectée.
-::X|FR|cl.drivesweep.caches.055|
-::X|FR|cl.drivesweep.caches.056|  Defaut Windows  : Sans objet - données Windows Update et Delivery
-::X|FR|cl.drivesweep.caches.057|                    Optimization régénérables. Windows fait expirer son
-::X|FR|cl.drivesweep.caches.058|                    propre cache Delivery Optimization sans aide.
-::X|FR|cl.drivesweep.caches.059|
-::X|FR|cl.drivesweep.caches.060|  Valeurs possibles :
-::X|FR|cl.drivesweep.caches.061|    ASK                  : La bonne réponse pour les quatre profils réels,
-::X|FR|cl.drivesweep.caches.062|                           à cause du chemin .cache. Aucun profil ne peut
-::X|FR|cl.drivesweep.caches.063|                           savoir si <disque>:\.cache est un cache de
-::X|FR|cl.drivesweep.caches.064|                           shaders de 0,9 Mo ou une réserve de modèles de
-::X|FR|cl.drivesweep.caches.065|                           40 Go, et l étape le vide dans les deux cas.
-::X|FR|cl.drivesweep.caches.066|    DELETE               : Correct une fois que vous avez regardé.
-::X|FR|cl.drivesweep.caches.067|                           Vérifiez la racine de chaque disque fixe pour
-::X|FR|cl.drivesweep.caches.068|                           un dossier .cache ; s il contient un cache de
-::X|FR|cl.drivesweep.caches.069|                           pilote ou de shaders comme celui d AMD ici,
-::X|FR|cl.drivesweep.caches.070|                           c est gratuit. Les chemins Windows, eux, ne
-::X|FR|cl.drivesweep.caches.071|                           coûtent rien de toute façon.
-::X|FR|cl.drivesweep.caches.072|    KEEP                 : La réponse sur une machine de développement
-::X|FR|cl.drivesweep.caches.073|                           dont le .cache racine contient des paquets ou
-::X|FR|cl.drivesweep.caches.074|                           des modèles.
-::X|FR|cl.drivesweep.caches.075|
-::X|FR|cl.drivesweep.caches.076|  Pourquoi ces profils : Quatre colonnes ASK, non parce que les chemins
-::X|FR|cl.drivesweep.caches.077|                         Windows seraient risqués - ils sont régénérables
-::X|FR|cl.drivesweep.caches.078|                         - mais parce que l étape est indivisible et que
-::X|FR|cl.drivesweep.caches.079|                         le chemin .cache échappe à tout profil. Sur cette
-::X|FR|cl.drivesweep.caches.080|                         machine précise, la réponse serait DELETE pour
-::X|FR|cl.drivesweep.caches.081|                         0,9 Mo de cache de shaders AMD ; aucun profil ne
-::X|FR|cl.drivesweep.caches.082|                         pouvait le savoir à l avance. La colonne 5 dit
-::X|FR|cl.drivesweep.caches.083|                         KEEP parce que Windows fait déjà expirer ces
-::X|FR|cl.drivesweep.caches.084|                         données selon son propre calendrier.
+::X|FR|cl.drivesweep.caches.011|                    disque système seulement, powershell
+::X|FR|cl.drivesweep.caches.012|                    Delete-DeliveryOptimizationCache -Force vide le cache
+::X|FR|cl.drivesweep.caches.013|                    Delivery Optimization ; DoSvc n est pas arrêté, et le
+::X|FR|cl.drivesweep.caches.014|                    journal dit si la cmdlet a réussi. L ancienne
+::X|FR|cl.drivesweep.caches.015|                    suppression de %ProgramData%\Microsoft\Network\
+::X|FR|cl.drivesweep.caches.016|                    Downloader a disparu : ce dossier est la file de
+::X|FR|cl.drivesweep.caches.017|                    tâches de BITS (qmgr*.dat), que Microsoft ne supprime
+::X|FR|cl.drivesweep.caches.018|                    qu en dernier recours pour réinitialiser Windows
+::X|FR|cl.drivesweep.caches.019|                    Update, BITS, wuauserv et cryptsvc arrêtés (Source :
+::X|FR|cl.drivesweep.caches.020|                    Microsoft Learn, Additional resources for Windows
+::X|FR|cl.drivesweep.caches.021|                    Update, 2026-02-12). L ancien chemin
+::X|FR|cl.drivesweep.caches.022|                    <disque>:\ProgramData\Microsoft\Windows\
+::X|FR|cl.drivesweep.caches.023|                    DeliveryOptimization\Cache a lui aussi disparu du
+::X|FR|cl.drivesweep.caches.024|                    code : il n existait pas sur 25H2 et ne supprimait
+::X|FR|cl.drivesweep.caches.025|                    rien. Ensuite
+::X|FR|cl.drivesweep.caches.026|                    :bigcache mesure <disque>:\.cache et note sa taille
+::X|FR|cl.drivesweep.caches.027|                    dans le journal (avec un avertissement à l écran
+::X|FR|cl.drivesweep.caches.028|                    au-delà d environ 2000 Mo) avant que le dossier soit
+::X|FR|cl.drivesweep.caches.029|                    vidé. Le filtre de disques fonctionne : les partages
+::X|FR|cl.drivesweep.caches.030|                    SMB montés sont exclus, ce qui compte car un partage
+::X|FR|cl.drivesweep.caches.031|                    déconnecté coûte 30 secondes de délai chacun, et un
+::X|FR|cl.drivesweep.caches.032|                    disque qui se dit fixe mais n a pas de System Volume
+::X|FR|cl.drivesweep.caches.033|                    Information (un montage cloud comme Google Drive sur
+::X|FR|cl.drivesweep.caches.034|                    G:) n est pas balayé. La même routine supprime ensuite
+::X|FR|cl.drivesweep.caches.035|                    les dossiers de préparation de mise à niveau, qui ont
+::X|FR|cl.drivesweep.caches.036|                    leur propre fiche.
+::X|FR|cl.drivesweep.caches.037|
+::X|FR|cl.drivesweep.caches.038|  Gain            : Mesuré sur cette machine : C:\DeliveryOptimization et
+::X|FR|cl.drivesweep.caches.039|                    C:\WUDownloadCache sont absents ;
+::X|FR|cl.drivesweep.caches.040|                    D:\DeliveryOptimization et D:\WUDownloadCache existent
+::X|FR|cl.drivesweep.caches.041|                    mais pèsent 0 octet. Les chemins racine ne récupèrent
+::X|FR|cl.drivesweep.caches.042|                    rien ici. Le cache Delivery Optimization de 222 Mo sous
+::X|FR|cl.drivesweep.caches.043|                    C:\Windows\ServiceProfiles\NetworkService\AppData\
+::X|FR|cl.drivesweep.caches.044|                    Local\Microsoft\Windows\DeliveryOptimization est le
+::X|FR|cl.drivesweep.caches.045|                    magasin de travail de DO, celui que la cmdlet vide
+::X|FR|cl.drivesweep.caches.046|                    désormais ; ce qu un passage y libère n a pas été
+::X|FR|cl.drivesweep.caches.047|                    mesuré. Il reste petit par conception : par défaut DO
+::X|FR|cl.drivesweep.caches.048|                    garde le contenu 3 jours au plus et utilise au plus 20
+::X|FR|cl.drivesweep.caches.049|                    pour cent du disque (Source : Microsoft Learn,
+::X|FR|cl.drivesweep.caches.050|                    Delivery Optimization reference, 2026-05-20). La
+::X|FR|cl.drivesweep.caches.051|                    récupération mesurée sur C:\.cache était de 0,9 Mo.
+::X|FR|cl.drivesweep.caches.052|
+::X|FR|cl.drivesweep.caches.053|  Cout            : Pour les chemins Windows, rien : Windows retélécharge
+::X|FR|cl.drivesweep.caches.054|                    les données de mise à jour dont il a encore besoin, et
+::X|FR|cl.drivesweep.caches.055|                    DoSvc continue de tourner pour que Windows Update
+::X|FR|cl.drivesweep.caches.056|                    fonctionne toujours. Le chemin .cache mérite réflexion. Sur
+::X|FR|cl.drivesweep.caches.057|                    cette machine, C:\.cache contient AMD\DxCache et
+::X|FR|cl.drivesweep.caches.058|                    AMD\DxcCache - un cache de shaders DirectX AMD, 0,9
+::X|FR|cl.drivesweep.caches.059|                    Mo, reconstruit en quelques secondes. Sur une machine
+::X|FR|cl.drivesweep.caches.060|                    de développement, le même nom abrite souvent une
+::X|FR|cl.drivesweep.caches.061|                    réserve Bazel, Yarn, Cargo ou Hugging Face, et là
+::X|FR|cl.drivesweep.caches.062|                    c est un retéléchargement de plusieurs gigaoctets qui
+::X|FR|cl.drivesweep.caches.063|                    se compte en heures : la règle des trente minutes
+::X|FR|cl.drivesweep.caches.064|                    n est plus respectée.
+::X|FR|cl.drivesweep.caches.065|
+::X|FR|cl.drivesweep.caches.066|  Defaut Windows  : Sans objet - données Windows Update et Delivery
+::X|FR|cl.drivesweep.caches.067|                    Optimization régénérables. Windows fait expirer son
+::X|FR|cl.drivesweep.caches.068|                    propre cache Delivery Optimization sans aide.
+::X|FR|cl.drivesweep.caches.069|
+::X|FR|cl.drivesweep.caches.070|  Valeurs possibles :
+::X|FR|cl.drivesweep.caches.071|    ASK                  : La bonne réponse pour les quatre profils réels,
+::X|FR|cl.drivesweep.caches.072|                           à cause du chemin .cache. Aucun profil ne peut
+::X|FR|cl.drivesweep.caches.073|                           savoir si <disque>:\.cache est un cache de
+::X|FR|cl.drivesweep.caches.074|                           shaders de 0,9 Mo ou une réserve de modèles de
+::X|FR|cl.drivesweep.caches.075|                           40 Go, et l étape le vide dans les deux cas.
+::X|FR|cl.drivesweep.caches.076|    DELETE               : Correct une fois que vous avez regardé.
+::X|FR|cl.drivesweep.caches.077|                           Vérifiez la racine de chaque disque fixe pour
+::X|FR|cl.drivesweep.caches.078|                           un dossier .cache ; s il contient un cache de
+::X|FR|cl.drivesweep.caches.079|                           pilote ou de shaders comme celui d AMD ici,
+::X|FR|cl.drivesweep.caches.080|                           c est gratuit. Les chemins Windows, eux, ne
+::X|FR|cl.drivesweep.caches.081|                           coûtent rien de toute façon.
+::X|FR|cl.drivesweep.caches.082|    KEEP                 : La réponse sur une machine de développement
+::X|FR|cl.drivesweep.caches.083|                           dont le .cache racine contient des paquets ou
+::X|FR|cl.drivesweep.caches.084|                           des modèles.
 ::X|FR|cl.drivesweep.caches.085|
-::X|FR|cl.drivesweep.caches.086|  Non verifie (en)  : OPTY cannot tell a Windows .cache from a tool s
-::X|FR|cl.drivesweep.caches.087|                      .cache at the root of a drive: the path is matched
-::X|FR|cl.drivesweep.caches.088|                      by name, with no ownership or content check.
-::X|FR|cl.drivesweep.caches.089|                      :bigcache reports the size in the log and prints a
-::X|FR|cl.drivesweep.caches.090|                      warning when the folder exceeds about 2000 MB, but
-::X|FR|cl.drivesweep.caches.091|                      it reports and deletes in the same breath - it
-::X|FR|cl.drivesweep.caches.092|                      never stops and never asks. This also sits in
-::X|FR|cl.drivesweep.caches.093|                      direct tension with the rule that a delete is only
-::X|FR|cl.drivesweep.caches.094|                      allowed when regeneration takes well under thirty
-::X|FR|cl.drivesweep.caches.095|                      minutes.
-::X|FR|cl.drivesweep.caches.096|
-::X|FR|cl.drivesweep.caches.097|  Cible           : :drivesweep, exécuté une fois par lettre de FIXEDLIST
-::X|FR|cl.drivesweep.caches.098|                    (construite par :fixedprobe). Chemins :
-::X|FR|cl.drivesweep.caches.099|                    <D>:\DeliveryOptimization\*, <D>:\WUDownloadCache\* ;
-::X|FR|cl.drivesweep.caches.100|                    sur le disque système seulement, net stop DoSvc,
-::X|FR|cl.drivesweep.caches.101|                    del /F /S /Q %ProgramData%\Microsoft\Network\
-::X|FR|cl.drivesweep.caches.102|                    Downloader\*, sc start DoSvc ; puis call :bigcache
-::X|FR|cl.drivesweep.caches.103|                    suivi de del /F /S /Q <D>:\.cache\*.
+::X|FR|cl.drivesweep.caches.086|  Pourquoi ces profils : Quatre colonnes ASK, non parce que les chemins
+::X|FR|cl.drivesweep.caches.087|                         Windows seraient risqués - ils sont régénérables
+::X|FR|cl.drivesweep.caches.088|                         - mais parce que l étape est indivisible et que
+::X|FR|cl.drivesweep.caches.089|                         le chemin .cache échappe à tout profil. Sur cette
+::X|FR|cl.drivesweep.caches.090|                         machine précise, la réponse serait DELETE pour
+::X|FR|cl.drivesweep.caches.091|                         0,9 Mo de cache de shaders AMD ; aucun profil ne
+::X|FR|cl.drivesweep.caches.092|                         pouvait le savoir à l avance. La colonne 5 dit
+::X|FR|cl.drivesweep.caches.093|                         KEEP parce que Windows fait déjà expirer ces
+::X|FR|cl.drivesweep.caches.094|                         données selon son propre calendrier.
+::X|FR|cl.drivesweep.caches.095|
+::X|FR|cl.drivesweep.caches.096|  Non verifie (en)  : OPTY cannot tell a Windows .cache from a tool s
+::X|FR|cl.drivesweep.caches.097|                      .cache at the root of a drive: the path is matched
+::X|FR|cl.drivesweep.caches.098|                      by name, with no ownership or content check.
+::X|FR|cl.drivesweep.caches.099|                      :bigcache reports the size in the log and prints a
+::X|FR|cl.drivesweep.caches.100|                      warning when the folder exceeds about 2000 MB, but
+::X|FR|cl.drivesweep.caches.101|                      it reports and deletes in the same breath - it
+::X|FR|cl.drivesweep.caches.102|                      never stops and never asks. This also sits in
+::X|FR|cl.drivesweep.caches.103|                      direct tension with the rule that a delete is only
+::X|FR|cl.drivesweep.caches.104|                      allowed when regeneration takes well under thirty
+::X|FR|cl.drivesweep.caches.105|                      minutes.
+::X|FR|cl.drivesweep.caches.106|
+::X|FR|cl.drivesweep.caches.107|  Cible           : :drivesweep, exécuté une fois par lettre de FIXEDLIST
+::X|FR|cl.drivesweep.caches.108|                    (construite par :fixedprobe). Chemins :
+::X|FR|cl.drivesweep.caches.109|                    <D>:\DeliveryOptimization\*, <D>:\WUDownloadCache\* ;
+::X|FR|cl.drivesweep.caches.110|                    sur le disque système seulement, powershell
+::X|FR|cl.drivesweep.caches.111|                    Delete-DeliveryOptimizationCache -Force ; puis call
+::X|FR|cl.drivesweep.caches.112|                    :bigcache suivi de del /F /S /Q <D>:\.cache\*.
 ::
 :: ---- cl.allusers.fanout (cleanup) --------------------------------
 ::P|cl.allusers.fanout|DELETE|DELETE|DELETE|DELETE|KEEP|
@@ -39538,6 +40119,131 @@ goto :eof
 ::PS|crashreport|    W ''; W ((T '  Full debugger output: {0}' '  Sortie complete du debogueur : {0}') -f $log)
 ::PS|crashreport|}
 ::PS|crashreport|$out | Set-Content -Path $env:CRTXT -Encoding UTF8
+::
+::PS|precheck|$ErrorActionPreference = 'SilentlyContinue'
+::PS|precheck|$fr = $env:UILANG -eq 'FR'
+::PS|precheck|$out = New-Object System.Collections.Generic.List[string]
+::PS|precheck|$nP = 0; $nW = 0; $nI = 0
+::PS|precheck|function T([string]$en, [string]$frt) { if ($fr) { $frt } else { $en } }
+::PS|precheck|function W([string]$s, [string]$c = 'Gray') { Write-Host $s -ForegroundColor $c; $out.Add($s) }
+::PS|precheck|# One finding = one line, then where OPTY fixes it. P = problem, A = worth a look, I = info.
+::PS|precheck|function F([string]$lvl, [string]$en, [string]$frt, [string]$fixen = '', [string]$fixfr = '') {
+::PS|precheck|    if ($lvl -eq 'P') { $script:nP++; $tag = '[X]'; $c = 'Red' } elseif ($lvl -eq 'A') { $script:nW++; $tag = '[' + [char]33 + ']'; $c = 'Yellow' } else { $script:nI++; $tag = '[i]'; $c = 'Gray' }
+::PS|precheck|    W ('  ' + $tag + ' ' + (T $en $frt)) $c
+::PS|precheck|    if ($fixen) { W ('        -> ' + (T $fixen $fixfr)) 'DarkGray' }
+::PS|precheck|}
+::PS|precheck|function RV([string]$k, [string]$v) { (Get-ItemProperty -Path ('Registry::' + $k) -Name $v -ErrorAction SilentlyContinue).$v }
+::PS|precheck|function Ev([hashtable]$f, [int]$max) { try { @(Get-WinEvent -FilterHashtable $f -MaxEvents $max -ErrorAction Stop) } catch { @() } }
+::PS|precheck|$R1 = T 'Restore -> 1 repairs it' 'Restore -> 1 le repare'
+::PS|precheck|
+::PS|precheck|$cv = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
+::PS|precheck|$cpu = (Get-CimInstance Win32_Processor | Select-Object -First 1).Name
+::PS|precheck|W ('OPTY pre-check - ' + (Get-Date -Format 'yyyy-MM-dd HH:mm') + ' - ' + $cv.ProductName + ' ' + $cv.DisplayVersion + ' (build ' + $cv.CurrentBuild + '.' + $cv.UBR + ', ' + $cv.EditionID + ')') 'Cyan'
+::PS|precheck|W ('  ' + $cpu) 'DarkGray'
+::PS|precheck|W ''
+::PS|precheck|
+::PS|precheck|# --- stability ---------------------------------------------------------------
+::PS|precheck|$since = (Get-Date).AddDays(-30)
+::PS|precheck|$k41 = Ev @{ LogName = 'System'; Id = 41; ProviderName = 'Microsoft-Windows-Kernel-Power'; StartTime = $since } 100
+::PS|precheck|if ($k41.Count) { F 'P' ('{0} unexpected restart(s) in the last 30 days (Kernel-Power 41)' -f $k41.Count) ('{0} redemarrage(s) inattendu(s) sur les 30 derniers jours (Kernel-Power 41)' -f $k41.Count) 'Reports -> 4 -> 4 says whether each one was a freeze or a power loss' 'Reports -> 4 -> 4 dit pour chacun si c etait un gel ou une coupure' }
+::PS|precheck|$whea = Ev @{ LogName = 'System'; ProviderName = 'Microsoft-Windows-WHEA-Logger'; StartTime = $since } 100
+::PS|precheck|if ($whea.Count) { F 'P' ('{0} hardware error(s) reported by the CPU / PCIe in 30 days (WHEA)' -f $whea.Count) ('{0} erreur(s) materiel signalee(s) par le CPU / PCIe en 30 jours (WHEA)' -f $whea.Count) 'often an unstable overclock, Curve Optimizer or memory profile - Reports -> 4 -> 4' 'souvent un overclock, un Curve Optimizer ou un profil memoire instable - Reports -> 4 -> 4' }
+::PS|precheck|$gpu4101 = Ev @{ LogName = 'System'; Id = 4101; ProviderName = 'Display'; StartTime = $since } 50
+::PS|precheck|if ($gpu4101.Count) { F 'A' ('{0} GPU driver timeout(s) Windows recovered from in 30 days' -f $gpu4101.Count) ('{0} blocage(s) du pilote GPU recupere(s) par Windows en 30 jours' -f $gpu4101.Count) 'update or cleanly reinstall the GPU driver' 'mettez a jour ou reinstallez proprement le pilote GPU' }
+::PS|precheck|
+::PS|precheck|# --- disk and pending work ---------------------------------------------------
+::PS|precheck|$sd = Get-CimInstance Win32_LogicalDisk -Filter ("DeviceID='" + $env:SystemDrive + "'")
+::PS|precheck|if ($sd.Size) {
+::PS|precheck|    $freeGB = [math]::Round($sd.FreeSpace / 1GB, 1); $pct = [math]::Round(100 * $sd.FreeSpace / $sd.Size)
+::PS|precheck|    if ($freeGB -lt 20 -or $pct -lt 10) { F 'P' ('Only {0} GB free on {1} ({2} percent)' -f $freeGB, $env:SystemDrive, $pct) ('Seulement {0} Go libres sur {1} ({2} pour cent)' -f $freeGB, $env:SystemDrive, $pct) 'CLEAN (menu 1)' 'CLEAN (menu 1)' }
+::PS|precheck|}
+::PS|precheck|if ((Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired') -or (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending')) { F 'A' 'A restart is pending to finish installing updates' 'Un redemarrage est en attente pour finir des mises a jour' 'restart before a big CLEAN' 'redemarrez avant un gros CLEAN' }
+::PS|precheck|$pf = @(Get-CimInstance Win32_PageFileUsage)
+::PS|precheck|$amp = (Get-CimInstance Win32_ComputerSystem).AutomaticManagedPagefile
+::PS|precheck|if ($pf.Count -eq 0 -and -not $amp) { F 'P' 'No page file: crash dumps cannot be written and memory-hungry apps can crash' 'Aucun fichier d echange : aucun vidage de crash possible, et les applis gourmandes peuvent planter' $R1 $R1 }
+::PS|precheck|$cde = RV 'HKLM\SYSTEM\CurrentControlSet\Control\CrashControl' 'CrashDumpEnabled'
+::PS|precheck|if ($cde -eq 0) { F 'A' 'Crash dumps are off: a blue screen leaves nothing to analyse' 'Vidages de crash desactives : un ecran bleu ne laisse rien a analyser' 'Reports -> 4 -> 1 or 2' 'Reports -> 4 -> 1 ou 2' }
+::PS|precheck|$trim = (fsutil behavior query DisableDeleteNotify 2>$null) -join ' '
+::PS|precheck|if ($trim -match 'NTFS\s+DisableDeleteNotify\s*=\s*1') { F 'P' 'TRIM is disabled for NTFS: SSDs slow down and wear faster' 'TRIM desactive pour NTFS : les SSD ralentissent et s usent plus vite' $R1 $R1 }
+::PS|precheck|
+::PS|precheck|# --- security switches a tweak may have turned off ----------------------------
+::PS|precheck|if ((RV 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' 'EnableLUA') -eq 0) { F 'P' 'UAC is off (EnableLUA = 0): every program runs with full rights' 'UAC desactive (EnableLUA = 0) : chaque programme tourne avec tous les droits' $R1 $R1 }
+::PS|precheck|$fwoff = @('DomainProfile', 'StandardProfile', 'PublicProfile' | Where-Object { (RV ('HKLM\SYSTEM\CurrentControlSet\Services\SharedAccess\Parameters\FirewallPolicy\' + $_) 'EnableFirewall') -eq 0 })
+::PS|precheck|if ($fwoff.Count) { F 'P' ('Windows Firewall is off: {0}' -f ($fwoff -join ', ')) ('Pare-feu Windows desactive : {0}' -f ($fwoff -join ', ')) $R1 $R1 }
+::PS|precheck|$dpol = 'HKLM\SOFTWARE\Policies\Microsoft\Windows Defender'
+::PS|precheck|$av = @(Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntiVirusProduct | Where-Object { $_.displayName -notmatch 'Defender' })
+::PS|precheck|if (((RV $dpol 'DisableAntiSpyware') -eq 1 -or (RV ($dpol + '\Real-Time Protection') 'DisableRealtimeMonitoring') -eq 1) -and $av.Count -eq 0) { F 'P' 'Microsoft Defender is disabled by a policy and no other antivirus is registered' 'Microsoft Defender est desactive par une strategie et aucun autre antivirus n est enregistre' $R1 $R1 }
+::PS|precheck|if ((RV 'HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\Maintenance' 'MaintenanceDisabled') -eq 1) { F 'P' 'Automatic maintenance is disabled: no scheduled TRIM, disk checks or component cleanup' 'Maintenance automatique desactivee : ni TRIM planifie, ni verification de disque, ni nettoyage des composants' $R1 $R1 }
+::PS|precheck|
+::PS|precheck|# --- Windows Update ----------------------------------------------------------
+::PS|precheck|$wu = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate'
+::PS|precheck|$wuBad = @()
+::PS|precheck|if ((RV ($wu + '\AU') 'NoAutoUpdate') -eq 1) { $wuBad += 'NoAutoUpdate' }
+::PS|precheck|if ((RV $wu 'DisableWindowsUpdateAccess') -eq 1) { $wuBad += 'DisableWindowsUpdateAccess' }
+::PS|precheck|if ((RV $wu 'SetDisableUXWUAccess') -eq 1) { $wuBad += 'SetDisableUXWUAccess' }
+::PS|precheck|if ((RV ($wu + '\AU') 'UseWUServer') -eq 1 -and -not $env:USERDNSDOMAIN) { $wuBad += 'UseWUServer (WSUS on a home PC)' }
+::PS|precheck|if ((RV $wu 'TargetReleaseVersion') -eq 1) { $wuBad += ('TargetReleaseVersion ' + (RV $wu 'TargetReleaseVersionInfo')) }
+::PS|precheck|if ($wuBad.Count) { F 'P' ('Windows Update is restricted by policy: {0}' -f ($wuBad -join ', ')) ('Windows Update est bride par strategie : {0}' -f ($wuBad -join ', ')) $R1 $R1 }
+::PS|precheck|if ((RV 'HKLM\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization' 'DODownloadMode') -eq 100) { F 'P' 'Delivery Optimization is set to Bypass (100), deprecated: some updates fail to download' 'Delivery Optimization en mode Bypass (100), deprecie : certaines mises a jour ne se telechargent plus' $R1 $R1 }
+::PS|precheck|
+::PS|precheck|# --- services a debloat script disabled ---------------------------------------
+::PS|precheck|$must = 'wuauserv', 'BITS', 'UsoSvc', 'DoSvc', 'CryptSvc', 'TrustedInstaller', 'msiserver', 'AppXSvc', 'ClipSVC', 'StateRepository', 'AppInfo', 'TokenBroker', 'WpnService', 'FontCache', 'Power', 'BFE', 'mpssvc', 'EventLog', 'Schedule', 'Winmgmt', 'Dnscache', 'nsi', 'Audiosrv', 'AudioEndpointBuilder', 'ProfSvc', 'Themes'
+::PS|precheck|$dis = @($must | Where-Object { (RV ('HKLM\SYSTEM\CurrentControlSet\Services\' + $_) 'Start') -eq 4 })
+::PS|precheck|if ($dis.Count) { F 'P' ('Services Windows needs are disabled: {0}' -f ($dis -join ', ')) ('Des services indispensables sont desactives : {0}' -f ($dis -join ', ')) $R1 $R1 }
+::PS|precheck|$pref = @('SysMain', 'WSearch', 'Spooler' | Where-Object { (RV ('HKLM\SYSTEM\CurrentControlSet\Services\' + $_) 'Start') -eq 4 })
+::PS|precheck|if ($pref.Count) { F 'A' ('Disabled, which breaks features without speeding anything up: {0}' -f ($pref -join ', ')) ('Desactives, ce qui casse des fonctions sans rien accelerer : {0}' -f ($pref -join ', ')) 'SETUP -> Services' 'SETUP -> Services' }
+::PS|precheck|
+::PS|precheck|# --- leftovers from tweak guides ----------------------------------------------
+::PS|precheck|$mm = 'HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management'
+::PS|precheck|$tw = @()
+::PS|precheck|if ((RV $mm 'DisablePagingExecutive') -eq 1) { $tw += 'DisablePagingExecutive' }
+::PS|precheck|if ((RV $mm 'LargeSystemCache') -eq 1) { $tw += 'LargeSystemCache' }
+::PS|precheck|if ((RV $mm 'ClearPageFileAtShutdown') -eq 1) { $tw += 'ClearPageFileAtShutdown' }
+::PS|precheck|if ((RV ($mm + '\PrefetchParameters') 'EnablePrefetcher') -eq 0) { $tw += 'EnablePrefetcher = 0' }
+::PS|precheck|$gd = 'HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers'
+::PS|precheck|$tdr = @('TdrLevel', 'TdrDelay', 'TdrDdiDelay', 'TdrLimitCount', 'TdrLimitTime', 'TdrDebugMode' | Where-Object { $null -ne (RV $gd $_) })
+::PS|precheck|if ($tdr.Count) { $tw += ('GPU timeout detection (' + ($tdr -join ', ') + ')') }
+::PS|precheck|if ((RV 'HKLM\SOFTWARE\Microsoft\Windows\Dwm' 'OverlayTestMode') -eq 5 -or (RV $gd 'DisableOverlays') -eq 1) { $tw += 'MPO disabled' }
+::PS|precheck|if ((RV 'HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' 'SystemResponsiveness') -eq 0) { $tw += 'SystemResponsiveness = 0 (Windows clamps it to 20 anyway)' }
+::PS|precheck|$ps = RV 'HKLM\SYSTEM\CurrentControlSet\Control\PriorityControl' 'Win32PrioritySeparation'
+::PS|precheck|if ($null -ne $ps -and $ps -ne 2) { $tw += ('Win32PrioritySeparation = 0x{0:X}' -f $ps) }
+::PS|precheck|$bcd = (bcdedit /enum '{current}' 2>$null) -join ' '
+::PS|precheck|foreach ($b in 'useplatformclock', 'useplatformtick', 'disabledynamictick', 'tscsyncpolicy') { if ($bcd -match ('(?i)\b' + $b + '\b')) { $tw += ('bcdedit ' + $b) } }
+::PS|precheck|if ($tw.Count) { F 'A' ('Leftovers from tweak guides: {0}' -f ($tw -join '; ')) ('Restes de guides d optimisation : {0}' -f ($tw -join ' ; ')) $R1 $R1 }
+::PS|precheck|
+::PS|precheck|# --- performance --------------------------------------------------------------
+::PS|precheck|$dg = Get-CimInstance -Namespace root/Microsoft/Windows/DeviceGuard -ClassName Win32_DeviceGuard
+::PS|precheck|if ($dg -and ($dg.SecurityServicesRunning -contains 2)) { F 'A' 'Memory Integrity (HVCI) is running: about 5 to 8 percent in games' 'L integrite de la memoire (HVCI) est active : environ 5 a 8 pour cent en jeu' 'SETUP -> System (question hvci.off), then restart' 'SETUP -> System (question hvci.off), puis redemarrez' }
+::PS|precheck|elseif ((RV 'HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity' 'Enabled') -ne 0) { F 'I' 'Memory Integrity is off but not explicitly: the October 2026 rollout can switch it on' 'L integrite de la memoire est desactivee mais pas explicitement : le deploiement d octobre 2026 peut l activer' 'SETUP -> System (question hvci.off)' 'SETUP -> System (question hvci.off)' }
+::PS|precheck|$hags = RV $gd 'HwSchMode'
+::PS|precheck|if ($hags -eq 1) { F 'A' 'Hardware-accelerated GPU scheduling (HAGS) is off' 'La planification GPU acceleree (HAGS) est desactivee' 'SETUP -> Display / GPU' 'SETUP -> Affichage / GPU' }
+::PS|precheck|elseif ($null -eq $hags) { F 'I' 'HAGS is not set: the driver decides' 'HAGS non defini : le pilote decide' }
+::PS|precheck|$act = (powercfg /getactivescheme 2>$null) -join ' '
+::PS|precheck|if ($cpu -match 'Ryzen' -and $act -match '(?i)e9a42b02-d5df-448d-aa00-03f14749eb61|8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c|9f9d6f1a-0b7e-4c3a-9c8e-0a1b2c3d4e5f') { F 'I' 'High / Ultimate performance plan active: AMD recommends Windows Balanced for Ryzen 5000 and newer' 'Plan Performances elevees / optimales actif : AMD recommande Utilisation equilibree pour les Ryzen 5000 et plus recents' 'SETUP -> System (power plan)' 'SETUP -> System (plan d alimentation)' }
+::PS|precheck|$m = [regex]::Match($act, '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}')
+::PS|precheck|if ($m.Success) {
+::PS|precheck|    $pk = 'HKLM\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes\' + $m.Value + '\54533251-82be-4824-96c1-47b60b740d00\'
+::PS|precheck|    $mx = RV ($pk + 'bc5038f7-23e0-4960-96da-33abaf5935ec') 'ACSettingIndex'
+::PS|precheck|    if ($null -ne $mx -and $mx -lt 100) { F 'P' ('The CPU is capped at {0} percent on mains power' -f $mx) ('Le CPU est plafonne a {0} pour cent sur secteur' -f $mx) 'SETUP -> System (CPU caps)' 'SETUP -> System (plafonds CPU)' }
+::PS|precheck|    $fq = RV ($pk + '75b0ae3f-bce0-45a7-8c89-c9611c25e100') 'ACSettingIndex'
+::PS|precheck|    if ($fq -gt 0) { F 'P' ('The CPU frequency is capped at {0} MHz on mains power' -f $fq) ('La frequence CPU est plafonnee a {0} MHz sur secteur' -f $fq) 'SETUP -> System (CPU caps)' 'SETUP -> System (plafonds CPU)' }
+::PS|precheck|}
+::PS|precheck|
+::PS|precheck|# --- drivers and tools ---------------------------------------------------------
+::PS|precheck|foreach ($g in @(Get-CimInstance Win32_VideoController | Where-Object { $_.Name -match '(?i)radeon|nvidia|geforce|arc' })) {
+::PS|precheck|    if ($g.DriverDate -and $g.DriverDate -lt (Get-Date).AddDays(-365)) { F 'A' ('{0}: driver from {1:yyyy-MM-dd}, more than a year old' -f $g.Name, $g.DriverDate) ('{0} : pilote du {1:yyyy-MM-dd}, plus d un an' -f $g.Name, $g.DriverDate) 'install the current driver from the vendor' 'installez le pilote actuel du constructeur' }
+::PS|precheck|}
+::PS|precheck|$hwnames = 'gdrv\w*|CorsairLLAccess\w*|AMDRyzenMasterDriver\w*|HWiNFO\w*|WinRing0\w*|RTCore\w*|inpoutx64|AsIO\w*|GLCKIO\w*|EneIo\w*|cpuz\w*|PawnIO\w*'
+::PS|precheck|$live = @(Get-CimInstance Win32_SystemDriver | Where-Object { $_.State -eq 'Running' -and ($_.Name -match ('(?i)^(' + $hwnames + ')$') -or [IO.Path]::GetFileNameWithoutExtension([string]$_.PathName) -match ('(?i)^(' + $hwnames + ')$')) } | ForEach-Object { $_.Name })
+::PS|precheck|if ($live.Count -ge 2) { F 'A' ('{0} low-level hardware access drivers running at once: {1}' -f $live.Count, ($live -join ', ')) ('{0} pilotes d acces materiel bas niveau actifs en meme temps : {1}' -f $live.Count, ($live -join ', ')) 'a common suspect for freezes at idle - close the monitoring / RGB tools you do not need' 'un suspect courant des gels au repos - fermez les outils de monitoring / RGB inutiles' }
+::PS|precheck|$ppc = Get-Item (Join-Path $env:ProgramData 'AMD\PPC\sdkusage.csv')
+::PS|precheck|if ($ppc -and $ppc.Length -gt 1GB) { F 'A' ('AMD telemetry file sdkusage.csv is {0:N1} GB' -f ($ppc.Length / 1GB)) ('Le fichier de telemetrie AMD sdkusage.csv fait {0:N1} Go' -f ($ppc.Length / 1GB)) 'CLEAN removes it' 'CLEAN le supprime' }
+::PS|precheck|
+::PS|precheck|W ''
+::PS|precheck|if ($nP + $nW -eq 0) { W (T '  Nothing seriously wrong found.' '  Rien de grave trouve.') 'Green' }
+::PS|precheck|else { W ((T '  {0} problem(s), {1} worth a look, {2} for information.' '  {0} probleme(s), {1} a regarder, {2} pour information.') -f $nP, $nW, $nI) 'White' }
+::PS|precheck|$out | Set-Content -Path $env:PCTXT -Encoding UTF8
+::PS|precheck|exit ([math]::Min($nP + $nW, 99))
 :: ============================================================
 :: ==================  CLEAN STEP MEMBERSHIP  =================
 :: ============================================================
@@ -39567,6 +40273,7 @@ goto :eof
 ::S|clean.vhdxcompact |_F|clean_wsl|
 ::S|clean.defrag     |_F|defrag|
 ::S|clean.chkdsk     |__|chkdsk|
+::S|clean.shader     |__|dl_shader_ask|
 ::S|clean.optyprune  |__|coc_ask|
 ::
 :: Steps the auto path enters that are NOT user-facing cleanup steps. Gate 8
