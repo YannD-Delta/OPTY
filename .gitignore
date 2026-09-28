@@ -1,3 +1,12 @@
 # OPTY runtime artifacts
 logs_*.txt
 new_OPTY.bat
+new_OPTY_crlf.bat
+OPTY_rollback.bat
+OPTY_healed.bat
+OPTY_healed.target
+OPTY_started.tmp
+netinfo_*.txt
+netprops_*.json
+crash_*.txt
+opty_nic_list.txt

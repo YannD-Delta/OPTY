@@ -394,7 +394,7 @@ find /c "set current_version=" "%~dp0new_OPTY.bat" >nul 2>&1 || goto update_down
 :: Rather than trust the server, normalise here. `type | find /v ""` rewrites
 :: every line with CRLF; verified lossless on this very file - 188588 bytes in,
 :: 188588 bytes out, byte-for-byte identical, accented UTF-8 preserved exactly.
-:: Its one limit is a 4095-character line, which validator gate 9 keeps us under.
+:: Its one limit is a 4095-character line, which validator gate 5 keeps us under.
 type "%~dp0new_OPTY.bat" | find /v "" > "%~dp0new_OPTY_crlf.bat"
 if exist "%~dp0new_OPTY_crlf.bat" move /y "%~dp0new_OPTY_crlf.bat" "%~dp0new_OPTY.bat" >nul 2>&1
 find /c "set current_version=" "%~dp0new_OPTY.bat" >nul 2>&1 || goto update_download_failed
@@ -2321,7 +2321,7 @@ call :mopt 1 "Network"           "Reseau"            "Ethernet and Wi-Fi, per-ad
 call :mopt 2 "Display & GPU"      "Affichage & GPU"   "MPO, HAGS, overlays, shader caches" "MPO, HAGS, overlays, caches de shaders"
 call :mopt 3 "System & gaming"    "Systeme & jeu"     "registry, power plan, mouse" "registre, plan d alimentation, souris"
 call :mopt 4 "Privacy & debloat"  "Vie privee"        "Recall, Copilot, ads, telemetry" "Recall, Copilot, pub, telemetrie"
-call :mopt 5 "Services"          "Services"          "start types - 15 repaired, 3 asked" "types de demarrage - 15 repares, 3 poses"
+call :mopt 5 "Services"          "Services"          "start types - 15 repaired, 2 asked" "types de demarrage - 15 repares, 2 poses"
 call :mopt 6 "Updates & auto-maintenance" "MAJ & maintenance auto" "unblock updates, Storage Sense, Office" "debloquer les MAJ, Storage Sense, Office"
 echo(
 call :mopt P "Apply one profile to everything" "Appliquer un profil a tout" "the two-minute path" "le chemin en deux minutes"
@@ -2956,7 +2956,7 @@ call :banner "REPORTS"
 echo(
 echo(     %cVal%1.%cR%  Network diagnose   %cInfo%what differs from your driver defaults%cR%
 echo(     %cVal%2.%cR%  Network report     %cInfo%every setting + limits to a .txt and .json%cR%
-echo(     %cVal%3.%cR%  Open OPTY folder   %cInfo%logs and reports in %OPTY_HOME_D%%cR%
+echo(     %cVal%3.%cR%  Open OPTY folder   %cInfo%reports in %OPTY_HOME_D%, logs next to OPTY.bat%cR%
 echo(     %cVal%4.%cR%  Crashes / freezes  %cInfo%capture a freeze, memory test, crash report%cR%
 echo(
 echo(     %cVal%0.%cR%  Menu
@@ -2967,12 +2967,19 @@ set /p choice= Enter action:
 echo %date% %time% : mreports "%choice%"                          >> %logs%
 if "%choice%"=="1" goto net_diag
 if "%choice%"=="2" goto netinfo_report
-if "%choice%"=="3" (start "" "%OPTY_HOME%" & goto mreports)
+if "%choice%"=="3" goto mreports_open
 if "%choice%"=="4" goto mcrash
 if "%choice%"=="0" goto menu
 color 0C
 echo This is not a valid action
 timeout /t 3 >nul
+goto mreports
+
+:mreports_open
+:: Logs go to %~dp0 and reports to %OPTY_HOME%. Run from anywhere but
+:: %OPTY_HOME% those are two folders, and opening only one hid the logs.
+if exist "%OPTY_HOME%" start "" "%OPTY_HOME%"
+if /i not "%~dp0"=="%OPTY_HOME%\" start "" "%~dp0"
 goto mreports
 
 
@@ -3783,8 +3790,8 @@ if not defined STEPYES goto mmaint
 :: This used to list every file in the folder and delete all but OPTY.bat and
 :: OPTY_rollback.bat, while the menu entry beside it said "old logs and
 :: reports (keeps the script)". Run from the repository checkout that meant
-:: .gitattributes, .gitignore, LICENSE, README.md, maintenant and stop -
-:: six files tracked by git - went with the logs. Anything a user ever puts
+:: .gitattributes, .gitignore, LICENSE and README.md - files tracked by
+:: git - went with the logs. Anything a user ever puts
 :: next to OPTY.bat went too.
 ::
 :: It also deleted the run\'s own log: %logs% lives in %~dp0, so the loop wrote
@@ -3805,6 +3812,13 @@ call :prune_pat "new_OPTY.bat"
 call :prune_pat "OPTY_healed.bat"
 call :prune_pat "OPTY_healed.target"
 call :prune_pat "opty_nic_list.txt"
+:: Reports are written to %OPTY_HOME%, not next to the script. From anywhere
+:: else - a git checkout - the old %~dp0-only prune never saw them, while the
+:: menu promised "old logs and reports".
+call :prune_pat "netinfo_*.txt"   "%OPTY_HOME%\"
+call :prune_pat "netprops_*.json" "%OPTY_HOME%\"
+call :prune_pat "crash_*.txt"     "%OPTY_HOME%\"
+call :prune_pat "opty_nic_list.txt" "%TEMP%\"
 call :L "%cOK%" "OPTY artifacts pruned - only files OPTY itself wrote were touched"
 goto mmaint
 
@@ -4838,13 +4852,16 @@ call :L "%cVal%" "    >> on this machine: %~1 Start=%SVS%, %SVR%"
 goto :eof
 
 :prune_pat
-:: %~1 = one filename pattern, matched inside %~dp0 only. The current run\'s
-:: own log is skipped by name: %logs% lives in this folder, so without the
-:: test the loop would delete the file recording what it had just deleted.
-for /f "delims=" %%f in ('dir /b /a-d "%~dp0%~1" 2^>nul') do (
-    if /i not "%~dp0%%f"=="%logs:"=%" (
-        echo %date% %time% : Deleting "%~dp0%%f"                >> %logs%
-        del /f /q "%~dp0%%f" >nul 2>&1
+:: %~1 = one filename pattern, %~2 = folder with a trailing backslash (default
+:: %~dp0). The current run\'s own log is skipped by name: %logs% lives in the
+:: script folder, so without the test the loop would delete the file recording
+:: what it had just deleted.
+set "PPDIR=%~2"
+if not defined PPDIR set "PPDIR=%~dp0"
+for /f "delims=" %%f in ('dir /b /a-d "%PPDIR%%~1" 2^>nul') do (
+    if /i not "%PPDIR%%%f"=="%logs:"=%" (
+        echo %date% %time% : Deleting "%PPDIR%%%f"                >> %logs%
+        del /f /q "%PPDIR%%%f" >nul 2>&1
     )
 )
 goto :eof
