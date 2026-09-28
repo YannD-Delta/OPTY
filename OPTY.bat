@@ -4266,6 +4266,7 @@ goto :eof
 :: the bottom of this file, extracted the same way as the crash report. It
 :: only READS: registry values, event logs, CIM. Its exit code is the number
 :: of findings that deserve a look, so a clean machine does not stop here.
+color 0F
 cls
 call :banner "PRE-CHECK"
 echo(
@@ -40251,7 +40252,10 @@ goto :eof
 ::PS|precheck|
 ::PS|precheck|$cv = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
 ::PS|precheck|$cpu = (Get-CimInstance Win32_Processor | Select-Object -First 1).Name
-::PS|precheck|W ('OPTY pre-check - ' + (Get-Date -Format 'yyyy-MM-dd HH:mm') + ' - ' + $cv.ProductName + ' ' + $cv.DisplayVersion + ' (build ' + $cv.CurrentBuild + '.' + $cv.UBR + ', ' + $cv.EditionID + ')') 'Cyan'
+::PS|precheck|# Windows 11 still says "Windows 10" in ProductName; the build number is what tells them apart.
+::PS|precheck|$pn = [string]$cv.ProductName
+::PS|precheck|if ([int]$cv.CurrentBuild -ge 22000) { $pn = $pn -replace 'Windows 10', 'Windows 11' }
+::PS|precheck|W ('OPTY pre-check - ' + (Get-Date -Format 'yyyy-MM-dd HH:mm') + ' - ' + $pn + ' ' + $cv.DisplayVersion + ' (build ' + $cv.CurrentBuild + '.' + $cv.UBR + ')') 'Cyan'
 ::PS|precheck|W ('  ' + $cpu) 'DarkGray'
 ::PS|precheck|W ''
 ::PS|precheck|
@@ -40347,8 +40351,13 @@ goto :eof
 ::PS|precheck|    if ($g.DriverDate -and $g.DriverDate -lt (Get-Date).AddDays(-365)) { F 'A' ('{0}: driver from {1:yyyy-MM-dd}, more than a year old' -f $g.Name, $g.DriverDate) ('{0} : pilote du {1:yyyy-MM-dd}, plus d un an' -f $g.Name, $g.DriverDate) 'install the current driver from the vendor' 'installez le pilote actuel du constructeur' }
 ::PS|precheck|}
 ::PS|precheck|$hwnames = 'gdrv\w*|CorsairLLAccess\w*|AMDRyzenMasterDriver\w*|HWiNFO\w*|WinRing0\w*|RTCore\w*|inpoutx64|AsIO\w*|GLCKIO\w*|EneIo\w*|cpuz\w*|PawnIO\w*'
-::PS|precheck|$live = @(Get-CimInstance Win32_SystemDriver | Where-Object { $_.State -eq 'Running' -and ($_.Name -match ('(?i)^(' + $hwnames + ')$') -or [IO.Path]::GetFileNameWithoutExtension([string]$_.PathName) -match ('(?i)^(' + $hwnames + ')$')) } | ForEach-Object { $_.Name })
-::PS|precheck|if ($live.Count -ge 2) { F 'A' ('{0} low-level hardware access drivers running at once: {1}' -f $live.Count, ($live -join ', ')) ('{0} pilotes d acces materiel bas niveau actifs en meme temps : {1}' -f $live.Count, ($live -join ', ')) 'a common suspect for freezes at idle - close the monitoring / RGB tools you do not need' 'un suspect courant des gels au repos - fermez les outils de monitoring / RGB inutiles' }
+::PS|precheck|# Corsair and others append a long hex id to the service name - cut it for display.
+::PS|precheck|$live = @(Get-CimInstance Win32_SystemDriver | Where-Object { $_.State -eq 'Running' -and ($_.Name -match ('(?i)^(' + $hwnames + ')$') -or [IO.Path]::GetFileNameWithoutExtension([string]$_.PathName) -match ('(?i)^(' + $hwnames + ')$')) } | ForEach-Object { $_.Name -replace '[0-9A-Fa-f]{16,}$', '' })
+::PS|precheck|if ($live.Count -ge 2) {
+::PS|precheck|    F 'A' ('{0} low-level hardware access drivers running at once:' -f $live.Count) ('{0} pilotes d acces materiel bas niveau actifs en meme temps :' -f $live.Count)
+::PS|precheck|    foreach ($n in $live) { W ('        ' + $n) 'Yellow' }
+::PS|precheck|    W ('        -> ' + (T 'a common suspect for freezes at idle - close the monitoring / RGB tools you do not need' 'un suspect courant des gels au repos - fermez les outils de monitoring / RGB inutiles')) 'DarkGray'
+::PS|precheck|}
 ::PS|precheck|$ppc = Get-Item (Join-Path $env:ProgramData 'AMD\PPC\sdkusage.csv')
 ::PS|precheck|if ($ppc -and $ppc.Length -gt 1GB) { F 'A' ('AMD telemetry file sdkusage.csv is {0:N1} GB' -f ($ppc.Length / 1GB)) ('Le fichier de telemetrie AMD sdkusage.csv fait {0:N1} Go' -f ($ppc.Length / 1GB)) 'CLEAN removes it' 'CLEAN le supprime' }
 ::PS|precheck|
