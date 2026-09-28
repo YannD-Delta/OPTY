@@ -42,7 +42,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$Repo = 'YannD-Deltagon/OPTY'
+$Repo = 'YannD-Delta/OPTY'
 
 function Write-Step { param($m) Write-Host "==> $m" -ForegroundColor Cyan }
 function Write-Ok   { param($m) Write-Host "    OK   $m" -ForegroundColor Green }

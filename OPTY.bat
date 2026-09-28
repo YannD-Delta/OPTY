@@ -1,4 +1,4 @@
-:::: OPTY by @YannD-Deltagon ::::
+:::: OPTY by @YannD-Delta ::::
 
 @echo off
 set current_version=05.1
@@ -19,8 +19,10 @@ set current_version=05.1
 ::   raw.githubusercontent.com/.../master/OPTY.bat  ->  0 lone LF   OK
 ::   github.com/.../raw/master/OPTY.bat             ->  0 lone LF   OK
 ::   releases/latest/download/OPTY.bat              -> 1854 lone LF BROKEN
-:: Download it by hand from the Releases page and you get the broken one. So the
-:: script repairs itself instead of trusting where it came from.
+:: That asset had been UPLOADED with LF endings - GitHub serves release assets
+:: byte for byte (re-measured 2026-09-28: the V05.0 asset is 37547 CRLF, 0 lone
+:: LF, and Release-OPTY.ps1 now verifies every upload). The self-heal stays as
+:: the safety net for a copy saved or edited through an LF tool.
 ::
 :: How: `type file | find /v ""` rewrites every line terminated with CRLF.
 :: Verified lossless on this file - 188588 bytes in, 188588 out, byte-identical,
@@ -74,7 +76,12 @@ if exist "%~dp0OPTY_healed.bat" del "%~dp0OPTY_healed.bat" >nul 2>&1
 if exist "%~dp0OPTY_healed.target" del "%~dp0OPTY_healed.target" >nul 2>&1
 :: ===========================================================================
 
-set GitHubLatestLink=https://github.com/YannD-Deltagon/OPTY/releases/latest/download/
+:: The account was renamed YannD-Deltagon -> YannD-Delta, and the old URLs only
+:: worked through GitHub's redirect - which stops the day someone registers the
+:: old name and an OPTY repository under it, and this download runs elevated.
+:: The API is queried by the repository's numeric id, which survives renames.
+set GitHubLatestLink=https://github.com/YannD-Delta/OPTY/releases/latest/download/
+set "GitHubApiLatest=https://api.github.com/repositories/589619283/releases/latest"
 
 :: ---- User / paths configuration (edit here if your username or layout differs) ----
 :: USERHOME was hardcoded to one machine's profile path. On any other
@@ -326,7 +333,7 @@ echo.
 :: which used to offer a bogus update on an up-to-date install. Bail out
 :: instead: an update check that cannot answer means "no update".
 set "latest_version="
-for /f "tokens=2 delims=V" %%a in ('curl -s https://api.github.com/repos/YannD-Deltagon/OPTY/releases/latest -L -H "Accept: application/json" ^| findstr "tag_name"') do set "latest_version=%%a"
+for /f "tokens=2 delims=V" %%a in ('curl -s %GitHubApiLatest% -L -H "Accept: application/json" ^| findstr "tag_name"') do set "latest_version=%%a"
 if not defined latest_version (
     echo %date% %time% : Version check failed - staying on %current_version%  >> %logs%
     goto update_unknown
@@ -387,7 +394,8 @@ find /c "set current_version=" "%~dp0new_OPTY.bat" >nul 2>&1 || goto update_down
 ::   raw.githubusercontent.com/.../master/OPTY.bat   3530 CR, 0 lone LF   OK
 ::   github.com/.../raw/master/OPTY.bat              3530 CR, 0 lone LF   OK
 ::   releases/latest/download/OPTY.bat               0 CR, 1854 lone LF   BROKEN
-:: and the third one is exactly what the line above downloads. That is the
+:: (an asset uploaded with LF - see the self-heal header; current releases are
+:: verified CRLF) and the third one is exactly what the line above downloads. That is the
 :: "sometimes CRLF, sometimes LF" the maintainer kept hitting. CMD computes the
 :: return address of call/goto :eof as a byte offset assuming 2-byte CRLF, so an
 :: LF file drifts into the wrong section partway through a long run.
@@ -484,7 +492,7 @@ echo.                                                           >> %logs%
 echo %date% %time% : Entered :menu label                          >> %logs%
 color 0F
 cls
-call :banner "OPTY v%current_version%   -   Windows 11 optimizer   -   @YannD-Deltagon"
+call :banner "OPTY v%current_version%   -   Windows 11 optimizer   -   @YannD-Delta"
 echo(
 echo(     %cVal%1.%cR%  %cT%CLEAN%cR%                   %cInfo%run this regularly%cR%
 echo(         %cInfo%Temp, caches, shaders, logs, Disk Cleanup, WSL/Docker disks,%cR%
@@ -1003,6 +1011,14 @@ if "%STEPYES%"=="REDRAW" goto dl_wu
 if not defined STEPYES goto dl_drives
 :dl_wu_go
 :: --- Windows Update download cache ---
+:: Not while an update waits for its restart: both auto modes run
+:: usoclient right before this, so the files it just staged were deleted and
+:: fetched again - or the pending install broke.
+call :rebootpending
+if defined REBOOTPEND (
+    call :L "%cWarn%" "  Windows Update cache kept - an update is waiting for a restart"
+    goto dl_drives
+)
 echo %date% %time% : Stopping wuauserv service                       >> %logs%
 net stop wuauserv >nul 2>&1
 echo %date% %time% : Deleting Windows Update Cache files              >> %logs%
@@ -1180,6 +1196,12 @@ call :L "%cInfo%" "Clearing unbounded log/trace files (AMD PPC, ETL traces, serv
 del /F /Q "%LOCALAPPDATA%\AMD\PPC\sdkusage.csv"              >nul 2>&1
 del /F /Q "%LOCALAPPDATA%\AMD\PPC\apprecord.csv"             >nul 2>&1
 del /F /Q "%LOCALAPPDATA%\AMD\PPC\driverworkloadstats.csv"   >nul 2>&1
+:: Every public report of the 30+ GB file puts it in ProgramData (fed by tools
+:: that use the AMD SDK - Fan Control and friends). Same three names, same
+:: config.csv kept.
+del /F /Q "%ProgramData%\AMD\PPC\sdkusage.csv"                >nul 2>&1
+del /F /Q "%ProgramData%\AMD\PPC\apprecord.csv"               >nul 2>&1
+del /F /Q "%ProgramData%\AMD\PPC\driverworkloadstats.csv"     >nul 2>&1
 del /F /Q "%LOCALAPPDATA%\AMD\CN\RSX_*.log*"                 >nul 2>&1
 :: Stale ETL traces. Per-file only - never rd the WMI or RtBackup folders.
 del /F /Q "%WINDIR%\System32\LogFiles\WMI\*.etl.*"           >nul 2>&1
@@ -1801,6 +1823,7 @@ reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManage
 reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" /v "PreInstalledAppsEnabled" /f >nul 2>&1
 reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" /v "RotatingLockScreenOverlayEnabled" /f >nul 2>&1
 call :killkey "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" "DisableWindowsSpotlightFeatures"
+call :killkey "HKCU\Software\Policies\Microsoft\Windows\CloudContent" "DisableWindowsSpotlightFeatures"
 
 :: Pointer acceleration is a preference (mouse.accel.off: Gaming wants true
 :: 1:1, Office/Laptop/Windows want the Windows default), not a single value
@@ -1896,7 +1919,9 @@ call :killkey "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" "DisableOv
 :: NOT removed: UnsupportedMonitorModesAllowed. It is dxgkrnl's custom-mode
 :: gate (CRU / Adrenalin custom timings), unrelated to MPO, it is set to 1 on
 :: this machine, and nothing here would ever write it back.
-:: HAGS is driver-assumed on RDNA3 since Adrenalin 23.12.1 and Anti-Lag 2 needs it.
+:: AMD added HAGS support for RX 7700-7900 in Adrenalin 23.12.1 (Windows 11 22H2+),
+:: and GPUOpen asks for it with FSR 3 frame generation on RX 7000. The Anti-Lag 2
+:: SDK lists no HAGS requirement (it supports RX 5000, which has no HAGS at all).
 call :regset "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" "HwSchMode" REG_DWORD 2 "Hardware GPU scheduling"
 call :L "%cInfo%" "Re-asserted hardware GPU scheduling (HwSchMode=2)"
 
@@ -2066,8 +2091,11 @@ for %%S in (wuauserv BITS TrustedInstaller msiserver InstallService AppIDSvc wli
 :: SystemEventsBroker and LSM are protected - sc config is refused even when
 :: elevated, the same trap already documented for WaaSMedicSvc. Reporting a
 :: repair that never happened is the failure mode this file exists to avoid.
-for %%S in (AppInfo ClipSVC TokenBroker TimeBrokerSvc FontCache WpnService) do call :svcfixifdisabled %%S demand
-for %%S in (AppXSvc StateRepository ProfSvc nsi BFE Power) do call :svcfixifdisabled %%S auto
+:: FontCache and WpnService ship Automatic and AppXSvc Manual (Trigger Start) on
+:: 24H2 and 25H2 - they were the other way round here, so a repair wrote the one
+:: start type the service does not ship with.
+for %%S in (AppInfo ClipSVC TokenBroker TimeBrokerSvc AppXSvc) do call :svcfixifdisabled %%S demand
+for %%S in (FontCache WpnService StateRepository ProfSvc nsi BFE Power) do call :svcfixifdisabled %%S auto
 call :svcfixifdisabled CryptSvc auto
 call :svcfixifdisabled mpssvc   auto
 call :svcfixifdisabled DoSvc    delayed-auto
@@ -2887,7 +2915,11 @@ if /i not "%PROFVAL%"=="DELETE" call :regset "HKCU\Software\Microsoft\Windows\Cu
 :sp_spotlight
 
 :: --- Windows Spotlight.
-call :askreg "db.spotlight.off" 1 "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" "DisableWindowsSpotlightFeatures" REG_DWORD "Windows Spotlight"
+:: A User policy: Microsoft documents it under HKCU (Experience CSP, "Manage
+:: connections"). The HKLM copy this used to write is not a documented location.
+call :askreg "db.spotlight.off" 1 "HKCU\Software\Policies\Microsoft\Windows\CloudContent" "DisableWindowsSpotlightFeatures" REG_DWORD "Windows Spotlight"
+:: Removes what older builds wrote to HKLM, whatever the answer above - it was never a documented location.
+call :killkey "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" "DisableWindowsSpotlightFeatures"
 
 :: --- Telemetry scheduled tasks. Not a registry value, so it is asked and
 :: --- applied by hand rather than through :askreg.
@@ -3837,7 +3869,7 @@ echo.
 echo.                                                  
 echo.                                                  
 echo  Thanks for using my script                                      
-echo     @YannD-Deltagon                              
+echo     @YannD-Delta                                 
 echo.                                                  
 echo.                                                  
 echo.                                                  
@@ -3999,21 +4031,15 @@ del /F /S /Q "%~1:\DeliveryOptimization\*"                >nul 2>&1
 del /F /S /Q "%~1:\WUDownloadCache\*"                     >nul 2>&1
 :: REMOVED: <drive>:\ProgramData\Microsoft\Windows\DeliveryOptimization\Cache
 :: Measured on 25H2: that path does not exist. The line deleted nothing on
-:: every run while the sweep still logged "Swept drive". The live store is
-:: ProgramData\Microsoft\Network\Downloader, handled below on the system
-:: drive only - a peer cache on a data drive is the root-level folder already
-:: swept two lines up.
+:: every run while the sweep still logged "Swept drive".
+:: REMOVED too: ProgramData\Microsoft\Network\Downloader. That is BITS' job
+:: queue (qmgr*.dat), not the Delivery Optimization cache - Microsoft deletes it
+:: only as a last-resort Windows Update reset, with BITS, wuauserv and cryptsvc
+:: stopped. The real cache is DO's own working directory, emptied through its
+:: own cmdlet (Delivery Optimization reference: 3-day max age, 20 %% max size).
 if /i not "%~1"=="%SystemDrive:~0,1%" goto do_done
-:: DoSvc keeps the store open. Without stopping it the delete is refused and
-:: reports success anyway, which is the same lie in a different costume.
-:: DoSvc is the PRIMARY downloader on Windows 11, so it is restarted straight
-:: after - leaving it stopped would break Windows Update itself.
-set "DOSTORE=%ProgramData%\Microsoft\Network\Downloader"
-if not exist "%DOSTORE%" goto do_done
-net stop DoSvc >nul 2>&1
-del /F /S /Q "%DOSTORE%\*" >nul 2>&1
-sc start DoSvc >nul 2>&1
->>%logs% echo %date% %time% : Delivery Optimization store cleared (DoSvc stopped and restarted)
+powershell -NoProfile -Command "Delete-DeliveryOptimizationCache -Force" >nul 2>&1
+if errorlevel 1 (>>%logs% echo %date% %time% : Delivery Optimization cache NOT cleared - Delete-DeliveryOptimizationCache refused) else (>>%logs% echo %date% %time% : Delivery Optimization cache cleared)
 :do_done
 :: A root-level .cache. The maintainer's rule is regeneration TIME, not file
 :: type: if it comes back on its own and no user data is lost, it goes. A root
@@ -4028,9 +4054,16 @@ del /F /S /Q "%~1:\.cache\*"                              >nul 2>&1
 :: feature update is downloaded and waiting for a reboot it will be fetched
 :: again. Both are accepted: the space and the clean state are worth more to him
 :: than a rollback he has never used.
+:: Same guard as :dl_wu_go - these ARE the staged update while a restart is pending.
+call :rebootpending
+if defined REBOOTPEND (
+    >>%logs% echo %date% %time% : Upgrade staging folders on %~1: kept - a restart is pending
+    goto ds_staged_done
+)
 if exist "%~1:\$WINDOWS.~BT" rd /S /Q "%~1:\$WINDOWS.~BT" >nul 2>&1
 if exist "%~1:\$Windows.~WS" rd /S /Q "%~1:\$Windows.~WS" >nul 2>&1
 if exist "%~1:\$WinREAgent"  rd /S /Q "%~1:\$WinREAgent"  >nul 2>&1
+:ds_staged_done
 echo %date% %time% : Swept drive %~1:                               >> %logs%
 goto :eof
 
@@ -4150,10 +4183,19 @@ if errorlevel 1 (
 set "SVCOLD="
 for /f "tokens=3" %%A in ('reg query "HKLM\SYSTEM\CurrentControlSet\Services\%~1" /v Start 2^>nul ^| findstr /i /c:"    Start    REG_"') do set "SVCOLD=%%A"
 sc config "%~1" start= %~2 >nul 2>&1
-if errorlevel 1 (
-    call :L "%cErr%" "  FAILED   %~4 (sc config refused)"
+if not errorlevel 1 goto svcset_written
+:: Some services lock their own security descriptor - Dnscache has refused
+:: sc config to administrators since Windows 10 1809 - so the write fails even
+:: when the start type is already the right one. That is not a failure.
+set "SVCN="
+if defined SVCOLD set /a SVCN=%SVCOLD% 2>nul
+if "%SVCN%"=="%~3" (
+    call :L "%cInfo%" "  left     %~4 = %~2   (already correct; the service refuses sc config)"
     goto :eof
 )
+call :L "%cErr%" "  FAILED   %~4 (sc config refused)"
+goto :eof
+:svcset_written
 if not defined SVCOLD (
     call :L "%cOK%" "  SET      %~4 = %~2"
     goto :eof
@@ -4165,6 +4207,15 @@ if "%SVCN%"=="%~3" (
     goto :eof
 )
 call :L "%cOK%" "  FIXED    %~4 : start type was %SVCN%, now %~2"
+goto :eof
+
+:rebootpending
+:: -> REBOOTPEND=1 when Windows is waiting for a restart to finish servicing.
+:: Registry only: both keys exist exactly while a restart is pending, and
+:: reading them needs no localised tool output.
+set "REBOOTPEND="
+reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired" >nul 2>&1 && set "REBOOTPEND=1"
+reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending" >nul 2>&1 && set "REBOOTPEND=1"
 goto :eof
 
 :isrunning
@@ -39341,15 +39392,28 @@ goto :eof
 ::PS|crashreport|
 ::PS|crashreport|Section 'Unexpected restarts (Kernel-Power 41), newest first' 'Redemarrages inattendus (Kernel-Power 41), du plus recent'
 ::PS|crashreport|$k41 = @(Events @{ LogName = 'System'; Id = 41 } 60 | Where-Object { $_.ProviderName -eq 'Microsoft-Windows-Kernel-Power' } | Select-Object -First 20)
-::PS|crashreport|$nFreeze = 0; $nBsod = 0
+::PS|crashreport|$nFreeze = 0; $nBsod = 0; $nHeld = 0; $nCut = 0
 ::PS|crashreport|if ($k41.Count -eq 0) { W (T '  none recorded' '  aucun enregistre') 'Green' }
 ::PS|crashreport|foreach ($e in $k41) {
 ::PS|crashreport|    $d = ([xml]$e.ToXml()).Event.EventData.Data
 ::PS|crashreport|    $b = [int64](($d | Where-Object { $_.Name -eq 'BugcheckCode' }).'#text')
 ::PS|crashreport|    $hex = '{0:X}' -f $b
+::PS|crashreport|    # Microsoft (Event ID 41 troubleshooting): a non-zero PowerButtonTimestamp means the
+::PS|crashreport|    # button was held - the machine was frozen. Zero with no button press points at
+::PS|crashreport|    # power loss, a PSU trip or the reset button instead.
+::PS|crashreport|    $pbt = [int64](($d | Where-Object { $_.Name -eq 'PowerButtonTimestamp' }).'#text')
+::PS|crashreport|    $lpp = [string](($d | Where-Object { $_.Name -eq 'LongPowerButtonPressDetected' }).'#text')
+::PS|crashreport|    $sip = [string](($d | Where-Object { $_.Name -eq 'SleepInProgress' }).'#text')
 ::PS|crashreport|    if ($b -eq 0) {
 ::PS|crashreport|        $nFreeze++; $col = 'Yellow'
-::PS|crashreport|        $what = T 'no code: hard freeze, power cut or reset button' 'aucun code : gel complet, coupure de courant ou bouton reset'
+::PS|crashreport|        if ($pbt -ne 0 -or $lpp -eq 'true') {
+::PS|crashreport|            $nHeld++
+::PS|crashreport|            $what = T 'no code, power button held: a hard freeze' 'aucun code, bouton power maintenu : un gel complet'
+::PS|crashreport|        } else {
+::PS|crashreport|            $nCut++
+::PS|crashreport|            $what = T 'no code, no button press: power loss, PSU trip or reset button' 'aucun code, sans appui : coupure, alimentation qui decroche ou bouton reset'
+::PS|crashreport|        }
+::PS|crashreport|        if ($sip -and $sip -ne '0' -and $sip -ne 'false') { $what += (T ' - during sleep or wake' ' - pendant la veille ou le reveil') }
 ::PS|crashreport|    } else {
 ::PS|crashreport|        if ($hex -ne 'E2') { $nBsod++ }
 ::PS|crashreport|        $col = 'Red'; $what = $names[$hex]
@@ -39358,6 +39422,10 @@ goto :eof
 ::PS|crashreport|    W ('  {0:yyyy-MM-dd HH:mm}   0x{1,-5} {2}' -f $e.TimeCreated, $hex, $what) $col
 ::PS|crashreport|}
 ::PS|crashreport|if ($k41.Count) { W ''; W ((T '  {0} freeze(s) with no code, {1} real blue screen(s).' '  {0} gel(s) sans code, {1} vrai(s) ecran(s) bleu(s).') -f $nFreeze, $nBsod) 'White' }
+::PS|crashreport|if ($nCut) {
+::PS|crashreport|    W ((T '  {0} of them with no power button press: that is what a power loss or a PSU' '  Dont {0} sans appui sur le bouton : c est la signature d une coupure ou d une') -f $nCut) 'Yellow'
+::PS|crashreport|    W (T '  tripping on a GPU load spike looks like, rather than a frozen system.' '  alimentation qui decroche sur un pic de charge GPU, plutot que d un systeme gele.') 'Yellow'
+::PS|crashreport|}
 ::PS|crashreport|if ($nFreeze) {
 ::PS|crashreport|    W (T '  A freeze with no code leaves nothing to analyse: turn on Freeze capture' '  Un gel sans code ne laisse rien a analyser : activez la capture de gel') 'Yellow'
 ::PS|crashreport|    W (T '  (option 1) and press Right Ctrl + Space twice during the next one.' '  (option 1) et appuyez sur Ctrl droit + Espace deux fois au prochain.') 'Yellow'
@@ -39368,10 +39436,30 @@ goto :eof
 ::PS|crashreport|if ($bc.Count -eq 0) { W (T '  none recorded' '  aucun enregistre') 'Green' }
 ::PS|crashreport|foreach ($e in $bc) { W ('  {0:yyyy-MM-dd HH:mm}   {1}' -f $e.TimeCreated, (First $e.Message)) }
 ::PS|crashreport|
-::PS|crashreport|Section 'Dumps Windows could NOT write (volmgr 161)' 'Vidages que Windows n a PAS pu ecrire (volmgr 161)'
-::PS|crashreport|$vf = @(Events @{ LogName = 'System'; Id = 161 } 20 | Where-Object { $_.ProviderName -eq 'volmgr' } | Select-Object -First 5)
+::PS|crashreport|Section 'Dumps Windows could NOT write or set up (volmgr 161, 46, 49)' 'Vidages que Windows n a PAS pu ecrire ou preparer (volmgr 161, 46, 49)'
+::PS|crashreport|$vf = @(Events @{ LogName = 'System'; Id = 161, 46, 49 } 30 | Where-Object { $_.ProviderName -eq 'volmgr' } | Select-Object -First 5)
 ::PS|crashreport|if ($vf.Count -eq 0) { W (T '  none recorded' '  aucun enregistre') 'Green' }
-::PS|crashreport|foreach ($e in $vf) { W ('  {0:yyyy-MM-dd HH:mm}   {1}' -f $e.TimeCreated, (First $e.Message)) 'Yellow' }
+::PS|crashreport|foreach ($e in $vf) { W ('  {0:yyyy-MM-dd HH:mm}   Id {1}   {2}' -f $e.TimeCreated, $e.Id, (First $e.Message)) 'Yellow' }
+::PS|crashreport|
+::PS|crashreport|Section 'GPU driver timeouts Windows recovered from (Display 4101, LiveKernelEvent)' 'Blocages du pilote GPU recuperes par Windows (Display 4101, LiveKernelEvent)'
+::PS|crashreport|# A recovered GPU timeout never reaches Kernel-Power 41, but it leaves a live dump
+::PS|crashreport|# under LiveKernelReports. A run of them before the freezes points at the GPU driver.
+::PS|crashreport|$tdr = @(Events @{ LogName = 'System'; Id = 4101 } 20 | Where-Object { $_.ProviderName -eq 'Display' } | Select-Object -First 5)
+::PS|crashreport|$lke = @(Events @{ LogName = 'Application'; Id = 1001 } 300 | Where-Object { $_.Message -match 'LiveKernelEvent' } | Select-Object -First 5)
+::PS|crashreport|$lkr = @(Get-ChildItem (Join-Path $env:SystemRoot 'LiveKernelReports') -Recurse -Filter *.dmp | Sort-Object LastWriteTime -Descending | Select-Object -First 5)
+::PS|crashreport|if (($tdr.Count + $lke.Count + $lkr.Count) -eq 0) { W (T '  none recorded' '  aucun enregistre') 'Green' }
+::PS|crashreport|foreach ($e in $tdr) { W ('  {0:yyyy-MM-dd HH:mm}   Display 4101   {1}' -f $e.TimeCreated, (First $e.Message)) 'Yellow' }
+::PS|crashreport|foreach ($e in $lke) { W ('  {0:yyyy-MM-dd HH:mm}   WER 1001       {1}' -f $e.TimeCreated, (First $e.Message)) 'Yellow' }
+::PS|crashreport|foreach ($f in $lkr) { W ('  {0:yyyy-MM-dd HH:mm}   {1}' -f $f.LastWriteTime, $f.FullName.Substring($env:SystemRoot.Length + 1)) 'Yellow' }
+::PS|crashreport|
+::PS|crashreport|Section 'Low-level hardware access drivers running now' 'Pilotes d acces materiel bas niveau en cours d execution'
+::PS|crashreport|# Read live, so it needs no dump. PawnIO replaced WinRing0 in Fan Control and
+::PS|crashreport|# LibreHardwareMonitor in 2025.
+::PS|crashreport|$hwnames = 'gdrv\w*|CorsairLLAccess\w*|AMDRyzenMasterDriver\w*|HWiNFO\w*|WinRing0\w*|RTCore\w*|inpoutx64|AsIO\w*|GLCKIO\w*|EneIo\w*|cpuz\w*|PawnIO\w*'
+::PS|crashreport|$live = @(Get-CimInstance Win32_SystemDriver | Where-Object { $_.State -eq 'Running' -and ($_.Name -match ('(?i)^(' + $hwnames + ')$') -or [IO.Path]::GetFileNameWithoutExtension([string]$_.PathName) -match ('(?i)^(' + $hwnames + ')$')) } | ForEach-Object { $_.Name })
+::PS|crashreport|if ($live.Count -eq 0) { W (T '  none of the known monitoring / RGB / overclocking drivers' '  aucun des pilotes connus de monitoring / RGB / overclocking') 'Green' }
+::PS|crashreport|elseif ($live.Count -eq 1) { W ('  ' + $live[0]) 'White' }
+::PS|crashreport|else { W ((T '  {0} at once: {1} - several polling the same sensors is a common suspect for freezes at idle.' '  {0} en meme temps : {1} - plusieurs qui interrogent les memes capteurs sont un suspect courant des gels au repos.') -f $live.Count, ($live -join ', ')) 'Yellow' }
 ::PS|crashreport|
 ::PS|crashreport|Section 'Hardware errors reported by CPU / PCIe (WHEA, last 90 days)' 'Erreurs materiel signalees par le CPU / PCIe (WHEA, 90 derniers jours)'
 ::PS|crashreport|$wh = @(Events @{ LogName = 'System'; ProviderName = 'Microsoft-Windows-WHEA-Logger'; StartTime = (Get-Date).AddDays(-90) } 200)
@@ -39400,6 +39488,8 @@ goto :eof
 ::PS|crashreport|
 ::PS|crashreport|Section 'Automatic analysis of the newest dump' 'Analyse automatique du vidage le plus recent'
 ::PS|crashreport|$cdb = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\Debuggers\x64\cdb.exe'
+::PS|crashreport|# The Store / winget WinDbg ships cdb behind the cdbX64.exe execution alias.
+::PS|crashreport|if (-not (Test-Path $cdb)) { $c2 = (Get-Command cdbX64.exe -ErrorAction SilentlyContinue).Source; if ($c2) { $cdb = $c2 } }
 ::PS|crashreport|# MEMORY.DMP wins unless a minidump is clearly newer: both are written by the
 ::PS|crashreport|# same crash, and only the kernel dump can show every processor.
 ::PS|crashreport|$target = $full
@@ -39407,7 +39497,8 @@ goto :eof
 ::PS|crashreport|if (-not $target) {
 ::PS|crashreport|    W (T '  no dump to analyse' '  aucun vidage a analyser')
 ::PS|crashreport|} elseif (-not (Test-Path $cdb)) {
-::PS|crashreport|    W (T '  cdb.exe not found. Install "Debugging Tools for Windows" (Windows SDK)' '  cdb.exe introuvable. Installez "Debugging Tools for Windows" (Windows SDK)') 'Yellow'
+::PS|crashreport|    W (T '  cdb.exe not found. Install WinDbg (winget install Microsoft.WinDbg) or the' '  cdb.exe introuvable. Installez WinDbg (winget install Microsoft.WinDbg) ou les') 'Yellow'
+::PS|crashreport|    W (T '  Debugging Tools for Windows from the Windows SDK' '  Debugging Tools for Windows du Windows SDK') 'Yellow'
 ::PS|crashreport|    W (T '  to get this analysis automatically - the dumps are listed above.' '  pour obtenir cette analyse automatiquement - les vidages sont listes plus haut.') 'Yellow'
 ::PS|crashreport|} else {
 ::PS|crashreport|    $sym = 'srv*' + (Join-Path $env:OPTY_HOME 'symbols') + '*https://msdl.microsoft.com/download/symbols'
@@ -39435,7 +39526,10 @@ goto :eof
 ::PS|crashreport|    # Tools that read sensors, fans and RGB through their own kernel driver.
 ::PS|crashreport|    # Several of them polling the same SMBus at once is a common suspect for
 ::PS|crashreport|    # freezes at idle - worth testing with all of them closed for a while.
-::PS|crashreport|    $hw = @($mods | Where-Object { $_ -match '(?i)\s(gdrv\w*|CorsairLLAccess\w*|AMDRyzenMasterDriver\w*|HWiNFO\w*|WinRing0\w*|RTCore\w*|inpoutx64|AsIO\w*|GLCKIO\w*|EneIo\w*|cpuz\w*)\s' } | ForEach-Object { ($_ -split '\s+')[2] })
+::PS|crashreport|    # Every loaded module, not only the dated ones: a hash-stamped build of one of
+::PS|crashreport|    # these drivers used to slip past the check.
+::PS|crashreport|    $allmods = @($txt | Where-Object { $_ -match '^[0-9a-f]{8}`[0-9a-f]{8}\s' })
+::PS|crashreport|    $hw = @($allmods | Where-Object { $_ -match ('(?i)\s(' + $hwnames + ')\s') } | ForEach-Object { ($_ -split '\s+')[2] })
 ::PS|crashreport|    if ($hw.Count -ge 2) {
 ::PS|crashreport|        W ''; W ((T '  {0} low-level hardware access drivers loaded at once: {1}' '  {0} pilotes d acces materiel bas niveau charges en meme temps : {1}') -f $hw.Count, ($hw -join ', ')) 'Yellow'
 ::PS|crashreport|        W (T '  (monitoring / RGB / overclocking tools). Several polling the same sensors is a common' '  (outils de monitoring / RGB / overclocking). Plusieurs qui interrogent les memes capteurs') 'Yellow'
